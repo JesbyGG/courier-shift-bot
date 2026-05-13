@@ -8,23 +8,29 @@ echo ============================================
 echo.
 
 :: 1. Git commit + push
-echo [1/3] Committing changes...
+echo [1/3] Checking for changes...
 git add -A
-git commit -m "update: %date% %time%"
-if %errorlevel% neq 0 (
-    echo.
-    echo ERROR: Git commit failed. Check your changes.
-    pause
-    exit /b 1
+git diff --cached --quiet
+if %errorlevel% equ 0 (
+    echo   No changes to commit.
+    set HAS_CHANGES=0
+) else (
+    echo   Changes found. Committing...
+    git commit -m "update: %date% %time%"
+    set HAS_CHANGES=1
 )
 
-echo [2/3] Pushing to GitHub...
-git push origin main
-if %errorlevel% neq 0 (
-    echo.
-    echo ERROR: Git push failed.
-    pause
-    exit /b 1
+if %HAS_CHANGES% equ 1 (
+    echo [2/3] Pushing to GitHub...
+    git push origin main
+    if %errorlevel% neq 0 (
+        echo.
+        echo ERROR: Git push failed.
+        pause
+        exit /b 1
+    )
+) else (
+    echo [2/3] Skipping push (no changes).
 )
 
 :: 2. Update VPS
