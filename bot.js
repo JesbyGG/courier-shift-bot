@@ -214,6 +214,7 @@ const BUTTONS = {
   routeSheet: '📄 Маршрутный лист',
   reconciliation: '📊 Сверки',
   cashCheck: '💵 Деньги к сдаче',
+  issues: '⚠️ Проблема с заказом',
   status: 'ℹ️ Статус',
   settings: '⚙️ Настройки',
   help: '❓ Помощь',
@@ -243,6 +244,7 @@ function mainMenu() {
     [BUTTONS.punchTime, BUTTONS.mileage],
     [BUTTONS.routeSheet, BUTTONS.reconciliation],
     [BUTTONS.cashCheck],
+    [BUTTONS.issues],
     [BUTTONS.status, BUTTONS.settings]
   ]).resize();
 }
@@ -2184,6 +2186,36 @@ async function backToMainMenu(ctx) {
   await ctx.replyWithHTML(message, mainMenu());
 }
 
+async function showIssuesMenu(ctx) {
+  const deliveryUrl = process.env.ISSUE_DELIVERY_URL;
+  const flowwowUrl = process.env.ISSUE_FLOWWOW_URL;
+  const techsupportUrl = process.env.ISSUE_TECHSUPPORT_URL;
+
+  const buttons = [];
+
+  if (deliveryUrl) {
+    buttons.push([Markup.button.url('📦 Доставка — проблемы с нашими заказами', deliveryUrl)]);
+  }
+  if (flowwowUrl) {
+    buttons.push([Markup.button.url('🌸 Flowwow — заказы Flowwow', flowwowUrl)]);
+  }
+  if (techsupportUrl) {
+    buttons.push([Markup.button.url('🔧 Техподдержка — технические проблемы', techsupportUrl)]);
+  }
+
+  if (buttons.length === 0) {
+    await ctx.replyWithHTML('⚠️ Раздел «Проблема с заказом» временно недоступен.', mainMenu());
+    return;
+  }
+
+  buttons.push([Markup.button.callback('⬅️ Назад', 'issues_back')]);
+
+  await ctx.replyWithHTML(
+    '⚠️ <b>Проблема с заказом</b>\n\nВыберите чат для обращения:',
+    Markup.inlineKeyboard(buttons)
+  );
+}
+
 bot.start(async (ctx) => {
   console.log('/start');
 
@@ -2526,6 +2558,14 @@ bot.action('show_my_id', async (ctx) => {
       );
     } catch (e) { /* админ заблокирован — пропускаем */ }
   }
+});
+
+bot.action('issues_back', async (ctx) => {
+  await ctx.answerCbQuery();
+  try {
+    await ctx.deleteMessage();
+  } catch (e) { /* сообщение уже удалено */ }
+  await backToMainMenu(ctx);
 });
 
 bot.action('route_sheet_done', async (ctx) => {
@@ -3191,6 +3231,7 @@ const TEXT_ROUTES = [
   { button: BUTTONS.routeSheet, legacy: ['Маршрутный лист'], handler: (ctx) => routeSheetFlow(ctx) },
   { button: BUTTONS.reconciliation, legacy: ['Сверки'], handler: (ctx) => reconciliationFlow(ctx) },
   { button: BUTTONS.cashCheck, legacy: ['Деньги к сдаче'], handler: (ctx) => showPendingCashStatus(ctx) },
+  { button: BUTTONS.issues, handler: (ctx) => showIssuesMenu(ctx) },
   { button: BUTTONS.status, legacy: ['Мой статус'], handler: (ctx) => showStatus(ctx) },
 
   // 4) Меню настроек
