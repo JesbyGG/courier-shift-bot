@@ -1,0 +1,23 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install sshpass
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
+      - name: Deploy
+        run: |
+          sshpass -p 'mama1322!' ssh -o StrictHostKeyChecking=no root@103.54.19.218 "
+            cd ~/courier-shift-bot &&
+            git pull &&
+            npm install --omit=dev &&
+            source venv/bin/activate &&
+            pip install -q rapidocr_onnxruntime &&
+            pm2 restart courier-shift-bot rapidocr-server
+          "
