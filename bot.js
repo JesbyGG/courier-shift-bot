@@ -230,10 +230,11 @@ const BUTTONS = {
   leaderBoard: '🏆 Лидерборд',
   settings: '⚙️ Настройки',
   help: '❓ Помощь',
-  changeCar: '🚙 Номер машины',
-  changeWorkplace: '🏬 Магазин',
-  changeDevice: '💻 Устройство',
-  switchUser: '👤 Сотрудник',
+  profile: '✏️ Профиль',
+  changeCar: '✏️ Изменить номер машины',
+  changeWorkplace: '✏️ Поменять магазин',
+  changeDevice: '✏️ Изменить устройство',
+  switchUser: '✏️ Поменять сотрудника',
   sheetInfo: '📋 Таблицы',
   myId: '🆔 Мой ID',
   backToSettings: '↩️ К настройкам',
@@ -252,11 +253,10 @@ function mainMenu() {
 }
 
 function settingsMenu(telegramId) {
-  const buttons = [
-    [BUTTONS.changeCar, BUTTONS.changeWorkplace],
-    [BUTTONS.changeDevice, BUTTONS.switchUser]
-  ];
   const showSheets = isAdminUser(telegramId) || isSheetAccessUser(telegramId);
+  const buttons = [
+    [BUTTONS.profile]
+  ];
   if (showSheets) {
     buttons.push([BUTTONS.sheetInfo, BUTTONS.myId]);
   } else {
@@ -265,6 +265,14 @@ function settingsMenu(telegramId) {
   buttons.push([BUTTONS.help]);
   buttons.push([BUTTONS.back]);
   return Markup.keyboard(buttons).resize();
+}
+
+function profileMenu() {
+  return Markup.keyboard([
+    [BUTTONS.changeCar, BUTTONS.changeWorkplace],
+    [BUTTONS.changeDevice, BUTTONS.switchUser],
+    [BUTTONS.backToSettings]
+  ]).resize();
 }
 
 function workplaceMenu() {
@@ -1298,6 +1306,7 @@ function isMenuText(text) {
     BUTTONS.leaderBoard,
     BUTTONS.settings,
     BUTTONS.help,
+    BUTTONS.profile,
     BUTTONS.changeCar,
     BUTTONS.changeWorkplace,
     BUTTONS.changeDevice,
@@ -1319,12 +1328,15 @@ function isMenuText(text) {
     'Лидерборд',
     'Настройки',
     'Помощь',
+    'Профиль',
     'Изменить номер машины',
     'Номер машины',
+    'Поменять магазин',
     'Изменить интернет-магазин',
     'Магазин',
     'Изменить устройство',
     'Устройство',
+    'Поменять сотрудника',
     'Сменить сотрудника',
     'Сотрудник',
     'Таблицы',
@@ -3421,22 +3433,23 @@ const TEXT_ROUTES = [
 
   // 4) Меню настроек
   { button: BUTTONS.settings, legacy: ['Настройки'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ <b>Настройки</b>', settingsMenu(id)) },
+  { button: BUTTONS.profile, legacy: ['Профиль'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('✏️ <b>Профиль</b>', profileMenu()) },
   { button: BUTTONS.help, legacy: ['Помощь'], handler: (ctx) => sendHelp(ctx) },
 
   // 5) Профиль (требуют ФИО)
-  { button: BUTTONS.changeCar, legacy: ['Изменить номер машины'], handler: async (ctx) => {
+  { button: BUTTONS.changeCar, legacy: ['Изменить номер машины', 'Номер машины'], handler: async (ctx) => {
     const fio = await requireFio(ctx);
     if (fio) await askForCarNumber(ctx, fio);
   }},
-  { button: BUTTONS.changeWorkplace, legacy: ['Изменить интернет-магазин', 'Магазин'], handler: async (ctx) => {
+  { button: BUTTONS.changeWorkplace, legacy: ['Изменить интернет-магазин', 'Поменять магазин', 'Магазин'], handler: async (ctx) => {
     const fio = await requireFio(ctx);
     if (fio) await askForWorkplace(ctx, fio);
   }},
-  { button: BUTTONS.changeDevice, legacy: ['Изменить устройство'], handler: async (ctx) => {
+  { button: BUTTONS.changeDevice, legacy: ['Изменить устройство', 'Устройство'], handler: async (ctx) => {
     const fio = await requireFio(ctx);
     if (fio) await askForDevice(ctx, fio);
   }},
-  { button: BUTTONS.switchUser, legacy: ['Сменить сотрудника'], handler: handleSwitchUser },
+  { button: BUTTONS.switchUser, legacy: ['Поменять сотрудника', 'Сменить сотрудника', 'Сотрудник'], handler: handleSwitchUser },
 
   // 6) Настройки (Таблицы, Мой ID)
   { button: BUTTONS.sheetInfo, legacy: ['Таблицы'], handler: handleSheetsInfo },
