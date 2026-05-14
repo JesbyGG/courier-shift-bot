@@ -1074,23 +1074,48 @@ function formatMoneyRuNumber(value) {
 }
 
 function extractOrdersCountFromOcrText(text) {
-  const normalized = String(text || '')
+  const raw = String(text || '')
     .replace(/\u00A0/g, ' ')
-    .replace(/\s+/g, ' ')
     .trim();
 
-  if (!normalized) {
+  if (!raw) {
     return { totalOrders: null, reason: 'empty_text' };
   }
 
-  const patterns = [
-    /заказо[кв]\s*(?:за\s*(?:сегодня|сутки))?\s*:?\s*(\d{1,5})/i,
-    /заказо[кв]\s*:?\s*(\d{1,5})/i,
-    /(\d{1,5})\s*заказо[кв]/i,
-    /за\s*сегодня\s*:?\s*(\d{1,5})/i
+  const normalized = raw.replace(/\s+/g, ' ');
+
+  const strictPatterns = [
+    /заказо[кв]\s+за\s*(?:сегодня|сутки)\s*:?\s*(\d{1,5})/i,
+    /за\s*(?:сегодня|сутки)\s*:?\s*(\d{1,5})/i,
   ];
 
-  for (const pattern of patterns) {
+  for (const pattern of strictPatterns) {
+    const match = normalized.match(pattern);
+    if (match && Number.isFinite(Number(match[1])) && Number(match[1]) > 0) {
+      return { totalOrders: Number(match[1]), reason: 'ok' };
+    }
+  }
+
+  const lines = raw.split(/\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (/заказо[кв]/i.test(line)) {
+      for (let j = i + 1; j < Math.min(lines.length, i + 5); j += 1) {
+        const candidate = lines[j].trim();
+        const numMatch = candidate.match(/^(\d{1,5})$/);
+        if (numMatch && Number.isFinite(Number(numMatch[1])) && Number(numMatch[1]) > 0) {
+          return { totalOrders: Number(numMatch[1]), reason: 'ok' };
+        }
+      }
+    }
+  }
+
+  const fallbackPatterns = [
+    /заказо[кв]\s*:?\s*(\d{1,5})(?:\s|$)/i,
+    /(\d{1,5})\s*заказо[кв]/i,
+  ];
+
+  for (const pattern of fallbackPatterns) {
     const match = normalized.match(pattern);
     if (match && Number.isFinite(Number(match[1])) && Number(match[1]) > 0) {
       return { totalOrders: Number(match[1]), reason: 'ok' };
@@ -1202,6 +1227,7 @@ async function recognizeReconciliationCash(ctx, fileId) {
         const parsed = extractCashFromOcrText(rapidText);
         const ordersParsed = extractOrdersCountFromOcrText(rapidText);
         totalOrdersFromRapid = ordersParsed.totalOrders;
+        console.log('сверка OCR:', JSON.stringify({ cashValid: parsed.valid, cashReason: parsed.reason, cashOrders: parsed.orders, cashAmount: parsed.amount, totalOrders: ordersParsed.totalOrders, ordersReason: ordersParsed.reason, source: 'rapidocr' }));
 
         if (parsed.valid) {
           return { ...parsed, totalOrders: ordersParsed.totalOrders, source: 'rapidocr' };
@@ -1210,6 +1236,8 @@ async function recognizeReconciliationCash(ctx, fileId) {
         if (parsed.reason === 'cash_line_empty') {
           return { ...parsed, totalOrders: ordersParsed.totalOrders, source: 'rapidocr' };
         }
+      } else {
+        console.log('сверка OCR: RapidOCR вернул пустой текст');
       }
     }
 
