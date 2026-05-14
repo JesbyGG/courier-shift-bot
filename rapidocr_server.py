@@ -41,22 +41,6 @@ def compact_text(text):
     return re.sub(r'\s+', '', normalize_text(text).lower())
 
 
-def is_noise_text(text):
-    raw = normalize_text(text)
-    compact = compact_text(text)
-    if not compact:
-        return True
-    import re
-    if re.search(r'\b\d{1,2}:\d{2}\b', raw):
-        return True
-    if re.search(r'-?\d{1,2}\s*[°º]', raw):
-        return True
-    noise_substrings = (
-        'km/h', 'mph', 'rpm', 'x1000', '/100', 'l/100', '1/100', 'trip', 'avg', 'temp',
-    )
-    return any(token in compact for token in noise_substrings)
-
-
 def extract_mileage(text, min_digits=4, max_digits=6):
     import re
     normalized = normalize_text(text).replace('O', '0').replace('o', '0')
@@ -86,9 +70,12 @@ def make_variants(image):
 
     variants = [image]
     crops = [
-        (0.50, 0.40, 0.50, 0.55),
-        (0.15, 0.50, 0.70, 0.48),
-        (0.30, 0.35, 0.40, 0.40),
+        (0.50, 0.40, 0.50, 0.55), # bottom right
+        (0.15, 0.50, 0.70, 0.48), # bottom wide
+        (0.30, 0.35, 0.40, 0.40), # center
+        (0.20, 0.10, 0.60, 0.40), # top center
+        (0.10, 0.30, 0.80, 0.40), # middle wide
+        (0.40, 0.15, 0.50, 0.40), # top right
     ]
     for left_ratio, top_ratio, width_ratio, height_ratio in crops:
         left = max(0, int(width * left_ratio))
@@ -225,8 +212,6 @@ def recognize(image_bytes):
             confidence = float(item[2]) if len(item) > 2 else 0
             text = str(text or '').strip()
             if not text:
-                continue
-            if is_noise_text(text):
                 continue
             mileage = extract_mileage(text, min_digits=2)
             if mileage:
