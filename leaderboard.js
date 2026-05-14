@@ -1,49 +1,35 @@
-const fs = require('fs');
-const path = require('path');
-
-const CACHE_PATH = path.join(__dirname, 'leaderboard-cache.json');
-
-let _cache = null;
-let _writeScheduled = false;
-
-function loadCache() {
-  if (_cache) return _cache;
-  try {
-    if (fs.existsSync(CACHE_PATH)) {
-      _cache = JSON.parse(fs.readFileSync(CACHE_PATH, 'utf8'));
-    } else {
-      _cache = { records: {} };
-    }
-  } catch {
-    _cache = { records: {} };
-  }
-  return _cache;
-}
-
-function scheduleWrite() {
-  if (_writeScheduled) return;
-  _writeScheduled = true;
-  setImmediate(() => {
-    _writeScheduled = false;
-    try {
-      const tmp = CACHE_PATH + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(_cache, null, 2), 'utf8');
-      fs.renameSync(tmp, CACHE_PATH);
-    } catch (err) {
-      console.error('leaderboard cache write error', err.message);
-    }
-  });
-}
+const db = require('./db');
 
 function flushNow() {
-  _writeScheduled = false;
+  // SQLite WAL is persistent.
+}
+
+function _getRecord(telegramId) {
+  const row = db.prepare('SELECT data FROM leaderboard WHERE telegramId = ?').get(String(telegramId));
+  if (!row) return null;
   try {
-    const tmp = CACHE_PATH + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(_cache || loadCache(), null, 2), 'utf8');
-    fs.renameSync(tmp, CACHE_PATH);
-  } catch (err) {
-    console.error('leaderboard cache flush error', err.message);
+    return JSON.parse(row.data);
+  } catch {
+    return null;
   }
+}
+
+function _setRecord(telegramId, data) {
+  const stmt = db.prepare('INSERT OR REPLACE INTO leaderboard (telegramId, data) VALUES (?, ?)');
+  stmt.run(String(telegramId), JSON.stringify(data));
+}
+
+function _getAllRecords() {
+  const rows = db.prepare('SELECT telegramId, data FROM leaderboard').all();
+  const records = {};
+  for (const row of rows) {
+    try {
+      records[row.telegramId] = JSON.parse(row.data);
+    } catch {
+      // ignore bad JSON
+    }
+  }
+  return records;
 }
 
 function getTodayKey() {
@@ -58,24 +44,22 @@ function getTodayKey() {
 }
 
 function recordOrders(telegramId, fio, workplace, ordersCount) {
-  const cache = loadCache();
-
-  if (!cache.records[telegramId]) {
-    cache.records[telegramId] = {
+  let record = _getRecord(telegramId);
+  if (!record) {
+    record = {
       fio,
       workplace,
       dailyOrders: {}
     };
   }
 
-  const record = cache.records[telegramId];
   record.fio = fio || record.fio;
   record.workplace = workplace || record.workplace;
 
   const dayKey = getTodayKey();
   record.dailyOrders[dayKey] = ordersCount;
 
-  scheduleWrite();
+  _setRecord(telegramId, record);
   return record;
 }
 
@@ -97,8 +81,7 @@ const WORKPLACE_SHORT = {
 };
 
 function calculateLeaderboard(type, periodDays, workplace) {
-  const cache = loadCache();
-  const records = cache.records || {};
+  const records = _getAllRecords();
   const cutoff = periodDays ? getDaysAgo(periodDays) : null;
   
   const wpMapping = { east: 'ИМ Восток', center: 'ИМ Центр' };
@@ -142,57 +125,61 @@ function calculateLeaderboard(type, periodDays, workplace) {
   return entries;
 }
 
-function formatLeaderboard(entries, myTelegramId, showWorkplace) {
-  const top = entries.slice(0, 10);
-  const me = entries.find((e) => e.telegramId === String(myTelegramId));
-
-  const medals = ['🥇', '🥈', '🥉'];
-
-  const lines = [];
-  for (const entry of top) {
-    const medal = entry.rank <= 3 ? medals[entry.rank - 1] : `${entry.rank}.`;
-    const isMe = entry.telegramId === String(myTelegramId);
-    const name = isMe ? `<b>${esc(entry.fio)}</b>` : esc(entry.fio);
-    const suffix = showWorkplace && entry.workplace ? ` (${esc(WORKPLACE_SHORT[entry.workplace] || entry.workplace)})` : '';
-    lines.push(`${medal} ${name}${suffix} — <b>${entry.value}</b>`);
+function formatLeaderboard(entries, myTelegramId, showWorkplace = false) {
+  if (entries.length === 0) {
+    return 'Пока пусто.';
   }
 
-  if (me && me.rank > 10) {
-    const meSuffix = showWorkplace && me.workplace ? ` (${esc(WORKPLACE_SHORT[me.workplace] || me.workplace)})` : '';
-    lines.push('');
-    lines.push(`⋮`);
-    lines.push(`${me.rank}. <b>${esc(me.fio)}</b>${meSuffix} — <b>${me.value}</b>`);
+  const lines = entries.slice(0, 50).map(entry => {
+    let medal = '';
+    if (entry.rank === 1) medal = '🥇';
+    else if (entry.rank === 2) medal = '🥈';
+    else if (entry.rank === 3) medal = '🥉';
+    else medal = '  ';
+
+    let fioStr = entry.fio.split(' ').slice(0, 2).join(' ');
+    if (entry.telegramId === String(myTelegramId)) {
+      fioStr = `<b>${fioStr} (Вы)</b>`;
+    }
+
+    let wpSuffix = '';
+    if (showWorkplace && entry.workplace) {
+      const short = WORKPLACE_SHORT[entry.workplace] || entry.workplace.replace('ИМ ', '');
+      wpSuffix = ` [${short}]`;
+    }
+
+    return `${medal} ${entry.rank}. ${fioStr}${wpSuffix} — <b>${entry.value}</b>`;
+  });
+
+  const myIndex = entries.findIndex(e => e.telegramId === String(myTelegramId));
+  if (myIndex >= 50) {
+    lines.push('...');
+    const myEntry = entries[myIndex];
+    let wpSuffix = '';
+    if (showWorkplace && myEntry.workplace) {
+      const short = WORKPLACE_SHORT[myEntry.workplace] || myEntry.workplace.replace('ИМ ', '');
+      wpSuffix = ` [${short}]`;
+    }
+    lines.push(`   ${myEntry.rank}. <b>${myEntry.fio.split(' ').slice(0, 2).join(' ')} (Вы)</b>${wpSuffix} — <b>${myEntry.value}</b>`);
   }
 
   return lines.join('\n');
 }
 
-function esc(text) {
-  return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function checkNotifications(telegramId, fio, workplace, ordersCount) {
-  const cache = loadCache();
-  const record = cache.records[telegramId];
-  if (!record || !record.dailyOrders) return [];
-
-  const notifications = [];
-  const dayKey = getTodayKey();
-
-  const dailyOrders = { ...record.dailyOrders };
-  const previousMax = Object.entries(dailyOrders)
-    .filter(([k]) => k !== dayKey)
-    .reduce((max, [, v]) => Math.max(max, v), 0);
-
-  if (ordersCount > previousMax && previousMax > 0) {
-    notifications.push({
-      type: 'personal_record',
-      value: ordersCount,
-      previous: previousMax
-    });
+function checkNotifications(telegramId, fio, workplace, currentDayOrders) {
+  const record = _getRecord(telegramId);
+  const previousRecord = record ? record.personalRecord : 0;
+  
+  if (currentDayOrders > (previousRecord || 0)) {
+    if (record) {
+      record.personalRecord = currentDayOrders;
+      _setRecord(telegramId, record);
+    }
+    if (previousRecord && previousRecord > 0) {
+      return [{ type: 'personal_record', value: currentDayOrders, previous: previousRecord }];
+    }
   }
-
-  return notifications;
+  return [];
 }
 
 module.exports = {
@@ -200,7 +187,5 @@ module.exports = {
   calculateLeaderboard,
   formatLeaderboard,
   checkNotifications,
-  getTodayKey,
-  flushNow,
-  WORKPLACE_SHORT
+  flushNow
 };

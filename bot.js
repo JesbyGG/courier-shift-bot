@@ -46,69 +46,29 @@ const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, roundMinute
 const { registerSheetCommand } = require('./sheetCommand');
 const { WORKPLACES, DEVICES, LIMITS } = require('./config');
 
-const statesPath = path.join(__dirname, 'states.json');
-let _stateCache = null;
-let _stateWriteScheduled = false;
-
-function loadStates() {
-  try {
-    if (_stateCache) return _stateCache;
-    if (!fs.existsSync(statesPath)) {
-      _stateCache = {};
-      return _stateCache;
-    }
-    _stateCache = JSON.parse(fs.readFileSync(statesPath, 'utf8'));
-    return _stateCache;
-  } catch (error) {
-    console.error('states load error', error);
-    _stateCache = {};
-    return _stateCache;
-  }
-}
-
-function _atomicWrite(filePath, data) {
-  const tmp = filePath + '.tmp';
-  fs.writeFileSync(tmp, data, 'utf8');
-  fs.renameSync(tmp, filePath);
-}
-
-function _scheduleStateWrite() {
-  if (_stateWriteScheduled) return;
-  _stateWriteScheduled = true;
-  setImmediate(() => {
-    _stateWriteScheduled = false;
-    try {
-      _atomicWrite(statesPath, JSON.stringify(_stateCache, null, 2));
-    } catch (error) {
-      console.error('states write error', error);
-    }
-  });
-}
+const db = require('./db');
 
 function getState(telegramId) {
-  const states = loadStates();
-  return states[String(telegramId)] || null;
+  const row = db.prepare('SELECT data FROM states WHERE telegramId = ?').get(String(telegramId));
+  if (!row) return null;
+  try {
+    return JSON.parse(row.data);
+  } catch {
+    return null;
+  }
 }
 
 function setState(telegramId, state) {
-  _stateCache = loadStates();
-  _stateCache[String(telegramId)] = state;
-  _scheduleStateWrite();
+  const stmt = db.prepare('INSERT OR REPLACE INTO states (telegramId, data) VALUES (?, ?)');
+  stmt.run(String(telegramId), JSON.stringify(state));
 }
 
 function clearState(telegramId) {
-  _stateCache = loadStates();
-  delete _stateCache[String(telegramId)];
-  _scheduleStateWrite();
+  db.prepare('DELETE FROM states WHERE telegramId = ?').run(String(telegramId));
 }
 
 function flushStateNow() {
-  _stateWriteScheduled = false;
-  try {
-    _atomicWrite(statesPath, JSON.stringify(_stateCache || {}, null, 2));
-  } catch (error) {
-    console.error('states flush error', error);
-  }
+  // SQLite WAL is persistent.
 }
 
 const versionPath = path.join(__dirname, 'version.json');

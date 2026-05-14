@@ -1,80 +1,40 @@
 const fs = require('fs');
 const path = require('path');
 const { WORKPLACE_KEY_MAP } = require('./config');
-
-const storagePath = path.join(__dirname, 'users.json');
-
-let cache = null;
-let writeScheduled = false;
-
-function loadStorage() {
-  if (cache) return cache;
-  try {
-    if (!fs.existsSync(storagePath)) {
-      cache = {};
-      return cache;
-    }
-    cache = JSON.parse(fs.readFileSync(storagePath, 'utf8'));
-    return cache;
-  } catch (error) {
-    console.error('storage load error', error);
-    // Защита от потери данных: если JSON битый — переименовываем файл,
-    // не затираем пустотой. Так пользователь/админ может восстановить вручную.
-    try {
-      const ts = new Date().toISOString().replace(/[:.]/g, '-');
-      const broken = `${storagePath}.broken-${ts}`;
-      fs.renameSync(storagePath, broken);
-      console.error(`corrupted storage saved to ${broken}`);
-    } catch (renameError) {
-      console.error('failed to preserve corrupted storage', renameError.message);
-    }
-    cache = {};
-    return cache;
-  }
-}
-
-function atomicWrite(filePath, data) {
-  const tmp = filePath + '.tmp';
-  fs.writeFileSync(tmp, data, 'utf8');
-  fs.renameSync(tmp, filePath);
-}
-
-function scheduleWrite() {
-  if (writeScheduled) return;
-  writeScheduled = true;
-  setImmediate(() => {
-    writeScheduled = false;
-    try {
-      atomicWrite(storagePath, JSON.stringify(cache, null, 2));
-    } catch (error) {
-      console.error('storage write error', error);
-    }
-  });
-}
+const db = require('./db');
 
 function flushNow() {
-  writeScheduled = false;
+  // SQLite with WAL mode is already persistent, no manual flush needed.
+}
+
+function _getRecord(key) {
+  const row = db.prepare('SELECT data FROM users WHERE telegramId = ?').get(String(key));
+  if (!row) return null;
   try {
-    atomicWrite(storagePath, JSON.stringify(cache || {}, null, 2));
-  } catch (error) {
-    console.error('storage flush error', error);
+    return JSON.parse(row.data);
+  } catch (e) {
+    return null;
   }
+}
+
+function _setRecord(key, data) {
+  const stmt = db.prepare('INSERT OR REPLACE INTO users (telegramId, data) VALUES (?, ?)');
+  stmt.run(String(key), JSON.stringify(data));
 }
 
 function getUserField(telegramId, field) {
-  const storage = loadStorage();
-  return storage[String(telegramId)]?.[field] || null;
+  const record = _getRecord(telegramId) || {};
+  return record[field] || null;
 }
 
 function setUserField(telegramId, field, value) {
-  const key = String(telegramId);
-  cache = loadStorage();
-  cache[key] = { ...cache[key], [field]: value };
-  scheduleWrite();
+  const record = _getRecord(telegramId) || {};
+  record[field] = value;
+  _setRecord(telegramId, record);
 }
 
 function getFullProfile(telegramId) {
-  const profile = loadStorage()[String(telegramId)] || {};
+  const profile = _getRecord(telegramId) || {};
   return {
     fio: profile.fio || null,
     carNumber: profile.carNumber || null,
@@ -84,30 +44,24 @@ function getFullProfile(telegramId) {
 }
 
 function deleteUser(telegramId) {
-  cache = loadStorage();
-  delete cache[String(telegramId)];
-  scheduleWrite();
+  db.prepare('DELETE FROM users WHERE telegramId = ?').run(String(telegramId));
 }
 
 function clearPendingCashToSubmit(telegramId) {
-  const key = String(telegramId);
-  cache = loadStorage();
-
-  if (cache[key]) {
-    delete cache[key].pendingCashToSubmit;
+  const record = _getRecord(telegramId);
+  if (record && record.pendingCashToSubmit) {
+    delete record.pendingCashToSubmit;
+    _setRecord(telegramId, record);
   }
-
-  scheduleWrite();
 }
 
 function getAllUserIds() {
-  const storage = loadStorage();
-  return Object.keys(storage).filter((key) => /^\d+$/.test(key));
+  const rows = db.prepare('SELECT telegramId FROM users').all();
+  return rows.map(r => r.telegramId).filter(id => /^\d+$/.test(id));
 }
 
 const WORKPLACE_SHEETS_KEY = '__workplaceSheets__';
 const WORKPLACE_SHEETS_MONTHLY_KEY = '__workplaceSheetsMonthly__';
-// WORKPLACE_KEY_MAP — теперь в config.js (см. импорт выше)
 
 function getWorkplaceKey(workplace) {
   return WORKPLACE_KEY_MAP[workplace] || null;
@@ -142,16 +96,15 @@ function isValidMonthKey(monthKey) {
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(String(monthKey || '').trim());
 }
 
-function getWorkplaceMonthlyRoot(storage) {
-  return storage[WORKPLACE_SHEETS_MONTHLY_KEY] || {};
+function getWorkplaceMonthlyRoot() {
+  return _getRecord(WORKPLACE_SHEETS_MONTHLY_KEY) || {};
 }
 
 function getWorkplaceSheetId(workplace) {
   const key = getWorkplaceKey(workplace);
   if (!key) return null;
 
-  const storage = loadStorage();
-  const map = storage[WORKPLACE_SHEETS_KEY] || {};
+  const map = _getRecord(WORKPLACE_SHEETS_KEY) || {};
   return map[key] || null;
 }
 
@@ -159,24 +112,21 @@ function setWorkplaceSheetId(workplace, sheetId) {
   const key = getWorkplaceKey(workplace);
   if (!key) return;
 
-  cache = loadStorage();
-  if (!cache[WORKPLACE_SHEETS_KEY]) cache[WORKPLACE_SHEETS_KEY] = {};
+  const map = _getRecord(WORKPLACE_SHEETS_KEY) || {};
   if (sheetId) {
-    cache[WORKPLACE_SHEETS_KEY][key] = sheetId;
+    map[key] = sheetId;
   } else {
-    delete cache[WORKPLACE_SHEETS_KEY][key];
+    delete map[key];
   }
-  scheduleWrite();
+  _setRecord(WORKPLACE_SHEETS_KEY, map);
 }
 
 function getWorkplaceMonthMap(workplace) {
   const key = getWorkplaceKey(workplace);
   if (!key) return {};
 
-  const storage = loadStorage();
-  const monthlyRoot = getWorkplaceMonthlyRoot(storage);
-  const map = monthlyRoot[key] || {};
-  return { ...map };
+  const monthlyRoot = getWorkplaceMonthlyRoot();
+  return { ...(monthlyRoot[key] || {}) };
 }
 
 function getWorkplaceSheetIdByMonth(workplace, monthKey) {
@@ -185,8 +135,7 @@ function getWorkplaceSheetIdByMonth(workplace, monthKey) {
   const key = getWorkplaceKey(workplace);
   if (!key) return null;
 
-  const storage = loadStorage();
-  const monthlyRoot = getWorkplaceMonthlyRoot(storage);
+  const monthlyRoot = getWorkplaceMonthlyRoot();
   return monthlyRoot[key]?.[monthKey] || null;
 }
 
@@ -200,191 +149,124 @@ function setWorkplaceSheetIdByMonth(workplace, monthKey, sheetId) {
     throw new Error(`Unknown workplace: ${workplace}`);
   }
 
-  cache = loadStorage();
-  if (!cache[WORKPLACE_SHEETS_MONTHLY_KEY]) cache[WORKPLACE_SHEETS_MONTHLY_KEY] = {};
-  if (!cache[WORKPLACE_SHEETS_MONTHLY_KEY][key]) cache[WORKPLACE_SHEETS_MONTHLY_KEY][key] = {};
+  const monthlyRoot = getWorkplaceMonthlyRoot();
+  if (!monthlyRoot[key]) monthlyRoot[key] = {};
 
   if (sheetId) {
-    cache[WORKPLACE_SHEETS_MONTHLY_KEY][key][monthKey] = sheetId;
+    monthlyRoot[key][monthKey] = sheetId;
   } else {
-    delete cache[WORKPLACE_SHEETS_MONTHLY_KEY][key][monthKey];
+    delete monthlyRoot[key][monthKey];
   }
-
-  scheduleWrite();
+  
+  _setRecord(WORKPLACE_SHEETS_MONTHLY_KEY, monthlyRoot);
 }
 
 function resolveSheetInfo(workplace, options = {}) {
-  const monthKey = options.monthKey && isValidMonthKey(options.monthKey)
-    ? options.monthKey
-    : getCurrentMonthKey(options.timezone);
-
-  const monthlyMap = getWorkplaceMonthMap(workplace);
-  const hasMonthlyMap = Object.keys(monthlyMap).length > 0;
-
-  if (hasMonthlyMap) {
-    const monthSheetId = monthlyMap[monthKey] || null;
-    if (monthSheetId) {
-      return {
-        sheetId: monthSheetId,
-        source: 'monthly',
-        monthKey,
-        hasMonthlyMap,
-        missingForMonth: false,
-        noSheetForMonth: false
-      };
-    }
-
-    return {
-      sheetId: null,
-      source: 'monthly',
-      monthKey,
-      hasMonthlyMap,
-      missingForMonth: true,
-      noSheetForMonth: true
-    };
+  const { monthKey = null } = options;
+  const currentMonthKey = getCurrentMonthKey();
+  
+  const targetMonthKey = monthKey || currentMonthKey;
+  let sheetId = getWorkplaceSheetIdByMonth(workplace, targetMonthKey);
+  
+  if (sheetId) {
+    return { sheetId, isMonthly: true, monthKey: targetMonthKey };
   }
 
-  const legacySheetId = getWorkplaceSheetId(workplace);
-  if (legacySheetId) {
-    return {
-      sheetId: legacySheetId,
-      source: 'legacy',
-      monthKey,
-      hasMonthlyMap,
-      missingForMonth: false,
-      noSheetForMonth: false
-    };
+  const fallbackSheetId = getWorkplaceSheetId(workplace);
+  if (fallbackSheetId) {
+    return { sheetId: fallbackSheetId, isMonthly: false, monthKey: null };
   }
 
-  if (options.allowFallback !== false) {
-    const fallbackSheetId = getFallbackSheetId();
-    if (fallbackSheetId) {
-      return {
-        sheetId: fallbackSheetId,
-        source: 'fallback',
-        monthKey,
-        hasMonthlyMap,
-        missingForMonth: false,
-        noSheetForMonth: false
-      };
-    }
-  }
-
-  return {
-    sheetId: null,
-    source: 'none',
-    monthKey,
-    hasMonthlyMap,
-    missingForMonth: false,
-    noSheetForMonth: false
-  };
+  return { sheetId: null, isMonthly: false, monthKey: null };
 }
 
-function getFallbackSheetId() {
-  return process.env.GOOGLE_SHEET_ID || null;
-}
+function cleanupOldMonths(retentionMonths = 3) {
+  if (!Number.isFinite(retentionMonths) || retentionMonths < 1) return;
 
-function getSheetAccessUsers() {
-  // Защита от NPE: гарантируем, что cache загружен, даже если функцию
-  // вызвали раньше любой другой storage-операции.
-  loadStorage();
-  return (cache._sheetAccessUsers || []);
-}
+  const monthlyRoot = getWorkplaceMonthlyRoot();
+  const currentMonthKey = getCurrentMonthKey();
+  const [cyStr, cmStr] = currentMonthKey.split('-');
+  const cy = Number(cyStr);
+  const cm = Number(cmStr);
 
-function addSheetAccessUser(telegramId) {
-  cache = loadStorage();
-  const id = Number(telegramId);
-  if (!Number.isFinite(id) || id <= 0) return false;
-  const users = cache._sheetAccessUsers || [];
-  if (users.includes(id)) return false;
-  cache._sheetAccessUsers = [...users, id];
-  scheduleWrite();
-  return true;
-}
+  let hasChanges = false;
 
-function removeSheetAccessUser(telegramId) {
-  cache = loadStorage();
-  const id = Number(telegramId);
-  const users = cache._sheetAccessUsers || [];
-  const index = users.indexOf(id);
-  if (index === -1) return false;
-  cache._sheetAccessUsers = users.filter(u => u !== id);
-  scheduleWrite();
-  return true;
-}
-
-function isSheetAccessUser(telegramId) {
-  const users = getSheetAccessUsers();
-  return users.includes(Number(telegramId));
-}
-
-function isNewUser(telegramId) {
-  const storage = loadStorage();
-  const key = String(telegramId);
-  const profile = storage[key];
-  if (!profile) return true;
-  return !profile.fio && !profile.workplace;
-}
-
-function markUserSeen(telegramId) {
-  const storage = loadStorage();
-  const key = String(telegramId);
-  if (!storage[key]) {
-    storage[key] = {};
-  }
-  if (!storage[key]._seen) {
-    storage[key]._seen = true;
-    scheduleWrite();
-    return true;
-  }
-  return false;
-}
-
-function cleanupOldMonths() {
-  const currentMonth = getCurrentMonthKey();
-  const nextMonth = getNextMonthKey();
-  const keepMonths = new Set([currentMonth, nextMonth]);
-  const storage = loadStorage();
-  const monthlyRoot = storage[WORKPLACE_SHEETS_MONTHLY_KEY];
-  if (!monthlyRoot) return 0;
-
-  let removed = 0;
-  for (const key of Object.keys(monthlyRoot)) {
-    for (const monthKey of Object.keys(monthlyRoot[key])) {
-      if (!keepMonths.has(monthKey)) {
-        delete monthlyRoot[key][monthKey];
-        removed++;
+  for (const wpKey of Object.keys(monthlyRoot)) {
+    const monthKeys = Object.keys(monthlyRoot[wpKey]);
+    for (const mk of monthKeys) {
+      if (!isValidMonthKey(mk)) continue;
+      const [yStr, mStr] = mk.split('-');
+      const y = Number(yStr);
+      const m = Number(mStr);
+      const diff = (cy - y) * 12 + (cm - m);
+      if (diff > retentionMonths) {
+        delete monthlyRoot[wpKey][mk];
+        hasChanges = true;
       }
     }
   }
 
-  if (removed > 0) {
-    scheduleWrite();
+  if (hasChanges) {
+    _setRecord(WORKPLACE_SHEETS_MONTHLY_KEY, monthlyRoot);
   }
-  return removed;
+}
+
+const SHEET_ACCESS_USERS = '__sheetAccessUsers__';
+
+function getSheetAccessUsers() {
+  const list = _getRecord(SHEET_ACCESS_USERS) || [];
+  return Array.isArray(list) ? list : [];
+}
+
+function addSheetAccessUser(telegramId) {
+  const users = getSheetAccessUsers();
+  if (!users.includes(String(telegramId))) {
+    users.push(String(telegramId));
+    _setRecord(SHEET_ACCESS_USERS, users);
+  }
+}
+
+function removeSheetAccessUser(telegramId) {
+  let users = getSheetAccessUsers();
+  users = users.filter((id) => id !== String(telegramId));
+  _setRecord(SHEET_ACCESS_USERS, users);
+}
+
+function isSheetAccessUser(telegramId) {
+  const list = getSheetAccessUsers();
+  return list.includes(String(telegramId));
+}
+
+function markUserSeen(telegramId) {
+  const record = _getRecord(telegramId) || {};
+  record.lastSeen = new Date().toISOString();
+  _setRecord(telegramId, record);
 }
 
 module.exports = {
+  flushNow,
   getUserField,
   setUserField,
   getFullProfile,
   deleteUser,
   clearPendingCashToSubmit,
   getAllUserIds,
-  getCurrentMonthKey,
-  getNextMonthKey,
-  isValidMonthKey,
+  
+  resolveSheetInfo,
+  getWorkplaceSheetId,
   setWorkplaceSheetId,
   getWorkplaceMonthMap,
   getWorkplaceSheetIdByMonth,
   setWorkplaceSheetIdByMonth,
-  getFallbackSheetId,
-  resolveSheetInfo,
+  getCurrentMonthKey,
+  getNextMonthKey,
+  isValidMonthKey,
+  
   getSheetAccessUsers,
   addSheetAccessUser,
   removeSheetAccessUser,
   isSheetAccessUser,
+  
   markUserSeen,
-  cleanupOldMonths,
-  flushNow
+  cleanupOldMonths
 };
