@@ -56,7 +56,12 @@ const SHEET_CONFIGS = {
     mileageFioColumn: 'C',
     mileageAutoColumn: 'B',
     courierFioRange: 'C3:D',
-    mileageFioRange: 'B3:C'
+    mileageFioRange: 'B3:C',
+    efficiencySheet: 'Эффективность',
+    efficiencyFioColumn: 'B',
+    efficiencyFioRange: 'B3:B',
+    efficiencyFirstDayCol: 7,
+    efficiencyDayBlockSize: 3
   },
   'ИМ Центр': {
     courierSheet: 'Курьеры',
@@ -66,7 +71,12 @@ const SHEET_CONFIGS = {
     mileageFioColumn: 'D',
     mileageAutoColumn: 'C',
     courierFioRange: 'C3:D',
-    mileageFioRange: 'B3:D'
+    mileageFioRange: 'B3:D',
+    efficiencySheet: 'Эффективность',
+    efficiencyFioColumn: 'B',
+    efficiencyFioRange: 'B3:B',
+    efficiencyFirstDayCol: 7,
+    efficiencyDayBlockSize: 3
   }
 };
 
@@ -562,6 +572,42 @@ async function updateMileage(row, day, stage, mileage, workplace) {
   );
 }
 
+async function updateEfficiencyOrders(fio, workplace, day, ordersCount) {
+  const config = getSheetConfig(workplace);
+  if (!config.efficiencySheet) {
+    return { ok: false, error: 'efficiency_sheet_not_configured' };
+  }
+
+  const sheetContext = resolveSheetContext(workplace);
+  const spreadsheetId = sheetContext.sheetId;
+  if (!spreadsheetId) {
+    return { ok: false, error: 'no_sheet_id' };
+  }
+
+  const rows = await getValues(`${quoteSheetName(config.efficiencySheet)}!${config.efficiencyFioRange}`, spreadsheetId);
+  const target = normalizeFio(fio);
+
+  let foundRow = null;
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const rowFio = getRowValueByColumn(row, config.efficiencyFioRange, config.efficiencyFioColumn) || row[row.length - 1] || '';
+    if (normalizeFio(rowFio) === target) {
+      foundRow = index + 3;
+      break;
+    }
+  }
+
+  if (!foundRow) {
+    return { ok: false, error: 'fio_not_found' };
+  }
+
+  const ordersColumn = config.efficiencyFirstDayCol + (day - 1) * config.efficiencyDayBlockSize + 1;
+  const cell = `${getColumnLetter(ordersColumn)}${foundRow}`;
+
+  await updateCell(config.efficiencySheet, cell, ordersCount, spreadsheetId);
+  return { ok: true, cell, row: foundRow, day, ordersCount };
+}
+
 module.exports = {
   initGoogleSheets,
   findCourierInAllSheets,
@@ -573,5 +619,6 @@ module.exports = {
   updateMileage,
   readCell,
   verifySheetAccess,
-  getSheetConfig
+  getSheetConfig,
+  updateEfficiencyOrders
 };

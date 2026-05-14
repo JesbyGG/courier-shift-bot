@@ -19,7 +19,8 @@ const {
   updateCourierTime,
   updateMileage,
   readCell,
-  getSheetConfig
+  getSheetConfig,
+  updateEfficiencyOrders
 } = require('./googleSheets');
 const {
   getUserField,
@@ -1071,6 +1072,33 @@ function formatMoneyRuNumber(value) {
   return withCurrency.replace(/\s*₽$/, '');
 }
 
+function extractOrdersCountFromOcrText(text) {
+  const normalized = String(text || '')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!normalized) {
+    return { totalOrders: null, reason: 'empty_text' };
+  }
+
+  const patterns = [
+    /заказо[кв]\s*(?:за\s*(?:сегодня|сутки))?\s*:?\s*(\d{1,5})/i,
+    /заказо[кв]\s*:?\s*(\d{1,5})/i,
+    /(\d{1,5})\s*заказо[кв]/i,
+    /за\s*сегодня\s*:?\s*(\d{1,5})/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (match && Number.isFinite(Number(match[1])) && Number(match[1]) > 0) {
+      return { totalOrders: Number(match[1]), reason: 'ok' };
+    }
+  }
+
+  return { totalOrders: null, reason: 'no_orders_line' };
+}
+
 function extractCashFromOcrText(text) {
   const normalized = String(text || '')
     .replace(/\u00A0/g, ' ')
@@ -1133,6 +1161,7 @@ async function recognizeReconciliationCashLocal(imageBuffer) {
     variants.push(await base.clone().grayscale().linear(1.35, -12).sharpen().png().toBuffer());
 
     let best = { orders: null, amount: null, valid: false, reason: 'not_recognized' };
+    let bestOrders = null;
 
     for (let index = 0; index < variants.length; index += 1) {
       const result = await tesseractRecognize(variants[index], 'eng', {
@@ -1145,15 +1174,20 @@ async function recognizeReconciliationCashLocal(imageBuffer) {
       const confidence = Number(result.data?.confidence || 0);
 
       if (parsed.valid) {
-        return { ...parsed, source: 'local_ocr' };
+        return { ...parsed, totalOrders: extractOrdersCountFromOcrText(text).totalOrders, source: 'local_ocr' };
       }
 
       if (best.orders === null && best.amount === null && (parsed.orders !== null || parsed.amount !== null)) {
         best = parsed;
       }
+
+      const ordersResult = extractOrdersCountFromOcrText(text);
+      if (ordersResult.totalOrders !== null) {
+        bestOrders = ordersResult.totalOrders;
+      }
     }
 
-    return { ...best, source: 'local_ocr' };
+    return { ...best, totalOrders: bestOrders, source: 'local_ocr' };
   } catch (error) {
     console.error('reconciliation local OCR error', error.message || error);
     return { orders: null, amount: null, valid: false, reason: 'local_ocr_error', source: 'local_ocr' };
@@ -1166,29 +1200,36 @@ async function recognizeReconciliationCash(ctx, fileId) {
     const response = await axios.get(link.href, { responseType: 'arraybuffer', timeout: 30000 });
     const imageBuffer = Buffer.from(response.data);
 
+    let totalOrdersFromRapid = null;
+
     if (isRapidOcrEnabled()) {
       const rapidText = await recognizeTextWithRapidOcr(imageBuffer);
       if (rapidText) {
         const parsed = extractCashFromOcrText(rapidText);
+        const ordersParsed = extractOrdersCountFromOcrText(rapidText);
+        totalOrdersFromRapid = ordersParsed.totalOrders;
+
         if (parsed.valid) {
-          return { ...parsed, source: 'rapidocr' };
+          return { ...parsed, totalOrders: ordersParsed.totalOrders, source: 'rapidocr' };
         }
 
         if (parsed.reason === 'cash_line_empty') {
-          return { ...parsed, source: 'rapidocr' };
+          return { ...parsed, totalOrders: ordersParsed.totalOrders, source: 'rapidocr' };
         }
       }
     }
 
     const localResult = await recognizeReconciliationCashLocal(imageBuffer);
+    const totalOrders = totalOrdersFromRapid !== null ? totalOrdersFromRapid : (localResult.totalOrders || null);
+
     if (localResult.valid || localResult.reason === 'cash_line_empty' || localResult.reason === 'insufficient') {
-      return localResult;
+      return { ...localResult, totalOrders };
     }
 
-    return { ...localResult, reason: localResult.reason || 'local_only' };
+    return { ...localResult, totalOrders, reason: localResult.reason || 'local_only' };
   } catch (error) {
     console.error('reconciliation cash recognition error', error.message || error);
-    return { orders: null, amount: null, valid: false, reason: 'error', source: 'none' };
+    return { orders: null, amount: null, totalOrders: null, valid: false, reason: 'error', source: 'none' };
   }
 }
 
@@ -2851,7 +2892,8 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       ...state,
       reconciliationPhotosSent: photosSent,
       reconciliationPhoto1FileId: fileId,
-      reconciliationPhoto1Caption: caption
+      reconciliationPhoto1Caption: caption,
+      reconciliationPhoto1TotalOrders: cashInfo.totalOrders || null
     });
 
     await ctx.replyWithHTML(
@@ -2894,6 +2936,22 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
 
       clearState(telegramId);
       await ctx.replyWithHTML(`✅ <b>Все фото (2 шт.) отправлены.</b>`, mainMenu());
+
+      const totalOrders = state.reconciliationPhoto1TotalOrders;
+      if (totalOrders && totalOrders > 0 && state.fio && state.workplace) {
+        const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
+        const { day } = getCurrentDateInfo(timezone);
+        try {
+          const result = await updateEfficiencyOrders(state.fio, state.workplace, day, totalOrders);
+          if (result.ok) {
+            console.log(`эффективность: записано ${totalOrders} заказов для ${state.fio}, день ${day}, ячейка ${result.cell}`);
+          } else {
+            console.error('эффективность: не удалось записать', result.error);
+          }
+        } catch (effError) {
+          console.error('эффективность: ошибка записи', effError.message || effError);
+        }
+      }
     } catch (error) {
       console.error('telegram send reconciliation album error', error);
       await ctx.replyWithHTML('⚠️ Не удалось отправить фото.\nПопробуйте ещё раз или обратитесь к администратору.', routeSheetKeyboard());
@@ -2961,6 +3019,22 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
 
     clearState(telegramId);
     await ctx.replyWithHTML(`✅ <b>Все фото (${total} шт.) отправлены.</b>`, mainMenu());
+
+    const totalOrders = cashInfo.totalOrders;
+    if (totalOrders && totalOrders > 0 && state.fio && state.workplace) {
+      const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
+      const { day } = getCurrentDateInfo(timezone);
+      try {
+        const result = await updateEfficiencyOrders(state.fio, state.workplace, day, totalOrders);
+        if (result.ok) {
+          console.log(`эффективность: записано ${totalOrders} заказов для ${state.fio}, день ${day}, ячейка ${result.cell}`);
+        } else {
+          console.error('эффективность: не удалось записать', result.error);
+        }
+      } catch (effError) {
+        console.error('эффективность: ошибка записи', effError.message || effError);
+      }
+    }
   } catch (error) {
     console.error('telegram send reconciliation photo error', error);
     await ctx.replyWithHTML('⚠️ Не удалось отправить фото.\nПопробуйте ещё раз или обратитесь к администратору.', routeSheetKeyboard());
