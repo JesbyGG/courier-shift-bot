@@ -386,25 +386,21 @@ function isOcrUncertain(groups, ocrMileage) {
   if (!groups || groups.length === 0) return true;
   const valid = groups.filter((g) => g.count >= 1 && g.avgConfidence >= 0.40);
   if (valid.length === 0) return true;
-  if (valid.length === 1) {
-    return valid[0].avgConfidence < 0.65;
-  }
+  
+  // Always use AI if there are multiple competing valid candidates
+  if (valid.length > 1) return true;
+  
   const best = valid[0];
-  if (best.count >= 2 && best.avgConfidence >= 0.70) {
-    const second = valid.length > 1 ? valid[1] : null;
-    if (!second || second.count < best.count || second.avgConfidence < best.avgConfidence * 0.7) {
-      return false;
-    }
+  
+  // If we only have 1 hit, or confidence is not extremely high, use AI
+  if (best.count < 3 || best.avgConfidence < 0.90) return true;
+  
+  // If it's a 6-digit number starting with 1 or 0, it might be a glare or trip meter. Use AI.
+  const strMileage = String(best.mileage);
+  if (strMileage.length >= 6 && (strMileage.startsWith('1') || strMileage.startsWith('0'))) {
+    return true;
   }
-  for (let i = 0; i < valid.length; i++) {
-    for (let j = i + 1; j < valid.length; j++) {
-      if (isPrefixOf(String(valid[i].mileage), String(valid[j].mileage)) ||
-          isPrefixOf(String(valid[j].mileage), String(valid[i].mileage))) {
-        return true;
-      }
-    }
-  }
-  if (best.count < 2 && best.avgConfidence < 0.70) return true;
+  
   return false;
 }
 
@@ -454,6 +450,10 @@ async function recognizeMileage(ctx, fileId, options = {}) {
           });
           console.log('OCR timing: total', Date.now() - startTime, 'ms');
           return aiResult.mileage;
+        } else {
+          console.log('OCR rejected (AI could not confirm any candidate)', { ocrMileage });
+          console.log('OCR timing: total', Date.now() - startTime, 'ms');
+          return null;
         }
       } else {
         console.log('OCR confident, skipping AI filter', {
