@@ -12,7 +12,6 @@ const { SocksProxyAgent } = require('socks-proxy-agent');
 const {
   initGoogleSheets,
   findCourierInAllSheets,
-  getTodayStatus,
   punchTime,
   prepareMileage,
   replaceTime,
@@ -42,6 +41,7 @@ const {
   getWorkplaceSheetIdByMonth
 } = require('./storage');
 const { recognizeMileage, isRapidOcrEnabled, recognizeTextWithRapidOcr } = require('./mileageOcr');
+const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, flushNow: flushLeaderboardNow } = require('./leaderboard');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, roundMinutesToHalfHour } = require('./utils');
 const { registerSheetCommand } = require('./sheetCommand');
 const { WORKPLACES, DEVICES, LIMITS } = require('./config');
@@ -112,6 +112,7 @@ function flushStateNow() {
 }
 
 const versionPath = path.join(__dirname, 'version.json');
+const changelogPath = path.join(__dirname, 'changelog.json');
 const _sourceDir = __dirname;
 
 function _getCurrentVersion() {
@@ -161,9 +162,18 @@ function _getChangedFiles(previousFiles, currentFiles) {
     .sort();
 }
 
-function _bumpPatchVersion(version) {
+function _bumpVersion(version, bumpType) {
   const parts = version.split('.').map(Number);
-  parts[2] = (parts[2] || 0) + 1;
+  if (bumpType === 'major') {
+    parts[0] += 1;
+    parts[1] = 0;
+    parts[2] = 0;
+  } else if (bumpType === 'minor') {
+    parts[1] += 1;
+    parts[2] = 0;
+  } else {
+    parts[2] = (parts[2] || 0) + 1;
+  }
   return parts.join('.');
 }
 
@@ -192,7 +202,8 @@ function checkVersion() {
     return { version: stored.version, changed: false, prevVersion: null, changedFiles: [] };
   }
   const changedFiles = _getChangedFiles(stored.files, currentFiles);
-  const newVersion = _bumpPatchVersion(stored.version);
+  const bumpType = getChangelogBump();
+  const newVersion = _bumpVersion(stored.version, bumpType);
   const data = {
     version: newVersion,
     lastHash: currentHash,
@@ -200,7 +211,8 @@ function checkVersion() {
     updatedAt: new Date().toISOString()
   };
   fs.writeFileSync(versionPath, JSON.stringify(data, null, 2), 'utf8');
-  console.log(`version bumped: ${stored.version} → ${newVersion}`);
+  consumeChangelogEntry();
+  console.log(`version bumped: ${stored.version} → ${newVersion} (${bumpType})`);
   return { version: newVersion, changed: true, prevVersion: stored.version, changedFiles };
 }
 
@@ -216,7 +228,7 @@ const BUTTONS = {
   reconciliation: '📊 Сверки',
   cashCheck: '💵 Деньги к сдаче',
   issues: '⚠️ Проблема с заказом',
-  status: 'ℹ️ Статус',
+  leaderBoard: '🏆 Лидерборд',
   settings: '⚙️ Настройки',
   help: '❓ Помощь',
   changeCar: '🚙 Изменить номер машины',
@@ -246,7 +258,7 @@ function mainMenu() {
     [BUTTONS.routeSheet, BUTTONS.reconciliation],
     [BUTTONS.cashCheck],
     [BUTTONS.issues],
-    [BUTTONS.status, BUTTONS.settings]
+    [BUTTONS.leaderBoard, BUTTONS.settings]
   ]).resize();
 }
 
@@ -535,7 +547,7 @@ async function appendLog(filePath, entry) {
 }
 
 const BACKUP_DIR = path.join(__dirname, 'backups');
-const BACKUP_FILES = ['users.json', 'states.json', 'fun-reactions.json'];
+const BACKUP_FILES = ['users.json', 'states.json', 'fun-reactions.json', 'leaderboard-cache.json'];
 const BACKUP_INTERVAL_MS = LIMITS.BACKUP_INTERVAL_MS;
 const BACKUP_RETENTION_MS = LIMITS.BACKUP_RETENTION_MS;
 
@@ -1301,7 +1313,7 @@ function isMenuText(text) {
     BUTTONS.routeSheet,
     BUTTONS.reconciliation,
     BUTTONS.cashCheck,
-    BUTTONS.status,
+    BUTTONS.leaderBoard,
     BUTTONS.settings,
     BUTTONS.help,
     BUTTONS.changeCar,
@@ -1315,8 +1327,7 @@ function isMenuText(text) {
     'Маршрутный лист',
     'Сверки',
     'Деньги к сдаче',
-    'Мой статус',
-    'Статус',
+    'Лидерборд',
     'Настройки',
     'Помощь',
     'Изменить номер машины',
@@ -1667,70 +1678,6 @@ async function reconciliationFlow(ctx) {
   await ctx.replyWithHTML(lines.join('\n'), routeSheetKeyboard());
 }
 
-async function showStatus(ctx) {
-  const profile = await ensureProfile(ctx);
-
-  if (!profile) {
-    return;
-  }
-
-  try {
-    const status = await getTodayStatus(profile.fio, profile.workplace);
-
-    if (!status || status.notFound) {
-      await ctx.replyWithHTML(formatNoSheetMessage(status, profile.workplace));
-      return;
-    }
-
-    // v() возвращает значение либо «—». Для пустых значений выводим тире БЕЗ
-    // <code>, чтобы оно не читалось как минус. Для непустых — с <code>.
-    const v = (val) => (val === undefined || val === null || String(val).trim() === '' ? null : String(val));
-    const codeOrDash = (val) => {
-      const text = v(val);
-      return text === null ? '—' : `<code>${esc(text)}</code>`;
-    };
-    const plainOrDash = (val) => {
-      const text = v(val);
-      return text === null ? '—' : esc(text);
-    };
-
-    let message = (
-      `📊 <b>Статус за сегодня</b>\n` +
-      `━━━━━━━━━━━━━━━\n` +
-      `👤 <b>${esc(status.fio)}</b>\n` +
-      `🚙 ${codeOrDash(profile.carNumber || status.auto)}\n` +
-      `🏬 ${plainOrDash(profile.workplace)}\n` +
-      `💻 ${plainOrDash(profile.device)}\n` +
-      `📅 ${plainOrDash(status.date)}\n\n` +
-      `⏱ <b>Смена</b>\n` +
-      `🟢 Старт: ${codeOrDash(status.from)}\n` +
-      `🔴 Конец: ${codeOrDash(status.to)}\n\n` +
-      `🚗 <b>Пробег</b>\n` +
-      `🟢 Старт: ${codeOrDash(status.mileageStart)}\n` +
-      `🔴 Конец: ${codeOrDash(status.mileageEnd)}`
-    );
-
-    const pendingCash = getUserField(ctx.from.id, 'pendingCashToSubmit');
-    const pendingAmount = Number(pendingCash?.amount || 0);
-
-    let keyboard = mainMenu();
-
-    if (Number.isFinite(pendingAmount) && pendingAmount >= 1) {
-      const numberOnly = formatMoneyRuNumber(pendingAmount) || String(pendingCash?.formatted || '').replace(/\s*₽$/, '');
-      message += (
-        `\n\n💵 <b>Деньги к сдаче</b>: <code>${esc(numberOnly)}</code> ₽\n` +
-        `🏬 <b>${esc(pendingCash?.workplace || profile.workplace || 'не указано')}</b>`
-      );
-      keyboard = cashSubmitConfirmKeyboard();
-    }
-
-    await ctx.replyWithHTML(message, keyboard);
-  } catch (error) {
-    console.error('ошибка Google Sheets', error);
-    await ctx.replyWithHTML('⚠️ Ошибка Google Таблицы.\nПопробуйте ещё раз или обратитесь к администратору.');
-  }
-}
-
 async function showPendingCashStatus(ctx) {
   const profile = await ensureProfile(ctx);
   if (!profile) return;
@@ -1769,7 +1716,7 @@ async function sendHelp(ctx) {
     '   • «📷 Загрузить фото повторно» или «✏️ Ввести вручную» если не распозналось.\n' +
     `4️⃣ <b>Маршрутный лист</b> — «${BUTTONS.routeSheet}», можно отправить несколько фото подряд.\n` +
     `5️⃣ <b>Сверки</b> — «${BUTTONS.reconciliation}»: Терминал — 2 фото, Пин-Панель — 1 фото.\n` +
-    `6️⃣ <b>Статус</b> — «${BUTTONS.status}» показывает записи за сегодня и сумму к сдаче.\n` +
+    `6️⃣ <b>Лидерборд</b> — «${BUTTONS.leaderBoard}» рейтинг курьеров по заказам.\n` +
     `7️⃣ <b>Настройки</b> — «${BUTTONS.settings}» смена номера, магазина, устройства, сотрудника.\n` +
     `8️⃣ <b>Мой ID</b> — «${BUTTONS.myId}» ваш Telegram ID для доступа к Таблицам.\n\n` +
     '📋 Команды и информация о боте:',
@@ -1785,7 +1732,6 @@ async function sendCommandsList(ctx) {
   let msg = '📋 <b>Команды</b>\n' +
     '━━━━━━━━━━━━━━━\n\n' +
     '<b>Основные:</b>\n' +
-    '/status — статус за сегодня\n' +
     '/help — помощь\n' +
     '/cancel — отмена текущего действия\n\n' +
     '<b>Настройки:</b>\n' +
@@ -1808,7 +1754,7 @@ async function sendCommandsList(ctx) {
     `🚗 <b>Пробег</b> — фото одометра → авто-распознавание\n` +
     `📄 <b>Маршрутный лист</b> — отправить фото\n` +
     `📊 <b>Сверки</b> — фото терминала/пин-панели\n` +
-    `ℹ️ <b>Статус</b> — записи за сегодня + сумма к сдаче\n` +
+    `🏆 <b>Лидерборд</b> — рейтинг курьеров по заказам\n` +
     `⚙️ <b>Настройки</b> — машина, магазин, устройство, сотрудник`;
 
   await ctx.replyWithHTML(msg);
@@ -1841,10 +1787,58 @@ function parseUpdateNotesFromEnv() {
     .slice(0, 4);
 }
 
-function buildUpdateHighlights(changedFiles = []) {
-  const customNotes = parseUpdateNotesFromEnv();
-  if (customNotes.length > 0) {
-    return customNotes;
+function loadChangelog() {
+  try {
+    if (!fs.existsSync(changelogPath)) return null;
+    return JSON.parse(fs.readFileSync(changelogPath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function getChangelogNotesForVersion(version) {
+  const changelog = loadChangelog();
+  if (!changelog || !Array.isArray(changelog.updates)) return null;
+
+  const entry = changelog.updates.find((item) => item.version === version);
+  if (!entry || !Array.isArray(entry.notes) || entry.notes.length === 0) return null;
+
+  return entry.notes.slice(0, 4);
+}
+
+function getChangelogBump() {
+  const changelog = loadChangelog();
+  if (!changelog || !Array.isArray(changelog.updates) || changelog.updates.length === 0) return 'patch';
+
+  const latest = changelog.updates[changelog.updates.length - 1];
+  const bump = String(latest.bump || '').toLowerCase().trim();
+  if (bump === 'major' || bump === 'minor') return bump;
+  return 'patch';
+}
+
+function consumeChangelogEntry() {
+  const changelog = loadChangelog();
+  if (!changelog || !Array.isArray(changelog.updates) || changelog.updates.length === 0) return;
+  changelog.updates.pop();
+  try {
+    const tmp = changelogPath + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(changelog, null, 2), 'utf8');
+    fs.renameSync(tmp, changelogPath);
+  } catch (err) {
+    console.error('changelog consume error', err.message);
+  }
+}
+
+function buildUpdateHighlights(changedFiles = [], version) {
+  const currentVersion = version || getVersion();
+  const changelogNotes = getChangelogNotesForVersion(currentVersion);
+  if (changelogNotes && changelogNotes.length > 0) {
+    return changelogNotes;
+  }
+
+  const envNotes = parseUpdateNotesFromEnv();
+  if (envNotes.length > 0) {
+    return envNotes;
   }
 
   const files = new Set((changedFiles || []).map((file) => String(file || '').toLowerCase()));
@@ -1871,7 +1865,7 @@ function buildUpdateHighlights(changedFiles = []) {
     highlights.push('✨ Небольшие улучшения стабильности и удобства.');
   }
 
-  return highlights.slice(0, 3);
+  return highlights.slice(0, 4);
 }
 
 function formatUpdateMessage(version, changedFiles = []) {
@@ -2227,6 +2221,84 @@ async function backToMainMenu(ctx) {
   await ctx.replyWithHTML(message, mainMenu());
 }
 
+async function showLeaderboardMenu(ctx) {
+  await ctx.replyWithHTML(
+    '🏆 <b>Лидерборд</b>\n\nВыберите тип рейтинга:',
+    Markup.inlineKeyboard([
+      [Markup.button.callback('🏅 Топ за день', 'lb_day')],
+      [Markup.button.callback('🌟 Топ за всё время', 'lb_total')],
+      [Markup.button.callback('🏠 В меню', 'back_to_menu')]
+    ])
+  );
+}
+
+async function showLeaderboardPeriods(ctx) {
+  await ctx.replyWithHTML(
+    '🏅 <b>Топ за день</b> — максимальное кол-во заказов за один день\n\nВыберите период:',
+    Markup.inlineKeyboard([
+      [
+        Markup.button.callback('7 дней', 'lb_day_7'),
+        Markup.button.callback('30 дней', 'lb_day_30')
+      ],
+      [
+        Markup.button.callback('365 дней', 'lb_day_365'),
+        Markup.button.callback('Всё время', 'lb_day_0')
+      ],
+      [Markup.button.callback('⬅️ Назад', 'lb_back')]
+    ])
+  );
+}
+
+async function showLeaderboardResult(ctx, type, periodDays) {
+  const telegramId = ctx.from.id;
+  const entries = calculateLeaderboard(type, periodDays);
+
+  if (entries.length === 0) {
+    await ctx.replyWithHTML(
+      '🏆 <b>Лидерборд пуст</b>\n\nПока нет данных. Отправьте сверку, чтобы появиться в рейтинге!',
+      Markup.inlineKeyboard([
+        [Markup.button.callback('⬅️ Назад', type === 'max' ? 'lb_day' : 'lb_back')]
+      ])
+    );
+    return;
+  }
+
+  const periodLabels = {
+    7: '7 дней',
+    30: '30 дней',
+    365: '365 дней',
+    0: 'Всё время'
+  };
+
+  const typeLabel = type === 'max' ? '🏅 Топ за день' : '🌟 Топ за всё время';
+  const periodLabel = type === 'max' ? ` (${periodLabels[periodDays] || periodDays + ' дней'})` : '';
+
+  const text = formatLeaderboard(entries, telegramId);
+  const header = `${typeLabel}${periodLabel}\n━━━━━━━━━━━━━━━\n`;
+
+  await ctx.replyWithHTML(
+    header + text,
+    Markup.inlineKeyboard([
+      [Markup.button.callback('⬅️ Назад', type === 'max' ? 'lb_day' : 'lb_back')]
+    ])
+  );
+}
+
+async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, ordersCount) {
+  try {
+    const notifications = checkLeaderboardNotifications(telegramId, fio, workplace, ordersCount);
+    for (const notif of notifications) {
+      if (notif.type === 'personal_record') {
+        await ctx.replyWithHTML(
+          `🎉 <b>Новый личный рекорд!</b>\n\nВы доставили <b>${notif.value}</b> заказов за день!\nПредыдущий рекорд: ${notif.previous} заказов.`
+        );
+      }
+    }
+  } catch (err) {
+    console.error('leaderboard notification error', err.message || err);
+  }
+}
+
 async function showIssuesMenu(ctx) {
   const deliveryUrl = process.env.ISSUE_DELIVERY_URL;
   const flowwowUrl = process.env.ISSUE_FLOWWOW_URL;
@@ -2300,8 +2372,6 @@ bot.start(async (ctx) => {
 });
 
 bot.help(sendHelp);
-
-bot.command('status', showStatus);
 
 bot.command('car', async (ctx) => {
   const fio = getUserField(ctx.from.id, 'fio');
@@ -2607,6 +2677,31 @@ bot.action('issues_back', async (ctx) => {
     await ctx.deleteMessage();
   } catch (e) { /* сообщение уже удалено */ }
   await backToMainMenu(ctx);
+});
+
+bot.action('lb_day', async (ctx) => {
+  await ctx.answerCbQuery();
+  try { await ctx.deleteMessage(); } catch {}
+  await showLeaderboardPeriods(ctx);
+});
+
+bot.action('lb_total', async (ctx) => {
+  await ctx.answerCbQuery();
+  try { await ctx.deleteMessage(); } catch {}
+  await showLeaderboardResult(ctx, 'total', null);
+});
+
+bot.action(/^lb_day_(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const days = Number(ctx.match[1]);
+  try { await ctx.deleteMessage(); } catch {}
+  await showLeaderboardResult(ctx, 'max', days);
+});
+
+bot.action('lb_back', async (ctx) => {
+  await ctx.answerCbQuery();
+  try { await ctx.deleteMessage(); } catch {}
+  await showLeaderboardMenu(ctx);
 });
 
 bot.action('route_sheet_done', async (ctx) => {
@@ -2951,6 +3046,12 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
         } catch (effError) {
           console.error('эффективность: ошибка записи', effError.message || effError);
         }
+        try {
+          recordLeaderboardOrders(String(telegramId), state.fio, state.workplace, totalOrders);
+          await handleLeaderboardNotifications(ctx, String(telegramId), state.fio, state.workplace, totalOrders);
+        } catch (lbErr) {
+          console.error('leaderboard record error', lbErr.message || lbErr);
+        }
       }
     } catch (error) {
       console.error('telegram send reconciliation album error', error);
@@ -3033,6 +3134,12 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
         }
       } catch (effError) {
         console.error('эффективность: ошибка записи', effError.message || effError);
+      }
+      try {
+        recordLeaderboardOrders(String(telegramId), state.fio, state.workplace, totalOrders);
+        await handleLeaderboardNotifications(ctx, String(telegramId), state.fio, state.workplace, totalOrders);
+      } catch (lbErr) {
+        console.error('leaderboard record error', lbErr.message || lbErr);
       }
     }
   } catch (error) {
@@ -3306,7 +3413,7 @@ const TEXT_ROUTES = [
   { button: BUTTONS.reconciliation, legacy: ['Сверки'], handler: (ctx) => reconciliationFlow(ctx) },
   { button: BUTTONS.cashCheck, legacy: ['Деньги к сдаче'], handler: (ctx) => showPendingCashStatus(ctx) },
   { button: BUTTONS.issues, handler: (ctx) => showIssuesMenu(ctx) },
-  { button: BUTTONS.status, legacy: ['Мой статус'], handler: (ctx) => showStatus(ctx) },
+  { button: BUTTONS.leaderBoard, legacy: ['Лидерборд'], handler: (ctx) => showLeaderboardMenu(ctx) },
 
   // 4) Меню настроек
   { button: BUTTONS.settings, legacy: ['Настройки'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ <b>Настройки</b>', settingsMenu(id)) },
@@ -3385,7 +3492,6 @@ async function setupBotCommands() {
     await bot.telegram.setMyCommands([
       { command: 'start', description: 'Начать работу' },
       { command: 'help', description: 'Помощь' },
-      { command: 'status', description: 'Мой статус' },
       { command: 'car', description: 'Изменить номер машины' },
       { command: 'workplace', description: 'Изменить магазин' },
       { command: 'device', description: 'Изменить устройство' },
@@ -3474,6 +3580,7 @@ function flushAllSync() {
   try { flushStateNow(); } catch (e) { console.error('flushStateNow failed', e.message); }
   try { flushStorageNow(); } catch (e) { console.error('flushStorageNow failed', e.message); }
   try { flushFunReactionsNow(); } catch (e) { console.error('flushFunReactionsNow failed', e.message); }
+  try { flushLeaderboardNow(); } catch (e) { console.error('flushLeaderboardNow failed', e.message); }
 }
 
 function shutdown(signal) {
