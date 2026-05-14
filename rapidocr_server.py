@@ -75,14 +75,6 @@ def extract_mileage(text, min_digits=4, max_digits=6):
 
 def make_variants(image):
     height, width = image.shape[:2]
-    
-    # Normalize base image resolution to max ~1280px (standard Telegram compression)
-    # This ensures consistency whether photo is sent compressed or as a high-res document.
-    scale = min(1280 / max(width, 1), 1280 / max(height, 1))
-    if scale < 1.0:
-        image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-        height, width = image.shape[:2]
-
     variants = [image]
     crops = [
         (0.50, 0.40, 0.50, 0.55),
@@ -97,10 +89,7 @@ def make_variants(image):
         if crop_width <= 0 or crop_height <= 0:
             continue
         crop = image[top:top + crop_height, left:left + crop_width]
-        
         gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        # Restore the 2.8x scaling. The denoising parameters (12, 7, 21) 
-        # were specifically tuned for this exact scale to merge LCD digit gaps!
         gray = cv2.resize(gray, None, fx=2.8, fy=2.8, interpolation=cv2.INTER_CUBIC)
         gray = cv2.equalizeHist(gray)
         denoise = cv2.fastNlMeansDenoising(gray, None, 12, 7, 21)
