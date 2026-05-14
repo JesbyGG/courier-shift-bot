@@ -100,7 +100,9 @@ function calculateLeaderboard(type, periodDays, workplace) {
   const cache = loadCache();
   const records = cache.records || {};
   const cutoff = periodDays ? getDaysAgo(periodDays) : null;
-  const filterWorkplace = workplace && workplace !== 'all' ? workplace : null;
+  
+  const wpMapping = { east: 'ИМ Восток', center: 'ИМ Центр' };
+  const filterWorkplace = workplace && workplace !== 'all' ? (wpMapping[workplace] || workplace) : null;
 
   const entries = [];
   for (const [telegramId, record] of Object.entries(records)) {

@@ -2272,7 +2272,7 @@ async function showLeaderboardPeriods(ctx, workplace) {
         Markup.button.callback('365 дней', `lb_p_365_${workplace}`),
         Markup.button.callback('Всё время', `lb_p_0_${workplace}`)
       ],
-      [Markup.button.callback('⬅️ Назад', `lb_day_${workplace}`)]
+      [Markup.button.callback('⬅️ Назад', `lb_wp_${workplace}`)]
     ])
   );
 }
@@ -2289,7 +2289,7 @@ async function showLeaderboardResult(ctx, type, periodDays, workplace) {
     await ctx.replyWithHTML(
       `🏆 <b>Лидерборд пуст</b>\n\nПока нет данных. Отправьте сверку, чтобы появиться в рейтинге!`,
       Markup.inlineKeyboard([
-        [Markup.button.callback('⬅️ Назад', type === 'max' ? `lb_day_${workplace}` : 'lb_back')]
+        [Markup.button.callback('⬅️ Назад', type === 'max' ? `lb_day_${workplace}` : `lb_wp_${workplace}`)]
       ])
     );
     return;
@@ -2311,7 +2311,7 @@ async function showLeaderboardResult(ctx, type, periodDays, workplace) {
   await ctx.replyWithHTML(
     header + text,
     Markup.inlineKeyboard([
-      [Markup.button.callback('⬅️ Назад', type === 'max' ? `lb_day_${workplace}` : 'lb_back')]
+      [Markup.button.callback('⬅️ Назад', type === 'max' ? `lb_day_${workplace}` : `lb_wp_${workplace}`)]
     ])
   );
 }
