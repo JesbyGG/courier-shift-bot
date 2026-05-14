@@ -211,7 +211,6 @@ function checkVersion() {
     updatedAt: new Date().toISOString()
   };
   fs.writeFileSync(versionPath, JSON.stringify(data, null, 2), 'utf8');
-  consumeChangelogEntry();
   console.log(`version bumped: ${stored.version} → ${newVersion} (${bumpType})`);
   return { version: newVersion, changed: true, prevVersion: stored.version, changedFiles };
 }
@@ -1952,6 +1951,7 @@ bot.action(/^upd_send:(.+)$/, async (ctx) => {
   delete _pendingUpdates[version];
   await ctx.editMessageText('✅ Уведомление отправляется...', { parse_mode: 'HTML' });
   await notifyUsersAboutUpdate(version, pending.changedFiles);
+  consumeChangelogEntry();
   try {
     await ctx.editMessageText(`✅ Уведомление v${esc(version)} отправлено всем пользователям.`, { parse_mode: 'HTML' });
   } catch {}
