@@ -2204,41 +2204,59 @@ async function backToMainMenu(ctx) {
 
 async function showLeaderboardMenu(ctx) {
   await ctx.replyWithHTML(
-    '🏆 <b>Лидерборд</b>\n\nВыберите тип рейтинга:',
+    '🏆 <b>Лидерборд</b>\n\nВыберите магазин:',
     Markup.inlineKeyboard([
-      [Markup.button.callback('🏅 Топ за день', 'lb_day')],
-      [Markup.button.callback('🌟 Топ за всё время', 'lb_total')],
+      [Markup.button.callback('🏬 ИМ Восток', 'lb_wp_east')],
+      [Markup.button.callback('🏬 ИМ Центр', 'lb_wp_center')],
+      [Markup.button.callback('🌐 Общий', 'lb_wp_all')],
       [Markup.button.callback('🏠 В меню', 'back_to_menu')]
     ])
   );
 }
 
-async function showLeaderboardPeriods(ctx) {
+async function showLeaderboardTypeMenu(ctx, workplace) {
+  const wpLabels = { east: 'ИМ Восток', center: 'ИМ Центр', all: 'Общий' };
+  const wpLabel = wpLabels[workplace] || workplace;
   await ctx.replyWithHTML(
-    '🏅 <b>Топ за день</b> — максимальное кол-во заказов за один день\n\nВыберите период:',
+    `🏆 <b>Лидерборд — ${esc(wpLabel)}</b>\n\nВыберите тип рейтинга:`,
     Markup.inlineKeyboard([
-      [
-        Markup.button.callback('7 дней', 'lb_day_7'),
-        Markup.button.callback('30 дней', 'lb_day_30')
-      ],
-      [
-        Markup.button.callback('365 дней', 'lb_day_365'),
-        Markup.button.callback('Всё время', 'lb_day_0')
-      ],
+      [Markup.button.callback('🏅 Топ за день', `lb_day_${workplace}`)],
+      [Markup.button.callback('🌟 Топ за всё время', `lb_total_${workplace}`)],
       [Markup.button.callback('⬅️ Назад', 'lb_back')]
     ])
   );
 }
 
-async function showLeaderboardResult(ctx, type, periodDays) {
+async function showLeaderboardPeriods(ctx, workplace) {
+  await ctx.replyWithHTML(
+    '🏅 <b>Топ за день</b> — максимальное кол-во заказов за один день\n\nВыберите период:',
+    Markup.inlineKeyboard([
+      [
+        Markup.button.callback('7 дней', `lb_p_7_${workplace}`),
+        Markup.button.callback('30 дней', `lb_p_30_${workplace}`)
+      ],
+      [
+        Markup.button.callback('365 дней', `lb_p_365_${workplace}`),
+        Markup.button.callback('Всё время', `lb_p_0_${workplace}`)
+      ],
+      [Markup.button.callback('⬅️ Назад', `lb_day_${workplace}`)]
+    ])
+  );
+}
+
+async function showLeaderboardResult(ctx, type, periodDays, workplace) {
   const telegramId = ctx.from.id;
-  const entries = calculateLeaderboard(type, periodDays);
+  const showWorkplace = workplace === 'all';
+  const entries = calculateLeaderboard(type, periodDays, workplace);
+
+  const wpLabels = { east: 'ИМ Восток', center: 'ИМ Центр', all: 'Общий' };
+  const wpLabel = wpLabels[workplace] || workplace;
 
   if (entries.length === 0) {
     await ctx.replyWithHTML(
-      '🏆 <b>Лидерборд пуст</b>\n\nПока нет данных. Отправьте сверку, чтобы появиться в рейтинге!',
+      `🏆 <b>Лидерборд пуст</b>\n\nПока нет данных. Отправьте сверку, чтобы появиться в рейтинге!`,
       Markup.inlineKeyboard([
-        [Markup.button.callback('⬅️ Назад', type === 'max' ? 'lb_day' : 'lb_back')]
+        [Markup.button.callback('⬅️ Назад', type === 'max' ? `lb_day_${workplace}` : 'lb_back')]
       ])
     );
     return;
@@ -2254,13 +2272,13 @@ async function showLeaderboardResult(ctx, type, periodDays) {
   const typeLabel = type === 'max' ? '🏅 Топ за день' : '🌟 Топ за всё время';
   const periodLabel = type === 'max' ? ` (${periodLabels[periodDays] || periodDays + ' дней'})` : '';
 
-  const text = formatLeaderboard(entries, telegramId);
-  const header = `${typeLabel}${periodLabel}\n━━━━━━━━━━━━━━━\n`;
+  const text = formatLeaderboard(entries, telegramId, showWorkplace);
+  const header = `${typeLabel} — ${esc(wpLabel)}${periodLabel}\n━━━━━━━━━━━━━━━\n`;
 
   await ctx.replyWithHTML(
     header + text,
     Markup.inlineKeyboard([
-      [Markup.button.callback('⬅️ Назад', type === 'max' ? 'lb_day' : 'lb_back')]
+      [Markup.button.callback('⬅️ Назад', type === 'max' ? `lb_day_${workplace}` : 'lb_back')]
     ])
   );
 }
@@ -2660,23 +2678,33 @@ bot.action('issues_back', async (ctx) => {
   await backToMainMenu(ctx);
 });
 
-bot.action('lb_day', async (ctx) => {
+bot.action(/^lb_wp_(east|center|all)$/, async (ctx) => {
   await ctx.answerCbQuery();
+  const workplace = ctx.match[1];
   try { await ctx.deleteMessage(); } catch {}
-  await showLeaderboardPeriods(ctx);
+  await showLeaderboardTypeMenu(ctx, workplace);
 });
 
-bot.action('lb_total', async (ctx) => {
+bot.action(/^lb_day_(east|center|all)$/, async (ctx) => {
   await ctx.answerCbQuery();
+  const workplace = ctx.match[1];
   try { await ctx.deleteMessage(); } catch {}
-  await showLeaderboardResult(ctx, 'total', null);
+  await showLeaderboardPeriods(ctx, workplace);
 });
 
-bot.action(/^lb_day_(\d+)$/, async (ctx) => {
+bot.action(/^lb_total_(east|center|all)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const workplace = ctx.match[1];
+  try { await ctx.deleteMessage(); } catch {}
+  await showLeaderboardResult(ctx, 'total', null, workplace);
+});
+
+bot.action(/^lb_p_(\d+)_(east|center|all)$/, async (ctx) => {
   await ctx.answerCbQuery();
   const days = Number(ctx.match[1]);
+  const workplace = ctx.match[2];
   try { await ctx.deleteMessage(); } catch {}
-  await showLeaderboardResult(ctx, 'max', days);
+  await showLeaderboardResult(ctx, 'max', days, workplace);
 });
 
 bot.action('lb_back', async (ctx) => {

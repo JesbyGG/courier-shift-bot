@@ -91,14 +91,21 @@ function getDaysAgo(days) {
   return `${y}-${m}-${d}`;
 }
 
-function calculateLeaderboard(type, periodDays) {
+const WORKPLACE_SHORT = {
+  'ИМ Восток': 'Восток',
+  'ИМ Центр': 'Центр'
+};
+
+function calculateLeaderboard(type, periodDays, workplace) {
   const cache = loadCache();
   const records = cache.records || {};
   const cutoff = periodDays ? getDaysAgo(periodDays) : null;
+  const filterWorkplace = workplace && workplace !== 'all' ? workplace : null;
 
   const entries = [];
   for (const [telegramId, record] of Object.entries(records)) {
     if (!record.dailyOrders) continue;
+    if (filterWorkplace && record.workplace !== filterWorkplace) continue;
 
     let value = 0;
     for (const [dayKey, orders] of Object.entries(record.dailyOrders)) {
@@ -133,7 +140,7 @@ function calculateLeaderboard(type, periodDays) {
   return entries;
 }
 
-function formatLeaderboard(entries, myTelegramId) {
+function formatLeaderboard(entries, myTelegramId, showWorkplace) {
   const top = entries.slice(0, 10);
   const me = entries.find((e) => e.telegramId === String(myTelegramId));
 
@@ -144,13 +151,15 @@ function formatLeaderboard(entries, myTelegramId) {
     const medal = entry.rank <= 3 ? medals[entry.rank - 1] : `${entry.rank}.`;
     const isMe = entry.telegramId === String(myTelegramId);
     const name = isMe ? `<b>${esc(entry.fio)}</b>` : esc(entry.fio);
-    lines.push(`${medal} ${name} — <b>${entry.value}</b>`);
+    const suffix = showWorkplace && entry.workplace ? ` (${esc(WORKPLACE_SHORT[entry.workplace] || entry.workplace)})` : '';
+    lines.push(`${medal} ${name}${suffix} — <b>${entry.value}</b>`);
   }
 
   if (me && me.rank > 10) {
+    const meSuffix = showWorkplace && me.workplace ? ` (${esc(WORKPLACE_SHORT[me.workplace] || me.workplace)})` : '';
     lines.push('');
     lines.push(`⋮`);
-    lines.push(`${me.rank}. <b>${esc(me.fio)}</b> — <b>${me.value}</b>`);
+    lines.push(`${me.rank}. <b>${esc(me.fio)}</b>${meSuffix} — <b>${me.value}</b>`);
   }
 
   return lines.join('\n');
@@ -158,32 +167,6 @@ function formatLeaderboard(entries, myTelegramId) {
 
 function esc(text) {
   return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function getPreviousPosition(telegramId, type, periodDays) {
-  const cache = loadCache();
-  const record = cache.records?.[telegramId];
-  if (!record || !record.dailyOrders) return null;
-
-  const dayKey = getTodayKey();
-  const currentOrders = record.dailyOrders[dayKey];
-  if (currentOrders === undefined) return null;
-
-  const tempOrders = { ...record.dailyOrders };
-  delete tempOrders[dayKey];
-
-  const tempRecord = { ...record, dailyOrders: tempOrders };
-
-  const tempCache = { records: { ...cache.records, [telegramId]: tempRecord } };
-  const backup = _cache;
-  _cache = tempCache;
-
-  const entries = calculateLeaderboard(type, periodDays);
-  const myEntry = entries.find((e) => e.telegramId === telegramId);
-
-  _cache = backup;
-
-  return myEntry ? myEntry.rank : null;
 }
 
 function checkNotifications(telegramId, fio, workplace, ordersCount) {
@@ -216,5 +199,6 @@ module.exports = {
   formatLeaderboard,
   checkNotifications,
   getTodayKey,
-  flushNow
+  flushNow,
+  WORKPLACE_SHORT
 };
