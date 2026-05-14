@@ -222,25 +222,21 @@ function getVersion() {
 }
 
 const BUTTONS = {
-  punchTime: '⏱ Время смены',
+  punchTime: '⏱ Время',
   mileage: '🚗 Пробег',
-  routeSheet: '📄 Маршрутный лист',
+  routeSheet: '📄 Маршрутник',
   reconciliation: '📊 Сверки',
-  cashCheck: '💵 Деньги к сдаче',
-  issues: '⚠️ Проблема с заказом',
+  cashCheck: '💵 Наличные',
+  issues: '⚠️ Проблема',
   leaderBoard: '🏆 Лидерборд',
   settings: '⚙️ Настройки',
   help: '❓ Помощь',
-  changeCar: '🚙 Изменить номер машины',
-  changeWorkplace: '🏬 Изменить магазин',
-  changeDevice: '💻 Изменить устройство',
-  switchUser: '👤 Сменить сотрудника',
+  changeCar: '🚙 Номер машины',
+  changeWorkplace: '🏬 Магазин',
+  changeDevice: '💻 Устройство',
+  switchUser: '👤 Сотрудник',
   sheetInfo: '📋 Таблицы',
   myId: '🆔 Мой ID',
-  about: 'ℹ️ О боте',
-  management: '🔧 Управление',
-  // Раньше обе кнопки начинались с ⬅️ — взгляд цеплялся.
-  // Теперь две стрелки разные: «домой» и «назад на уровень».
   backToSettings: '↩️ К настройкам',
   back: '🏠 В меню'
 };
@@ -248,41 +244,27 @@ const BUTTONS = {
 // WORKPLACES, DEVICES — теперь из config.js (см. импорт выше)
 
 function mainMenu() {
-  // Сетка 2×N: основные действия парами, чтобы клавиатура выглядела
-  // компактно и было меньше визуального шума. Время и пробег рядом
-  // (используются вместе в начале/конце смены), маршрут+сверки рядом,
-  // статус+настройки рядом. Деньги к сдаче — отдельной строкой, потому
-  // что она появляется ситуативно и должна быть заметнее.
   return Markup.keyboard([
     [BUTTONS.punchTime, BUTTONS.mileage],
     [BUTTONS.routeSheet, BUTTONS.reconciliation],
-    [BUTTONS.cashCheck],
-    [BUTTONS.issues],
+    [BUTTONS.cashCheck, BUTTONS.issues],
     [BUTTONS.leaderBoard, BUTTONS.settings]
   ]).resize();
 }
 
 function settingsMenu(telegramId) {
   const buttons = [
-    [BUTTONS.changeCar],
-    [BUTTONS.changeWorkplace],
-    [BUTTONS.changeDevice],
-    [BUTTONS.switchUser],
-    [BUTTONS.management],
-    [BUTTONS.back]
+    [BUTTONS.changeCar, BUTTONS.changeWorkplace],
+    [BUTTONS.changeDevice, BUTTONS.switchUser]
   ];
-  return Markup.keyboard(buttons).resize();
-}
-
-function managementMenu(telegramId) {
   const showSheets = isAdminUser(telegramId) || isSheetAccessUser(telegramId);
-  const buttons = [];
   if (showSheets) {
-    buttons.push([BUTTONS.sheetInfo]);
+    buttons.push([BUTTONS.sheetInfo, BUTTONS.myId]);
+  } else {
+    buttons.push([BUTTONS.myId]);
   }
-  buttons.push([BUTTONS.myId]);
-  buttons.push([BUTTONS.help, BUTTONS.about]);
-  buttons.push([BUTTONS.backToSettings]);
+  buttons.push([BUTTONS.help]);
+  buttons.push([BUTTONS.back]);
   return Markup.keyboard(buttons).resize();
 }
 
@@ -1313,6 +1295,7 @@ function isMenuText(text) {
     BUTTONS.routeSheet,
     BUTTONS.reconciliation,
     BUTTONS.cashCheck,
+    BUTTONS.issues,
     BUTTONS.leaderBoard,
     BUTTONS.settings,
     BUTTONS.help,
@@ -1320,21 +1303,34 @@ function isMenuText(text) {
     BUTTONS.changeWorkplace,
     BUTTONS.changeDevice,
     BUTTONS.switchUser,
-    'Внести время смены',
+    BUTTONS.sheetInfo,
+    BUTTONS.myId,
     'Время смены',
+    'Внести время смены',
+    'Время',
     'Внести пробег',
     'Пробег',
     'Маршрутный лист',
+    'Маршрутник',
     'Сверки',
     'Деньги к сдаче',
+    'Наличные',
+    'Проблема с заказом',
+    'Проблема',
     'Лидерборд',
     'Настройки',
     'Помощь',
     'Изменить номер машины',
+    'Номер машины',
     'Изменить интернет-магазин',
+    'Магазин',
     'Изменить устройство',
+    'Устройство',
     'Сменить сотрудника',
-    'О боте'
+    'Сотрудник',
+    'Таблицы',
+    'Мой ID',
+    'Управление'
   ].includes(text) || WORKPLACES.includes(text) || DEVICES.includes(text);
 }
 
@@ -1711,18 +1707,18 @@ async function sendHelp(ctx) {
     '❓ <b>Помощь</b>\n' +
     '━━━━━━━━━━━━━━━\n\n' +
     '1️⃣ <b>Первый вход</b> — введите ФИО, номер машины, магазин и устройство.\n' +
-    `2️⃣ <b>Время смены</b> — «${BUTTONS.punchTime}» записывает старт/конец за сегодня.\n` +
-    `3️⃣ <b>Пробег</b> — «${BUTTONS.mileage}», отправьте фото одометра или введите вручную.\n` +
+    `2️⃣ <b>Время</b> — «${BUTTONS.punchTime}» записывает старт/конец за сегодня.\n` +
+    `3️⃣ <b>Пробег</b> — «${BUTTONS.mileage}» отправьте фото одометра или введите вручную.\n` +
     '   • «📷 Загрузить фото повторно» или «✏️ Ввести вручную» если не распозналось.\n' +
-    `4️⃣ <b>Маршрутный лист</b> — «${BUTTONS.routeSheet}», можно отправить несколько фото подряд.\n` +
+    `4️⃣ <b>Маршрутник</b> — «${BUTTONS.routeSheet}» отправить фото.\n` +
     `5️⃣ <b>Сверки</b> — «${BUTTONS.reconciliation}»: Терминал — 2 фото, Пин-Панель — 1 фото.\n` +
-    `6️⃣ <b>Лидерборд</b> — «${BUTTONS.leaderBoard}» рейтинг курьеров по заказам.\n` +
-    `7️⃣ <b>Настройки</b> — «${BUTTONS.settings}» смена номера, магазина, устройства, сотрудника.\n` +
-    `8️⃣ <b>Мой ID</b> — «${BUTTONS.myId}» ваш Telegram ID для доступа к Таблицам.\n\n` +
-    '📋 Команды и информация о боте:',
+    `6️⃣ <b>Наличные</b> — «${BUTTONS.cashCheck}» показать сумму к сдаче.\n` +
+    `7️⃣ <b>Проблема</b> — «${BUTTONS.issues}» ссылки для решения проблем с заказами.\n` +
+    `8️⃣ <b>Лидерборд</b> — «${BUTTONS.leaderBoard}» рейтинг курьеров по заказам.\n` +
+    `9️⃣ <b>Настройки</b> — «${BUTTONS.settings}» номер машины, магазин, устройство, сотрудник.\n\n` +
+    '📋 Команды:',
     Markup.inlineKeyboard([
-      [Markup.button.callback('📋 Команды', 'help_commands')],
-      [Markup.button.callback('ℹ️ О боте', 'help_about')],
+      [Markup.button.callback('📋 Команды', 'help_commands')]
     ])
   );
 }
@@ -1750,30 +1746,16 @@ async function sendCommandsList(ctx) {
   }
 
   msg += '<b>Кнопки меню:</b>\n' +
-    `⏱ <b>Время смены</b> — записать старт/конец\n` +
-    `🚗 <b>Пробег</b> — фото одометра → авто-распознавание\n` +
-    `📄 <b>Маршрутный лист</b> — отправить фото\n` +
+    `⏱ <b>Время</b> — записать старт/конец\n` +
+    `🚗 <b>Пробег</b> — фото одометра → распознавание\n` +
+    `📄 <b>Маршрутник</b> — отправить фото\n` +
     `📊 <b>Сверки</b> — фото терминала/пин-панели\n` +
-    `🏆 <b>Лидерборд</b> — рейтинг курьеров по заказам\n` +
+    `💵 <b>Наличные</b> — сумма к сдаче\n` +
+    `⚠️ <b>Проблема</b> — решить проблему с заказом\n` +
+    `🏆 <b>Лидерборд</b> — рейтинг курьеров\n` +
     `⚙️ <b>Настройки</b> — машина, магазин, устройство, сотрудник`;
 
   await ctx.replyWithHTML(msg);
-}
-
-async function sendAbout(ctx) {
-  const version = getVersion();
-  const updateDate = getTodayText();
-  const telegramId = ctx.from.id;
-
-  await ctx.replyWithHTML(
-    `ℹ️ <b>О боте</b>\n` +
-    `━━━━━━━━━━━━━━━\n\n` +
-    `📦 <b>Версия:</b> <code>v${esc(version)}</code>\n` +
-    `📅 <b>Дата проверки:</b> ${esc(updateDate)}\n\n` +
-    `🆕 Версия обновляется автоматически при каждом изменении кода.\n\n` +
-    `👨‍💻 Бот для учёта смены, времени и пробега.`,
-    settingsMenu(telegramId)
-  );
 }
 
 function parseUpdateNotesFromEnv() {
@@ -2728,11 +2710,6 @@ bot.action('help_commands', async (ctx) => {
   await sendCommandsList(ctx);
 });
 
-bot.action('help_about', async (ctx) => {
-  await ctx.answerCbQuery();
-  await sendAbout(ctx);
-});
-
 bot.action('confirm_switch_user', async (ctx) => {
   await ctx.answerCbQuery();
   deleteUser(ctx.from.id);
@@ -3406,18 +3383,16 @@ const TEXT_ROUTES = [
   { state: 'awaitingManualMileage', handler: (ctx, state, text) => handleManualMileageInput(ctx, state, text) },
 
   // 3) Кнопки главного меню
-  { button: BUTTONS.punchTime, legacy: ['Внести время смены'], handler: (ctx) => punchTimeFlow(ctx) },
+  { button: BUTTONS.punchTime, legacy: ['Время смены', 'Внести время смены'], handler: (ctx) => punchTimeFlow(ctx) },
   { button: BUTTONS.mileage, legacy: ['Внести пробег'], handler: (ctx) => mileageFlow(ctx) },
   { button: BUTTONS.routeSheet, legacy: ['Маршрутный лист'], handler: (ctx) => routeSheetFlow(ctx) },
   { button: BUTTONS.reconciliation, legacy: ['Сверки'], handler: (ctx) => reconciliationFlow(ctx) },
   { button: BUTTONS.cashCheck, legacy: ['Деньги к сдаче'], handler: (ctx) => showPendingCashStatus(ctx) },
-  { button: BUTTONS.issues, handler: (ctx) => showIssuesMenu(ctx) },
+  { button: BUTTONS.issues, legacy: ['Проблема с заказом'], handler: (ctx) => showIssuesMenu(ctx) },
   { button: BUTTONS.leaderBoard, legacy: ['Лидерборд'], handler: (ctx) => showLeaderboardMenu(ctx) },
 
   // 4) Меню настроек
   { button: BUTTONS.settings, legacy: ['Настройки'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ <b>Настройки</b>', settingsMenu(id)) },
-  { button: BUTTONS.management, legacy: ['Управление'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('🔧 <b>Управление</b>', managementMenu(id)) },
-  { button: BUTTONS.backToSettings, legacy: ['Назад в настройки'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ <b>Настройки</b>', settingsMenu(id)) },
   { button: BUTTONS.help, legacy: ['Помощь'], handler: (ctx) => sendHelp(ctx) },
 
   // 5) Профиль (требуют ФИО)
@@ -3425,7 +3400,7 @@ const TEXT_ROUTES = [
     const fio = await requireFio(ctx);
     if (fio) await askForCarNumber(ctx, fio);
   }},
-  { button: BUTTONS.changeWorkplace, legacy: ['Изменить интернет-магазин'], handler: async (ctx) => {
+  { button: BUTTONS.changeWorkplace, legacy: ['Изменить интернет-магазин', 'Магазин'], handler: async (ctx) => {
     const fio = await requireFio(ctx);
     if (fio) await askForWorkplace(ctx, fio);
   }},
@@ -3435,10 +3410,9 @@ const TEXT_ROUTES = [
   }},
   { button: BUTTONS.switchUser, legacy: ['Сменить сотрудника'], handler: handleSwitchUser },
 
-  // 6) Управление
+  // 6) Настройки (Таблицы, Мой ID)
   { button: BUTTONS.sheetInfo, legacy: ['Таблицы'], handler: handleSheetsInfo },
-  { button: BUTTONS.myId, legacy: ['Мой ID'], handler: handleMyId },
-  { button: BUTTONS.about, legacy: ['О боте'], handler: (ctx) => sendAbout(ctx) }
+  { button: BUTTONS.myId, legacy: ['Мой ID'], handler: handleMyId }
 ];
 
 function matchTextRoute(route, text, state) {
