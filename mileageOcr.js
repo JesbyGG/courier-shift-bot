@@ -1,5 +1,4 @@
 const axios = require('axios');
-const sharp = require('sharp');
 
 function isRapidOcrEnabled() {
   return process.env.RAPIDOCR_ENABLED !== 'false';
@@ -9,19 +8,6 @@ function getMinMileageThreshold() {
   const value = Number(process.env.OCR_MIN_MILEAGE || 1000);
   if (!Number.isFinite(value) || value < 0) return 1000;
   return value;
-}
-
-function isAiVisionEnabled() {
-  return process.env.AI_VISION_ENABLED === 'true' && !!process.env.OPENROUTER_API_KEY;
-}
-
-function getAiVisionModels() {
-  const models = process.env.AI_VISION_MODELS || '';
-  if (models) return models.split(',').map((m) => m.trim()).filter(Boolean);
-  return [
-    'google/gemma-3-27b-it:free',
-    'google/gemma-4-31b-it:free',
-  ];
 }
 
 function normalizeText(value) {
@@ -178,132 +164,7 @@ function smartPickFromGroups(groups, options = {}) {
   return { mileage: null, candidates: pool };
 }
 
-async function resizeForAI(imageBuffer) {
-  try {
-    const resized = await sharp(imageBuffer)
-      .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 80 })
-      .toBuffer();
-    console.log(`AI vision filter: resized image ${imageBuffer.length} → ${resized.length} bytes`);
-    return resized;
-  } catch (error) {
-    console.error('AI vision filter: resize failed, using original', error.message);
-    return imageBuffer;
-  }
-}
-
-async function filterCandidatesWithAI(imageBuffer, candidates, options = {}) {
-  if (!isAiVisionEnabled()) {
-    console.log('AI vision filter: disabled');
-    return null;
-  }
-
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  const models = getAiVisionModels();
-  if (!apiKey || models.length === 0 || !candidates || candidates.length === 0) {
-    return null;
-  }
-
-  const candidateList = candidates
-    .slice(0, 10)
-    .map((c) => String(c.mileage || c))
-    .join(', ');
-
-  const stageLabel = options.stage === 'start' ? 'начало смены' : options.stage === 'end' ? 'конец смены' : 'неизвестный этап';
-  const boundsInfo = [];
-  if (Number.isFinite(options.minMileage)) boundsInfo.push(`минимум ${options.minMileage}`);
-  if (Number.isFinite(options.maxMileage)) boundsInfo.push(`максимум ${options.maxMileage}`);
-  const boundsStr = boundsInfo.length > 0 ? ` Ограничения: ${boundsInfo.join(', ')}.` : '';
-
-  const prompt = `Это фото приборной панели автомобиля. На нём виден одометр (счётчик пробега).
-OCR-система нашла следующие кандидаты пробега: ${candidateList}.
-Контекст: ${stageLabel}.${boundsStr}
-
-Какой из этих кандидатов скорее всего правильный пробег на одометре? Ответь ТОЛЬКО числом, без пояснений. Если ни один не подходит, ответь 0.`;
-
-  const resizedBuffer = await resizeForAI(imageBuffer);
-  const base64Image = resizedBuffer.toString('base64');
-  const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
-
-  for (const model of models) {
-    try {
-      console.log(`AI vision filter: trying model ${model}`);
-      const startTime = Date.now();
-
-      const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-        model,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'image_url', image_url: { url: imageDataUrl } },
-              { type: 'text', text: prompt }
-            ]
-          }
-        ],
-        max_tokens: 20,
-        temperature: 0.1
-      }, {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://github.com/courier-shift-bot',
-          'X-Title': 'Courier Shift Bot - Mileage OCR'
-        },
-        timeout: 30000
-      });
-
-      const elapsed = Date.now() - startTime;
-      const message = response.data?.choices?.[0]?.message;
-      const content = message?.content?.trim() || '';
-      const reasoning = message?.reasoning || '';
-      const fullText = content || (typeof reasoning === 'string' ? reasoning : '');
-      const parsed = parseInt(fullText.replace(/\D/g, ''), 10);
-      console.log(`AI vision filter: model=${model} content="${content?.substring(0, 80)}" reasoning="${typeof reasoning === 'string' ? reasoning.substring(0, 80) : ''}" parsed=${parsed} elapsed=${elapsed}ms`);
-
-      if (!content && !reasoning) {
-        console.log(`AI vision filter: model ${model} returned empty response, skipping`);
-        continue;
-      }
-
-      if (fullText.toLowerCase().includes('does not support image') ||
-          fullText.toLowerCase().includes('cannot read') ||
-          fullText.toLowerCase().includes('image input') ||
-          fullText.toLowerCase().includes('i cannot') ||
-          fullText.toLowerCase().includes('unable to process')) {
-        console.log(`AI vision filter: model ${model} cannot process images, skipping`);
-        continue;
-      }
-
-      if (Number.isFinite(parsed) && parsed > 0) {
-        const match = candidates.find((c) => c.mileage === parsed || c === parsed);
-        if (match) {
-          console.log(`AI vision filter: confirmed candidate ${parsed} from model ${model}`);
-          return { mileage: parsed, model, elapsed };
-        }
-
-        // Раньше тут был aiOnly fallback: если AI вернул число в ±5% от
-        // диапазона кандидатов, мы принимали его как правду. Это позволяло
-        // галлюцинациям модели попадать в таблицу. Теперь требуем СТРОГОЕ
-        // совпадение — AI работает только как фильтр среди известных
-        // OCR-кандидатов, а не как источник истины.
-        console.log(`AI vision filter: model ${model} returned ${parsed}, not in candidates — ignoring`);
-      }
-    } catch (error) {
-      const status = error.response?.status;
-      const msg = error.message || 'unknown';
-      console.error(`AI vision filter: model ${model} failed: ${status} ${msg}`);
-      if (status === 429) {
-        console.log('AI vision filter: rate limited, waiting 2s');
-        await new Promise((r) => setTimeout(r, 2000));
-      }
-      continue;
-    }
-  }
-
-  console.log('AI vision filter: all models failed or returned no match');
-  return null;
-}
+// AI vision logic completely removed
 
 async function recognizeMileageWithRapidOcr(imageBuffer, options = {}) {
   const rapidOcrUrl = process.env.RAPIDOCR_URL || '';
@@ -383,26 +244,11 @@ function isValidImageBuffer(buffer) {
 }
 
 function isOcrUncertain(groups, ocrMileage) {
-  if (!groups || groups.length === 0) return true;
-  const valid = groups.filter((g) => g.count >= 1 && g.avgConfidence >= 0.40);
-  if (valid.length === 0) return true;
-  
-  // Always use AI if there are multiple competing valid candidates
-  if (valid.length > 1) return true;
-  
-  const best = valid[0];
-  
-  // If we only have 1 hit, or confidence is not extremely high, use AI
-  if (best.count < 3 || best.avgConfidence < 0.90) return true;
-  
-  // If it's a 6-digit number starting with 1 or 0, it might be a glare or trip meter. Use AI.
-  const strMileage = String(best.mileage);
-  if (strMileage.length >= 6 && (strMileage.startsWith('1') || strMileage.startsWith('0'))) {
-    return true;
-  }
-  
+  // AI vision is removed. This function just returns false.
   return false;
 }
+
+// AI vision logic completely removed
 
 async function recognizeMileage(ctx, fileId, options = {}) {
   const startTime = Date.now();
@@ -429,41 +275,6 @@ async function recognizeMileage(ctx, fileId, options = {}) {
 
     const ocrMileage = rapidResult.mileage;
     const groups = rapidResult.groups || [];
-    const candidates = rapidResult.candidates || [];
-
-    if (isAiVisionEnabled() && groups.length > 0) {
-      const needsAi = isOcrUncertain(groups, ocrMileage);
-      if (needsAi) {
-        if (onStatus) {
-          const candidateStr = groups.slice(0, 5).map((g) => `${g.mileage} (×${g.count})`).join(', ');
-          await onStatus(`🤖 RapidOCR нашёл несколько вариантов:\n${candidateStr}\n\nУточняю у ИИ...`);
-        }
-        const aiCandidates = candidates.length > 0 ? candidates : groups;
-        const aiResult = await filterCandidatesWithAI(sourceBuffer, aiCandidates, options);
-        if (aiResult && Number.isFinite(aiResult.mileage) && aiResult.mileage > 0) {
-          console.log('OCR accepted (AI confirmed)', {
-            ocrMileage,
-            aiMileage: aiResult.mileage,
-            aiModel: aiResult.model,
-            aiOnly: aiResult.aiOnly || false,
-            groups: groups.map((g) => `${g.mileage}(×${g.count} avg=${g.avgConfidence.toFixed(2)})`).join(', ')
-          });
-          console.log('OCR timing: total', Date.now() - startTime, 'ms');
-          return aiResult.mileage;
-        } else {
-          console.log('OCR rejected (AI could not confirm any candidate)', { ocrMileage });
-          console.log('OCR timing: total', Date.now() - startTime, 'ms');
-          return null;
-        }
-      } else {
-        console.log('OCR confident, skipping AI filter', {
-          mileage: ocrMileage,
-          bestCount: groups[0]?.count,
-          bestConf: groups[0]?.avgConfidence?.toFixed(2),
-          groupsCount: groups.length
-        });
-      }
-    }
 
     if (ocrMileage) {
       console.log('OCR accepted', {

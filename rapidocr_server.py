@@ -75,6 +75,15 @@ def extract_mileage(text, min_digits=4, max_digits=6):
 
 def make_variants(image):
     height, width = image.shape[:2]
+    
+    # Scale down extremely large images (e.g. 4000x3000) so that the 2.8x crop multiplier
+    # doesn't create a 6000px image, which causes timeouts and poor denoising.
+    # We cap the base image at ~1280px. This leaves the standard denoising logic perfectly intact.
+    scale = min(1280 / max(width, 1), 1280 / max(height, 1))
+    if scale < 1.0:
+        image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        height, width = image.shape[:2]
+
     variants = [image]
     crops = [
         (0.50, 0.40, 0.50, 0.55),
@@ -89,6 +98,7 @@ def make_variants(image):
         if crop_width <= 0 or crop_height <= 0:
             continue
         crop = image[top:top + crop_height, left:left + crop_width]
+        
         gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
         gray = cv2.resize(gray, None, fx=2.8, fy=2.8, interpolation=cv2.INTER_CUBIC)
         gray = cv2.equalizeHist(gray)
