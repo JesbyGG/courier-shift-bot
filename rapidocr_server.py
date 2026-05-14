@@ -96,106 +96,6 @@ def make_variants(image):
     return variants
 
 
-def is_prefix_of(longer, shorter):
-    return str(longer).startswith(str(shorter)) and len(str(longer)) == len(str(shorter)) + 1
-
-
-def generate_lcd_candidates(mileage):
-    s = str(mileage)
-    if s.endswith('0'):
-        return [mileage, mileage + 1]
-    return [mileage]
-
-
-def generate_extensions(mileage, max_digits=6):
-    s = str(mileage)
-    extensions = []
-    if len(s) >= max_digits:
-        return extensions
-    for d in range(10):
-        ext = mileage * 10 + d
-        extensions.append(ext)
-    return extensions
-
-
-def resolve_prefix_conflicts(groups):
-    if len(groups) <= 1:
-        return groups
-
-    merged = {}
-    for group in groups:
-        mileage = group['mileage']
-        merged[mileage] = group.copy()
-
-    mileages = sorted(merged.keys())
-    prefix_pairs = []
-    for i, longer in enumerate(mileages):
-        for j, shorter in enumerate(mileages):
-            if i == j:
-                continue
-            if is_prefix_of(longer, shorter):
-                prefix_pairs.append((longer, shorter))
-            elif str(longer).startswith(str(shorter)) and len(str(longer)) == len(str(shorter)) + 1:
-                prefix_pairs.append((longer, shorter))
-
-    for longer, shorter in prefix_pairs:
-        if shorter not in merged or longer not in merged:
-            continue
-        longer_str = str(longer)
-        shorter_str = str(shorter)
-
-        if longer_str.endswith('0') and shorter_str == longer_str[:-1]:
-            for alt in generate_lcd_candidates(longer):
-                if alt != longer:
-                    if alt in merged:
-                        merged[alt]['count'] += merged[longer]['count']
-                        merged[alt]['items'].extend(merged[longer]['items'])
-                        merged[alt]['avg_confidence'] = sum(
-                            item['confidence'] for item in merged[alt]['items']
-                        ) / max(merged[alt]['count'], 1)
-                        merged[alt]['max_confidence'] = max(
-                            merged[alt]['max_confidence'], merged[longer]['max_confidence']
-                        )
-                        del merged[shorter]
-                        del merged[longer]
-                    else:
-                        alt_group = merged[longer].copy()
-                        alt_group['mileage'] = alt
-                        alt_group['count'] = merged[longer]['count']
-                        alt_group['avg_confidence'] = merged[longer]['avg_confidence'] * 0.85
-                        alt_group['max_confidence'] = merged[longer]['max_confidence'] * 0.85
-                        alt_group['lcd_alternative'] = True
-                        alt_group['items'] = [
-                            {**item, 'mileage': alt, 'confidence': item['confidence'] * 0.85, 'lcd_alternative': True}
-                            for item in merged[longer]['items']
-                        ]
-                        merged[alt] = alt_group
-                        del merged[shorter]
-                        del merged[longer]
-                    break
-            continue
-
-        if merged[longer]['avg_confidence'] >= 0.50:
-            if shorter in merged and longer in merged:
-                merged[longer]['count'] += merged[shorter]['count']
-                merged[longer]['items'].extend(merged[shorter]['items'])
-                merged[longer]['avg_confidence'] = sum(
-                    item['confidence'] for item in merged[longer]['items']
-                ) / max(merged[longer]['count'], 1)
-                merged[longer]['max_confidence'] = max(
-                    merged[longer]['max_confidence'], merged[shorter]['max_confidence']
-                )
-                del merged[shorter]
-
-    result = sorted(merged.values(), key=lambda item: (
-        item.get('region_weight', item['count']),
-        item['count'],
-        item['avg_confidence'],
-        len(str(item['mileage']))
-    ), reverse=True)
-    return result
-
-
 def recognize(image_bytes):
     nparr = np.frombuffer(image_bytes, np.uint8)
     image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -215,48 +115,63 @@ def recognize(image_bytes):
                 continue
             mileage = extract_mileage(text, min_digits=2)
             if mileage:
-                results.append({'mileage': mileage, 'confidence': confidence, 'text': text})
+                has_km = 'km' in text.lower().replace(' ', '')
+                results.append({'mileage': mileage, 'confidence': confidence, 'text': text, 'has_km': has_km})
+
+    if not results:
+        return {
+            'mileage': None,
+            'selected': {'mileage': None, 'count': 0, 'avg_confidence': 0, 'max_confidence': 0},
+            'thresholds': {'min_mileage': MIN_MILEAGE, 'min_count': MIN_COUNT, 'min_avg_conf': MIN_AVG_CONF, 'min_max_conf': MIN_MAX_CONF},
+            'groups': [],
+        }
 
     grouped = {}
     for item in results:
-        mileage = item['mileage']
-        group = grouped.setdefault(mileage, {'mileage': mileage, 'count': 0, 'max_confidence': 0, 'avg_confidence': 0, 'items': [], 'region_weight': 0})
-        group['count'] += 1
-        group['region_weight'] += 1
-        group['max_confidence'] = max(group['max_confidence'], item['confidence'])
-        group['items'].append(item)
-    for group in grouped.values():
-        group['avg_confidence'] = sum(item['confidence'] for item in group['items']) / max(group['count'], 1)
+        m = item['mileage']
+        if m not in grouped:
+            grouped[m] = {'mileage': m, 'count': 0, 'max_confidence': 0, 'avg_confidence': 0, 'items': [], 'has_km': False}
+        g = grouped[m]
+        g['count'] += 1
+        g['max_confidence'] = max(g['max_confidence'], item['confidence'])
+        g['items'].append(item)
+        if item['has_km']:
+            g['has_km'] = True
 
-    groups = sorted(grouped.values(), key=lambda item: (item['count'], item['avg_confidence'], len(str(item['mileage']))), reverse=True)
+    for g in grouped.values():
+        g['avg_confidence'] = sum(it['confidence'] for it in g['items']) / max(g['count'], 1)
 
-    prefix_groups = resolve_prefix_conflicts(groups)
-
-    short_mileages = {g['mileage'] for g in prefix_groups if len(str(g['mileage'])) < 6}
-    long_mileages = {g['mileage'] for g in prefix_groups}
-    for short in short_mileages:
-        if short not in grouped:
+    all_mileages = sorted(grouped.keys())
+    to_delete = set()
+    for m in all_mileages:
+        if m in to_delete or m not in grouped:
             continue
-        has_longer = any(long for long in long_mileages if str(long).startswith(str(short)) and long != short)
-        if not has_longer:
-            for ext in generate_extensions(short):
-                if ext not in grouped:
-                    grouped[ext] = {
-                        'mileage': ext,
-                        'count': 0,
-                        'max_confidence': grouped[short]['max_confidence'] * 0.50,
-                        'avg_confidence': grouped[short]['avg_confidence'] * 0.50,
-                        'items': [],
-                        'region_weight': 0,
-                        'extension_of': short,
-                    }
-            long_mileages.update(generate_extensions(short))
+        s = str(m)
+        for other_m in all_mileages:
+            if other_m == m or other_m in to_delete or other_m not in grouped:
+                continue
+            o = str(other_m)
+            if o.startswith(s) and len(o) > len(s):
+                grouped[other_m]['count'] += grouped[m]['count']
+                grouped[other_m]['items'].extend(grouped[m]['items'])
+                grouped[other_m]['avg_confidence'] = sum(it['confidence'] for it in grouped[other_m]['items']) / max(grouped[other_m]['count'], 1)
+                grouped[other_m]['max_confidence'] = max(grouped[other_m]['max_confidence'], grouped[m]['max_confidence'])
+                if grouped[m]['has_km']:
+                    grouped[other_m]['has_km'] = True
+                to_delete.add(m)
+                break
 
-    if len(grouped) > len(prefix_groups):
-        groups = sorted(grouped.values(), key=lambda item: (item.get('region_weight', item['count']), item['count'], item['avg_confidence'], len(str(item['mileage']))), reverse=True)
-        prefix_groups = resolve_prefix_conflicts(groups)
+    for m in to_delete:
+        del grouped[m]
 
-    valid_groups = [g for g in prefix_groups if g['mileage'] >= MIN_MILEAGE and g['count'] >= MIN_COUNT and g['avg_confidence'] >= MIN_AVG_CONF and g['max_confidence'] >= MIN_MAX_CONF]
+    groups = sorted(grouped.values(), key=lambda g: (
+        5 <= len(str(g['mileage'])) <= 7,
+        g['has_km'],
+        g['count'],
+        g['avg_confidence'],
+    ), reverse=True)
+
+    valid_groups = [g for g in groups if g['mileage'] >= MIN_MILEAGE and g['count'] >= MIN_COUNT and g['avg_confidence'] >= MIN_AVG_CONF and g['max_confidence'] >= MIN_MAX_CONF]
     best = valid_groups[0] if valid_groups else None
     mileage = best['mileage'] if best else None
 
@@ -275,8 +190,8 @@ def recognize(image_bytes):
             'min_max_conf': MIN_MAX_CONF,
         },
         'groups': [
-            {'mileage': g['mileage'], 'count': g['count'], 'avg_confidence': g['avg_confidence'], 'max_confidence': g['max_confidence']}
-            for g in prefix_groups if g['count'] >= 1 and g['avg_confidence'] >= 0.35 and g['mileage'] >= MIN_MILEAGE
+            {'mileage': g['mileage'], 'count': g['count'], 'avg_confidence': round(g['avg_confidence'], 4), 'max_confidence': round(g['max_confidence'], 4)}
+            for g in groups if g['mileage'] >= MIN_MILEAGE
         ][:15],
     }
 
