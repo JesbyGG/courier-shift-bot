@@ -240,6 +240,8 @@ def recognize(image_bytes):
     short_mileages = {g['mileage'] for g in prefix_groups if len(str(g['mileage'])) < 6}
     long_mileages = {g['mileage'] for g in prefix_groups}
     for short in short_mileages:
+        if short not in grouped:
+            continue
         has_longer = any(long for long in long_mileages if str(long).startswith(str(short)) and long != short)
         if not has_longer:
             for ext in generate_extensions(short):
@@ -338,10 +340,13 @@ class RapidOcrHandler(BaseHTTPRequestHandler):
             return
 
         body = self.rfile.read(content_length)
-        if self.path == '/text':
-            result = recognize_text(body)
-        else:
-            result = recognize(body)
+        try:
+            if self.path == '/text':
+                result = recognize_text(body)
+            else:
+                result = recognize(body)
+        except Exception as e:
+            result = {'mileage': None, 'error': str(e)}
         response = json.dumps(result, ensure_ascii=True).encode()
 
         self.send_response(200)
