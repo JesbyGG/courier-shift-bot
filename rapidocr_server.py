@@ -57,25 +57,60 @@ def extract_mileage(text, min_digits=4, max_digits=6):
     return int(candidates[0])
 
 
+def _preprocess_gray(gray):
+    gray = cv2.resize(gray, None, fx=2.8, fy=2.8, interpolation=cv2.INTER_CUBIC)
+    clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
+    gray = clahe.apply(gray)
+    denoise = cv2.fastNlMeansDenoising(gray, None, 12, 7, 21)
+    adaptive = cv2.adaptiveThreshold(denoise, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 35, 5)
+    return gray, adaptive
+
+
+def _extract_led_channel(bgr_crop):
+    hsv = cv2.cvtColor(bgr_crop, cv2.COLOR_BGR2HSV)
+    v = hsv[:, :, 2]
+    b, g, r = cv2.split(bgr_crop)
+    brightness = np.maximum(np.maximum(r, g), b)
+    _, led_mask = cv2.threshold(brightness, 100, 255, cv2.THRESH_BINARY)
+    led_only = cv2.bitwise_and(v, led_mask)
+    return led_only
+
+
 def make_variants(image):
     height, width = image.shape[:2]
     
-    # Scale down extremely large images (e.g. 4000x3000) so that the 2.8x crop multiplier
-    # doesn't create a 6000px image, which causes timeouts and poor denoising.
-    # We cap the base image at ~1280px. This leaves the standard denoising logic perfectly intact.
     scale = min(1280 / max(width, 1), 1280 / max(height, 1))
     if scale < 1.0:
         image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
         height, width = image.shape[:2]
 
     variants = [image]
+
+    gray_full = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
+    gray_clahe = clahe.apply(gray_full)
+    denoise = cv2.fastNlMeansDenoising(gray_clahe, None, 12, 7, 21)
+    adaptive = cv2.adaptiveThreshold(denoise, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 35, 5)
+    variants.append(cv2.cvtColor(adaptive, cv2.COLOR_GRAY2BGR))
+
+    inv_gray = 255 - gray_full
+    inv_clahe = clahe.apply(inv_gray)
+    inv_denoise = cv2.fastNlMeansDenoising(inv_clahe, None, 12, 7, 21)
+    inv_adaptive = cv2.adaptiveThreshold(inv_denoise, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 35, 5)
+    variants.append(cv2.cvtColor(inv_adaptive, cv2.COLOR_GRAY2BGR))
+
+    led_full = _extract_led_channel(image)
+    if np.count_nonzero(led_full) > led_full.size * 0.01:
+        _, led_adaptive = _preprocess_gray(led_full)
+        variants.append(cv2.cvtColor(led_adaptive, cv2.COLOR_GRAY2BGR))
+
     crops = [
-        (0.50, 0.40, 0.50, 0.55), # bottom right
-        (0.15, 0.50, 0.70, 0.48), # bottom wide
-        (0.30, 0.35, 0.40, 0.40), # center
-        (0.20, 0.10, 0.60, 0.40), # top center
-        (0.10, 0.30, 0.80, 0.40), # middle wide
-        (0.40, 0.15, 0.50, 0.40), # top right
+        (0.50, 0.40, 0.50, 0.55),
+        (0.15, 0.50, 0.70, 0.48),
+        (0.30, 0.35, 0.40, 0.40),
+        (0.20, 0.10, 0.60, 0.40),
+        (0.10, 0.30, 0.80, 0.40),
+        (0.40, 0.15, 0.50, 0.40),
     ]
     for left_ratio, top_ratio, width_ratio, height_ratio in crops:
         left = max(0, int(width * left_ratio))
@@ -86,14 +121,30 @@ def make_variants(image):
             continue
         crop = image[top:top + crop_height, left:left + crop_width]
         
-        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, None, fx=2.8, fy=2.8, interpolation=cv2.INTER_CUBIC)
-        gray = cv2.equalizeHist(gray)
-        denoise = cv2.fastNlMeansDenoising(gray, None, 12, 7, 21)
-        adaptive = cv2.adaptiveThreshold(denoise, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 35, 5)
-        variants.append(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
-        variants.append(cv2.cvtColor(adaptive, cv2.COLOR_GRAY2BGR))
+        crop_gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        gray_crop, adaptive_crop = _preprocess_gray(crop_gray)
+        variants.append(cv2.cvtColor(gray_crop, cv2.COLOR_GRAY2BGR))
+        variants.append(cv2.cvtColor(adaptive_crop, cv2.COLOR_GRAY2BGR))
+
+        crop_led = _extract_led_channel(crop)
+        if np.count_nonzero(crop_led) > crop_led.size * 0.01:
+            _, crop_led_adaptive = _preprocess_gray(crop_led)
+            variants.append(cv2.cvtColor(crop_led_adaptive, cv2.COLOR_GRAY2BGR))
+
     return variants
+
+    return variants
+
+
+def _is_noise(text):
+    low = text.lower().replace(' ', '')
+    import re
+    if re.search(r'\d{1,2}:\d{2}', text):
+        return True
+    if re.search(r'-?\d{1,2}\s*[°º]', text):
+        return True
+    noise = ('km/h', 'mph', 'rpm', 'x1000', '/100', 'l/100', '1/100', 'trip', 'avg', 'temp', 'r/m', 'kmh')
+    return any(t in low for t in noise)
 
 
 def recognize(image_bytes):
@@ -116,7 +167,8 @@ def recognize(image_bytes):
             mileage = extract_mileage(text, min_digits=2)
             if mileage:
                 has_km = 'km' in text.lower().replace(' ', '')
-                results.append({'mileage': mileage, 'confidence': confidence, 'text': text, 'has_km': has_km})
+                is_noise = _is_noise(text)
+                results.append({'mileage': mileage, 'confidence': confidence, 'text': text, 'has_km': has_km, 'is_noise': is_noise})
 
     if not results:
         return {
@@ -130,48 +182,31 @@ def recognize(image_bytes):
     for item in results:
         m = item['mileage']
         if m not in grouped:
-            grouped[m] = {'mileage': m, 'count': 0, 'max_confidence': 0, 'avg_confidence': 0, 'items': [], 'has_km': False}
+            grouped[m] = {'mileage': m, 'count': 0, 'max_confidence': 0, 'avg_confidence': 0, 'items': [], 'has_km': False, 'is_noise': False}
         g = grouped[m]
         g['count'] += 1
         g['max_confidence'] = max(g['max_confidence'], item['confidence'])
         g['items'].append(item)
         if item['has_km']:
             g['has_km'] = True
+        if item['is_noise']:
+            g['is_noise'] = True
 
     for g in grouped.values():
         g['avg_confidence'] = sum(it['confidence'] for it in g['items']) / max(g['count'], 1)
 
-    all_mileages = sorted(grouped.keys())
-    to_delete = set()
-    for m in all_mileages:
-        if m in to_delete or m not in grouped:
-            continue
-        s = str(m)
-        for other_m in all_mileages:
-            if other_m == m or other_m in to_delete or other_m not in grouped:
-                continue
-            o = str(other_m)
-            if o.startswith(s) and len(o) > len(s):
-                grouped[other_m]['count'] += grouped[m]['count']
-                grouped[other_m]['items'].extend(grouped[m]['items'])
-                grouped[other_m]['avg_confidence'] = sum(it['confidence'] for it in grouped[other_m]['items']) / max(grouped[other_m]['count'], 1)
-                grouped[other_m]['max_confidence'] = max(grouped[other_m]['max_confidence'], grouped[m]['max_confidence'])
-                if grouped[m]['has_km']:
-                    grouped[other_m]['has_km'] = True
-                to_delete.add(m)
-                break
-
-    for m in to_delete:
-        del grouped[m]
-
     groups = sorted(grouped.values(), key=lambda g: (
         5 <= len(str(g['mileage'])) <= 7,
         g['has_km'],
+        not g['is_noise'],
+        len(str(g['mileage'])),
         g['count'],
         g['avg_confidence'],
     ), reverse=True)
 
-    valid_groups = [g for g in groups if g['mileage'] >= MIN_MILEAGE and g['count'] >= MIN_COUNT and g['avg_confidence'] >= MIN_AVG_CONF and g['max_confidence'] >= MIN_MAX_CONF]
+    valid_groups = [g for g in groups if g['mileage'] >= MIN_MILEAGE and g['count'] >= MIN_COUNT and g['avg_confidence'] >= MIN_AVG_CONF and g['max_confidence'] >= MIN_MAX_CONF and not g['is_noise']]
+    if not valid_groups:
+        valid_groups = [g for g in groups if g['mileage'] >= MIN_MILEAGE and g['count'] >= MIN_COUNT and g['avg_confidence'] >= MIN_AVG_CONF and g['max_confidence'] >= MIN_MAX_CONF]
     best = valid_groups[0] if valid_groups else None
     mileage = best['mileage'] if best else None
 
