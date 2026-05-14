@@ -1796,14 +1796,14 @@ function loadChangelog() {
   }
 }
 
-function getChangelogNotesForVersion(version) {
+function getLatestChangelogNotes() {
   const changelog = loadChangelog();
-  if (!changelog || !Array.isArray(changelog.updates)) return null;
+  if (!changelog || !Array.isArray(changelog.updates) || changelog.updates.length === 0) return null;
 
-  const entry = changelog.updates.find((item) => item.version === version);
-  if (!entry || !Array.isArray(entry.notes) || entry.notes.length === 0) return null;
+  const latest = changelog.updates[changelog.updates.length - 1];
+  if (!latest || !Array.isArray(latest.notes) || latest.notes.length === 0) return null;
 
-  return entry.notes.slice(0, 4);
+  return latest.notes.slice(0, 4);
 }
 
 function getChangelogBump() {
@@ -1830,8 +1830,7 @@ function consumeChangelogEntry() {
 }
 
 function buildUpdateHighlights(changedFiles = [], version) {
-  const currentVersion = version || getVersion();
-  const changelogNotes = getChangelogNotesForVersion(currentVersion);
+  const changelogNotes = getLatestChangelogNotes();
   if (changelogNotes && changelogNotes.length > 0) {
     return changelogNotes;
   }
