@@ -1153,6 +1153,40 @@ function extractCashFromOcrText(text) {
   return { orders: null, amount: null, valid: false, reason: 'no_cash_line' };
 }
 
+function getReconciliationOcrTimeoutMs() {
+  const value = Number(process.env.RECONCILIATION_OCR_TIMEOUT_MS || 30000);
+  return Number.isFinite(value) && value >= 5000 ? value : 30000;
+}
+
+function getReconciliationTesseractTimeoutMs() {
+  const value = Number(process.env.RECONCILIATION_TESSERACT_TIMEOUT_MS || 12000);
+  return Number.isFinite(value) && value >= 5000 ? value : 12000;
+}
+
+function emptyReconciliationCash(reason, source = 'none') {
+  return { orders: null, amount: null, totalOrders: null, valid: false, reason, source };
+}
+
+async function recognizeReconciliationCashSafe(ctx, fileId, label) {
+  try {
+    return await withTimeout(
+      recognizeReconciliationCash(ctx, fileId),
+      getReconciliationOcrTimeoutMs(),
+      `reconciliation OCR ${label || ''}`.trim()
+    );
+  } catch (error) {
+    console.error('reconciliation OCR safe fallback', label || '', error.message || error);
+    return emptyReconciliationCash('ocr_timeout', 'none');
+  }
+}
+
+function shouldWarnAboutReconciliationOcr(cashInfo) {
+  if (!cashInfo) return true;
+  if (cashInfo.valid) return false;
+  if (cashInfo.totalOrders && cashInfo.totalOrders > 0) return false;
+  return ['ocr_timeout', 'error', 'local_ocr_error', 'local_ocr_timeout', 'no_ocr_result'].includes(cashInfo.reason);
+}
+
 async function recognizeReconciliationCashLocal(imageBuffer) {
   try {
     const variants = [];
@@ -1165,10 +1199,13 @@ async function recognizeReconciliationCashLocal(imageBuffer) {
     let bestOrders = null;
 
     for (let index = 0; index < variants.length; index += 1) {
-      const result = await tesseractRecognize(variants[index], 'eng', {
-        gzip: false,
-        tessedit_pageseg_mode: '6'
-      });
+      const result = await withTimeout(
+        tesseractRecognize(variants[index], 'eng', {
+          tessedit_pageseg_mode: '6'
+        }),
+        getReconciliationTesseractTimeoutMs(),
+        `reconciliation local OCR variant ${index + 1}`
+      );
 
       const text = result.data?.text || '';
       const parsed = extractCashFromOcrText(text);
@@ -1191,7 +1228,8 @@ async function recognizeReconciliationCashLocal(imageBuffer) {
     return { ...best, totalOrders: bestOrders, source: 'local_ocr' };
   } catch (error) {
     console.error('reconciliation local OCR error', error.message || error);
-    return { orders: null, amount: null, valid: false, reason: 'local_ocr_error', source: 'local_ocr' };
+    const reason = String(error.message || '').includes('timeout') ? 'local_ocr_timeout' : 'local_ocr_error';
+    return { orders: null, amount: null, totalOrders: null, valid: false, reason, source: 'local_ocr' };
   }
 }
 
@@ -2950,7 +2988,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
   const isTerminalFirstPhoto = isTerminal && photosSent === 1;
 
   if (isTerminalFirstPhoto) {
-    const cashInfo = await recognizeReconciliationCash(ctx, fileId);
+    const cashInfo = await recognizeReconciliationCashSafe(ctx, fileId, 'terminal_first_photo');
     const shouldAttachCash = cashInfo.valid && Number(cashInfo.amount) >= 1 && Number(cashInfo.orders) > 0;
     const cashFormatted = shouldAttachCash ? formatMoneyRu(cashInfo.amount) : null;
 
@@ -2995,6 +3033,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       label: 'Терминал (статистика)',
       cashOrders: cashInfo.orders,
       cashAmount: cashInfo.amount,
+      totalOrders: cashInfo.totalOrders,
       cashApplied: Boolean(shouldAttachCash),
       reason: cashInfo.reason || null
     });
@@ -3004,7 +3043,8 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       reconciliationPhotosSent: photosSent,
       reconciliationPhoto1FileId: fileId,
       reconciliationPhoto1Caption: caption,
-      reconciliationPhoto1TotalOrders: cashInfo.totalOrders || null
+      reconciliationPhoto1TotalOrders: cashInfo.totalOrders || null,
+      reconciliationPhoto1OcrReason: cashInfo.reason || null
     });
 
     await ctx.replyWithHTML(
@@ -3046,7 +3086,10 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       }
 
       clearState(telegramId);
-      await ctx.replyWithHTML(`✅ <b>Все фото (2 шт.) отправлены.</b>`, mainMenu());
+      const ocrWarning = !state.reconciliationPhoto1TotalOrders && state.reconciliationPhoto1OcrReason
+        ? `\n\n⚠️ OCR не распознал заказы/наличные. Фото отправлены, но данные не записаны автоматически.`
+        : '';
+      await ctx.replyWithHTML(`✅ <b>Все фото (2 шт.) отправлены.</b>${ocrWarning}`, mainMenu());
 
       const totalOrders = state.reconciliationPhoto1TotalOrders;
       if (totalOrders && totalOrders > 0 && state.fio && state.workplace) {
@@ -3077,7 +3120,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
   }
 
   const label = 'Пин-Панель';
-  const cashInfo = await recognizeReconciliationCash(ctx, fileId);
+  const cashInfo = await recognizeReconciliationCashSafe(ctx, fileId, 'pin_panel');
   const shouldAttachCash = cashInfo.valid && Number(cashInfo.amount) >= 1 && Number(cashInfo.orders) > 0;
   const cashFormatted = shouldAttachCash ? formatMoneyRu(cashInfo.amount) : null;
 
@@ -3122,6 +3165,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     label,
     cashOrders: cashInfo.orders,
     cashAmount: cashInfo.amount,
+    totalOrders: cashInfo.totalOrders,
     cashApplied: Boolean(shouldAttachCash),
     reason: cashInfo.reason || null
   });
@@ -3135,7 +3179,10 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     }
 
     clearState(telegramId);
-    await ctx.replyWithHTML(`✅ <b>Все фото (${total} шт.) отправлены.</b>`, mainMenu());
+    const ocrWarning = shouldWarnAboutReconciliationOcr(cashInfo)
+      ? `\n\n⚠️ OCR не распознал заказы/наличные. Фото отправлено, но данные не записаны автоматически.`
+      : '';
+    await ctx.replyWithHTML(`✅ <b>Все фото (${total} шт.) отправлены.</b>${ocrWarning}`, mainMenu());
 
     const totalOrders = cashInfo.totalOrders;
     if (totalOrders && totalOrders > 0 && state.fio && state.workplace) {
