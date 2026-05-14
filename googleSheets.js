@@ -60,7 +60,7 @@ const SHEET_CONFIGS = {
     efficiencySheet: 'Эффективность',
     efficiencyFioColumn: 'B',
     efficiencyFioRange: 'B3:B',
-    efficiencyFirstDayCol: 7,
+    efficiencyFirstDayCol: 6,
     efficiencyDayBlockSize: 3
   },
   'ИМ Центр': {
@@ -75,7 +75,7 @@ const SHEET_CONFIGS = {
     efficiencySheet: 'Эффективность',
     efficiencyFioColumn: 'B',
     efficiencyFioRange: 'B3:B',
-    efficiencyFirstDayCol: 7,
+    efficiencyFirstDayCol: 6,
     efficiencyDayBlockSize: 3
   }
 };
