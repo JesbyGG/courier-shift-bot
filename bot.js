@@ -3,9 +3,9 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
-const sharp = require('sharp');
+
 const crypto = require('crypto');
-const { recognize: tesseractRecognize } = require('tesseract.js');
+
 const { Telegraf, Markup } = require('telegraf');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { SocksProxyAgent } = require('socks-proxy-agent');
@@ -1158,10 +1158,7 @@ function getReconciliationOcrTimeoutMs() {
   return Number.isFinite(value) && value >= 5000 ? value : 30000;
 }
 
-function getReconciliationTesseractTimeoutMs() {
-  const value = Number(process.env.RECONCILIATION_TESSERACT_TIMEOUT_MS || 12000);
-  return Number.isFinite(value) && value >= 5000 ? value : 12000;
-}
+
 
 function emptyReconciliationCash(reason, source = 'none') {
   return { orders: null, amount: null, totalOrders: null, valid: false, reason, source };
@@ -1187,50 +1184,8 @@ function shouldWarnAboutReconciliationOcr(cashInfo) {
   return ['ocr_timeout', 'error', 'local_ocr_error', 'local_ocr_timeout', 'no_ocr_result'].includes(cashInfo.reason);
 }
 
-async function recognizeReconciliationCashLocal(imageBuffer) {
-  try {
-    const variants = [];
-    const base = sharp(imageBuffer).rotate().resize({ width: 1800, height: 1800, fit: 'inside', withoutEnlargement: false });
-    variants.push(await base.clone().grayscale().normalize().png().toBuffer());
-    variants.push(await base.clone().grayscale().normalize().sharpen().threshold(150).png().toBuffer());
-    variants.push(await base.clone().grayscale().linear(1.35, -12).sharpen().png().toBuffer());
-
-    let best = { orders: null, amount: null, valid: false, reason: 'not_recognized' };
-    let bestOrders = null;
-
-    for (let index = 0; index < variants.length; index += 1) {
-      const result = await withTimeout(
-        tesseractRecognize(variants[index], 'eng', {
-          tessedit_pageseg_mode: '6'
-        }),
-        getReconciliationTesseractTimeoutMs(),
-        `reconciliation local OCR variant ${index + 1}`
-      );
-
-      const text = result.data?.text || '';
-      const parsed = extractCashFromOcrText(text);
-      const confidence = Number(result.data?.confidence || 0);
-
-      if (parsed.valid) {
-        return { ...parsed, totalOrders: extractOrdersCountFromOcrText(text).totalOrders, source: 'local_ocr' };
-      }
-
-      if (best.orders === null && best.amount === null && (parsed.orders !== null || parsed.amount !== null)) {
-        best = parsed;
-      }
-
-      const ordersResult = extractOrdersCountFromOcrText(text);
-      if (ordersResult.totalOrders !== null) {
-        bestOrders = ordersResult.totalOrders;
-      }
-    }
-
-    return { ...best, totalOrders: bestOrders, source: 'local_ocr' };
-  } catch (error) {
-    console.error('reconciliation local OCR error', error.message || error);
-    const reason = String(error.message || '').includes('timeout') ? 'local_ocr_timeout' : 'local_ocr_error';
-    return { orders: null, amount: null, totalOrders: null, valid: false, reason, source: 'local_ocr' };
-  }
+async function recognizeReconciliationCashLocal() {
+  return { orders: null, amount: null, totalOrders: null, valid: false, reason: 'local_ocr_disabled', source: 'none' };
 }
 
 async function recognizeReconciliationCash(ctx, fileId) {
