@@ -1,4 +1,4 @@
-const { verifySheetAccess } = require('./googleSheets');
+const { verifySheetAccess } = require('./services/googleSheets');
 const {
   resolveSheetInfo,
   setWorkplaceSheetId,
@@ -8,7 +8,7 @@ const {
   getCurrentMonthKey,
   getNextMonthKey,
   isValidMonthKey
-} = require('./storage');
+} = require('./services/storage');
 
 function extractSheetId(text) {
   const value = String(text || '').trim();

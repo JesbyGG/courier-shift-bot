@@ -16,6 +16,7 @@ version.json
 bot.stdout.log
 bot.stderr.log
 *.log
+database.sqlite
 node_modules/
 backups/
 ocr_feedback.json

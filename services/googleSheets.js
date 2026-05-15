@@ -8,7 +8,7 @@ const {
   getCurrentDateInfo,
   isEmptyCell,
   isScheduleMarker
-} = require('./utils');
+} = require('../utils');
 // WORKPLACES в этом файле не нужны напрямую — SHEET_CONFIGS использует
 // строковые ключи и DEFAULT_CONFIG. Если позже понадобится — импортируем.
 
@@ -40,11 +40,27 @@ function getSheetsAuth() {
   return sheetsAuth;
 }
 
-async function sheetsRequest({ method, path, params, data }) {
+async function sheetsRequest({ method, path, params, data }, retries = 3) {
   const auth = getSheetsAuth();
   const url = `${SHEETS_BASE}/${path}`;
-  const response = await auth.request({ method, url, params, data });
-  return response;
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await auth.request({ method, url, params, data });
+      return response;
+    } catch (error) {
+      const status = error?.response?.status || 0;
+      const retryable = status === 429 || status >= 500 || status === 0;
+
+      if (!retryable || attempt === retries) {
+        throw error;
+      }
+
+      const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
+      console.error(`Google Sheets retry ${attempt}/${retries} (status=${status}), waiting ${delay}ms`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
 }
 
 const SHEET_CONFIGS = {

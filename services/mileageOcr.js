@@ -91,77 +91,39 @@ function isMileageInBounds(mileage, options = {}) {
   return true;
 }
 
-function isPrefixOf(other, shorter) {
-  const s = String(shorter);
-  const o = String(other);
-  return o.startsWith(s) && o.length === s.length + 1;
-}
-
 function smartPickFromGroups(groups, options = {}) {
   if (!groups || groups.length === 0) return { mileage: null, candidates: [] };
 
   const valid = groups.filter((g) => Number.isFinite(g.mileage) && g.mileage > 0);
   if (valid.length === 0) return { mileage: null, candidates: [] };
 
-  const inBounds = valid.filter((g) => isMileageInBounds(g.mileage, options));
-  const pool = inBounds.length > 0 ? inBounds : valid;
+  const ranked = [...valid].sort((a, b) => {
+    if (a.has_km !== b.has_km) return (b.has_km ? 1 : 0) - (a.has_km ? 1 : 0);
 
-  const allCandidates = [];
+    const aLen = String(a.mileage).length;
+    const bLen = String(b.mileage).length;
+    const aOdo = aLen >= 5 && aLen <= 7 ? 1 : 0;
+    const bOdo = bLen >= 5 && bLen <= 7 ? 1 : 0;
+    if (aOdo !== bOdo) return bOdo - aOdo;
 
-  if (pool.length === 1) {
-    const g = pool[0];
-    if (g.count < 1 || g.avgConfidence < 0.40) {
-      return { mileage: null, candidates: pool };
-    }
-    return { mileage: g.mileage, candidates: pool };
-  }
+    const aNoise = a.is_noise ? 0 : 1;
+    const bNoise = b.is_noise ? 0 : 1;
+    if (aNoise !== bNoise) return bNoise - aNoise;
 
-  const bylen = [...pool].sort((a, b) => {
-    const lenDiff = String(b.mileage).length - String(a.mileage).length;
-    if (Math.abs(lenDiff) >= 1) return lenDiff;
-    return b.count - a.count || b.avgConfidence - a.avgConfidence;
+    const aInBounds = isMileageInBounds(a.mileage, options) ? 1 : 0;
+    const bInBounds = isMileageInBounds(b.mileage, options) ? 1 : 0;
+    if (aInBounds !== bInBounds) return bInBounds - aInBounds;
+
+    if (a.count !== b.count) return b.count - a.count;
+    return b.avgConfidence - a.avgConfidence;
   });
 
-  for (let i = 0; i < bylen.length; i++) {
-    const candidate = bylen[i];
-    const candidateStr = String(candidate.mileage);
-
-    for (let j = i + 1; j < bylen.length; j++) {
-      const other = bylen[j];
-      const otherStr = String(other.mileage);
-
-      if (isPrefixOf(otherStr, candidateStr) || isPrefixOf(candidateStr, otherStr)) {
-        const longer = candidateStr.length > otherStr.length ? candidate : other;
-        const shorter = candidateStr.length > otherStr.length ? other : candidate;
-        const longerStr = String(longer.mileage);
-        const shorterStr = String(shorter.mileage);
-
-        if (longerStr.endsWith('0') && shorterStr === longerStr.slice(0, -1)) {
-          const lcdAlt = longer.mileage + 1;
-          if (isMileageInBounds(lcdAlt, options)) {
-            allCandidates.push({ mileage: lcdAlt, source: 'lcd', confidence: longer.avgConfidence * 0.85 });
-            allCandidates.push({ mileage: longer.mileage, source: 'ocr', confidence: longer.avgConfidence });
-            allCandidates.push({ mileage: shorter.mileage, source: 'ocr', confidence: shorter.avgConfidence });
-            if (longer.avgConfidence >= 0.50) {
-              return { mileage: lcdAlt, candidates: allCandidates };
-            }
-          }
-        }
-
-        if (longer.avgConfidence >= 0.50 && (longer.count >= 1 || shorter.count >= 2)) {
-          allCandidates.push({ mileage: longer.mileage, source: 'ocr', confidence: longer.avgConfidence });
-          return { mileage: longer.mileage, candidates: allCandidates };
-        }
-      }
-    }
+  const best = ranked[0];
+  if (best && best.count >= 1 && best.avgConfidence >= 0.40) {
+    return { mileage: best.mileage, candidates: ranked.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence })) };
   }
 
-  const best = bylen[0];
-  if (best.count >= 1 && best.avgConfidence >= 0.40) {
-    return { mileage: best.mileage, candidates: [{ mileage: best.mileage, source: 'ocr', confidence: best.avgConfidence }] };
-  }
-
-  return { mileage: null, candidates: pool };
+  return { mileage: null, candidates: valid };
 }
 
 // AI vision logic completely removed
@@ -176,7 +138,7 @@ async function recognizeMileageWithRapidOcr(imageBuffer, options = {}) {
 
   try {
     const response = await axios.post(rapidOcrUrl, imageBuffer, {
-      timeout: 30000,
+      timeout: 60000,
       headers: { 'Content-Type': 'application/octet-stream' }
     });
     const parsed = response.data;
@@ -195,7 +157,9 @@ function mapRapidOcrResult(parsed, options) {
           mileage: Number(group.mileage),
           count: Number(group.count || 0),
           avgConfidence: Number(group.avg_confidence || 0),
-          maxConfidence: Number(group.max_confidence || 0)
+          maxConfidence: Number(group.max_confidence || 0),
+          has_km: !!group.has_km,
+          is_noise: !!group.is_noise
         }))
         .filter((group) => Number.isFinite(group.mileage) && group.mileage > 0)
     : [];
@@ -311,7 +275,7 @@ async function recognizeTextWithRapidOcr(imageBuffer) {
   try {
     const url = rapidOcrUrl.replace(/\/+$/, '') + '/text';
     const response = await axios.post(url, imageBuffer, {
-      timeout: 30000,
+      timeout: 60000,
       headers: { 'Content-Type': 'application/octet-stream' }
     });
     const items = response.data?.text_items;
@@ -331,5 +295,6 @@ async function recognizeTextWithRapidOcr(imageBuffer) {
 module.exports = {
   recognizeMileage,
   recognizeTextWithRapidOcr,
-  isRapidOcrEnabled
+  isRapidOcrEnabled,
+  getMinMileageThreshold
 };

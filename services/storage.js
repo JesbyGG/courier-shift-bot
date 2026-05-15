@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const { WORKPLACE_KEY_MAP } = require('./config');
-const db = require('./db');
+const { WORKPLACE_KEY_MAP } = require('../config');
+const db = require('../db');
 
 function flushNow() {
   // SQLite with WAL mode is already persistent, no manual flush needed.

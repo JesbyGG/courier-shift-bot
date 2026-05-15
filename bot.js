@@ -1,4 +1,5 @@
 require('dotenv').config();
+require('./logger').initLogger();
 
 const fs = require('fs');
 const path = require('path');
@@ -20,7 +21,7 @@ const {
   readCell,
   getSheetConfig,
   updateEfficiencyOrders
-} = require('./googleSheets');
+} = require('./services/googleSheets');
 const {
   getUserField,
   getFullProfile,
@@ -39,9 +40,9 @@ const {
   getCurrentMonthKey,
   getNextMonthKey,
   getWorkplaceSheetIdByMonth
-} = require('./storage');
-const { recognizeMileage, isRapidOcrEnabled, recognizeTextWithRapidOcr } = require('./mileageOcr');
-const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, flushNow: flushLeaderboardNow } = require('./leaderboard');
+} = require('./services/storage');
+const { recognizeMileage, isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold } = require('./services/mileageOcr');
+const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, flushNow: flushLeaderboardNow } = require('./services/leaderboard');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, roundMinutesToHalfHour } = require('./utils');
 const { registerSheetCommand } = require('./sheetCommand');
 const { WORKPLACES, DEVICES, LIMITS } = require('./config');
@@ -181,13 +182,13 @@ function getVersion() {
 }
 
 const BUTTONS = {
-  punchTime: '⏱ Время',
-  mileage: '🚗 Пробег',
-  routeSheet: '📄 Маршрутник',
-  reconciliation: '📊 Сверки',
-  cashCheck: '💵 Наличные',
-  issues: '⚠️ Проблема',
-  leaderBoard: '🏆 Лидерборд',
+  punchTime: '⏱ Записать время',
+  mileage: '🚗 Фото пробега',
+  routeSheet: '📄 Отправить маршрутник',
+  reconciliation: '📊 Отправить сверку',
+  cashCheck: '💵 Сдать наличные',
+  issues: '⚠️ Проблема с заказом',
+  leaderBoard: '🏆 Рейтинг',
   settings: '⚙️ Настройки',
   help: '❓ Помощь',
   profile: '✏️ Профиль',
@@ -496,7 +497,7 @@ async function appendLog(filePath, entry) {
 }
 
 const BACKUP_DIR = path.join(__dirname, 'backups');
-const BACKUP_FILES = ['users.json', 'states.json', 'fun-reactions.json', 'leaderboard-cache.json'];
+const BACKUP_FILES = ['database.sqlite', 'fun-reactions.json'];
 const BACKUP_INTERVAL_MS = LIMITS.BACKUP_INTERVAL_MS;
 const BACKUP_RETENTION_MS = LIMITS.BACKUP_RETENTION_MS;
 
@@ -1699,14 +1700,14 @@ async function sendHelp(ctx) {
     '❓ <b>Помощь</b>\n' +
     '━━━━━━━━━━━━━━━\n\n' +
     '1️⃣ <b>Первый вход</b> — введите ФИО, номер машины, магазин и устройство.\n' +
-    `2️⃣ <b>Время</b> — «${BUTTONS.punchTime}» записывает старт/конец за сегодня.\n` +
-    `3️⃣ <b>Пробег</b> — «${BUTTONS.mileage}» отправьте фото одометра или введите вручную.\n` +
+    `2️⃣ <b>Записать время</b> — «${BUTTONS.punchTime}» отметить начало или конец смены.\n` +
+    `3️⃣ <b>Фото пробега</b> — «${BUTTONS.mileage}» отправьте фото одометра или введите вручную.\n` +
     '   • «📷 Загрузить фото повторно» или «✏️ Ввести вручную» если не распозналось.\n' +
-    `4️⃣ <b>Маршрутник</b> — «${BUTTONS.routeSheet}» отправить фото.\n` +
-    `5️⃣ <b>Сверки</b> — «${BUTTONS.reconciliation}»: Терминал — 2 фото, Пин-Панель — 1 фото.\n` +
-    `6️⃣ <b>Наличные</b> — «${BUTTONS.cashCheck}» показать сумму к сдаче.\n` +
-    `7️⃣ <b>Проблема</b> — «${BUTTONS.issues}» ссылки для решения проблем с заказами.\n` +
-    `8️⃣ <b>Лидерборд</b> — «${BUTTONS.leaderBoard}» рейтинг курьеров по заказам.\n` +
+    `4️⃣ <b>Отправить маршрутник</b> — «${BUTTONS.routeSheet}» отправить фото маршрутного листа.\n` +
+    `5️⃣ <b>Отправить сверку</b> — «${BUTTONS.reconciliation}» Терминал — 2 фото, Пин-Панель — 1 фото.\n` +
+    `6️⃣ <b>Сдать наличные</b> — «${BUTTONS.cashCheck}» показать сумму к сдаче и подтвердить.\n` +
+    `7️⃣ <b>Проблема с заказом</b> — «${BUTTONS.issues}» ссылки для решения проблем с заказами.\n` +
+    `8️⃣ <b>Рейтинг</b> — «${BUTTONS.leaderBoard}» рейтинг курьеров по заказам.\n` +
     `9️⃣ <b>Настройки</b> — «${BUTTONS.settings}» номер машины, магазин, устройство, сотрудник.\n\n` +
     '📋 Команды:',
     Markup.inlineKeyboard([
@@ -2358,7 +2359,15 @@ bot.start(async (ctx) => {
   }
 
   await ctx.replyWithHTML(
-    `👋 Привет, <b>${esc(getEmployeeDisplayName(profile.fio))}</b>!\n\nВыберите действие:`,
+    `👋 Привет, <b>${esc(getEmployeeDisplayName(profile.fio))}</b>!\n\n` +
+    `⏱ <b>Записать время</b> — отметить начало или конец смены, автоматически выбирается время старта и вносится в таблицу ботом.\n` +
+    `🚗 <b>Фото пробега</b> — отправить фото одометра и бот автоматически скинет фото в нужный чат и запишет пробег в таблицу.\n` +
+    `📄 <b>Отправить маршрутник</b> — прикрепить маршрутный лист, бот отправит фото в нужный чат.\n` +
+    `📊 <b>Отправить сверку</b> — отправить фото сверки, бот отправит фото в нужный чат.\n` +
+    `💵 <b>Сдать наличные</b> — отметить сдачу наличных, также укажет сумму нужную сдать и подтверждение сдал/не сдал.\n` +
+    `⚠️ <b>Проблема с заказом</b> — сообщить о проблеме, бот предлагает варианты ссылками на нужный чат/бота поддержки.\n` +
+    `🏆 <b>Рейтинг</b> — посмотреть рейтинг курьеров.\n` +
+    `⚙️ <b>Настройки</b> — профиль, машина, магазин, также смена сотрудника и тд.`,
     mainMenu()
   );
 });
@@ -2535,12 +2544,6 @@ function parseMileageNumber(value) {
   if (text.length < 2 || text.length > 6) return null;
 
   return number;
-}
-
-function getMinMileageThreshold() {
-  const value = Number(process.env.OCR_MIN_MILEAGE || 1000);
-  if (!Number.isFinite(value) || value < 0) return 1000;
-  return value;
 }
 
 function getMaxShiftMileageDelta() {
@@ -3413,13 +3416,13 @@ const TEXT_ROUTES = [
   { state: 'awaitingManualMileage', handler: (ctx, state, text) => handleManualMileageInput(ctx, state, text) },
 
   // 3) Кнопки главного меню
-  { button: BUTTONS.punchTime, legacy: ['Время смены', 'Внести время смены'], handler: (ctx) => punchTimeFlow(ctx) },
-  { button: BUTTONS.mileage, legacy: ['Внести пробег'], handler: (ctx) => mileageFlow(ctx) },
-  { button: BUTTONS.routeSheet, legacy: ['Маршрутный лист'], handler: (ctx) => routeSheetFlow(ctx) },
-  { button: BUTTONS.reconciliation, legacy: ['Сверки'], handler: (ctx) => reconciliationFlow(ctx) },
-  { button: BUTTONS.cashCheck, legacy: ['Деньги к сдаче'], handler: (ctx) => showPendingCashStatus(ctx) },
-  { button: BUTTONS.issues, legacy: ['Проблема с заказом'], handler: (ctx) => showIssuesMenu(ctx) },
-  { button: BUTTONS.leaderBoard, legacy: ['Лидерборд'], handler: (ctx) => showLeaderboardMenu(ctx) },
+  { button: BUTTONS.punchTime, legacy: ['Время смены', 'Внести время смены', '⏱ Время'], handler: (ctx) => punchTimeFlow(ctx) },
+  { button: BUTTONS.mileage, legacy: ['Внести пробег', '🚗 Пробег'], handler: (ctx) => mileageFlow(ctx) },
+  { button: BUTTONS.routeSheet, legacy: ['Маршрутный лист', '📄 Маршрутник'], handler: (ctx) => routeSheetFlow(ctx) },
+  { button: BUTTONS.reconciliation, legacy: ['Сверки', '📊 Сверки'], handler: (ctx) => reconciliationFlow(ctx) },
+  { button: BUTTONS.cashCheck, legacy: ['Деньги к сдаче', '💵 Наличные'], handler: (ctx) => showPendingCashStatus(ctx) },
+  { button: BUTTONS.issues, legacy: ['Проблема с заказом', '⚠️ Проблема'], handler: (ctx) => showIssuesMenu(ctx) },
+  { button: BUTTONS.leaderBoard, legacy: ['Лидерборд', '🏆 Лидерборд'], handler: (ctx) => showLeaderboardMenu(ctx) },
 
   // 4) Меню настроек
   { button: BUTTONS.settings, legacy: ['Настройки'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ <b>Настройки</b>', settingsMenu(id)) },
@@ -3477,10 +3480,14 @@ bot.catch((error, ctx) => {
 
 process.on('uncaughtException', (error) => {
   console.error('uncaught exception:', error);
+  shutdown('uncaughtException');
+  process.exit(1);
 });
 
 process.on('unhandledRejection', (reason) => {
   console.error('unhandled rejection:', reason);
+  shutdown('unhandledRejection');
+  process.exit(1);
 });
 
 const LAUNCH_RETRIES = LIMITS.LAUNCH_RETRIES;

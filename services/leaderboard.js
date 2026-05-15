@@ -1,4 +1,4 @@
-const db = require('./db');
+const db = require('../db');
 
 function flushNow() {
   // SQLite WAL is persistent.
