@@ -53,10 +53,7 @@ const {
   deleteReminder,
   getActiveRemindersForCourier,
   getSelfClearanceRequest,
-  cleanupStaleReminders,
-
-  getShopStatus,
-  setShopStatus
+  cleanupStaleReminders
 } = require('./services/storage');
 const { recognizeMileage, isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold } = require('./services/mileageOcr');
 const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, flushNow: flushLeaderboardNow, getDayOrders: getLbDayOrders, findOvertakenCouriers, getTodayKey: getLbTodayKey } = require('./services/leaderboard');
@@ -217,7 +214,7 @@ const BUTTONS = {
   myId: '🆔 Мой ID',
   cashCollect: '💳 Принять наличные',
   cashHistory: '📋 История сборов',
-  shopStatus: '🚪 Статус ИМ',
+  openShop: '🔓 Открыть ИМ',
   backToSettings: '↩️ К настройкам',
   back: '🏠 В меню'
 };
@@ -261,7 +258,7 @@ function deviceMenu() {
 
 function logistMainMenu() {
   return Markup.keyboard([
-    [BUTTONS.punchTime, BUTTONS.shopStatus],
+    [BUTTONS.punchTime, BUTTONS.openShop],
     [BUTTONS.cashCollect],
     [BUTTONS.sheetInfo, BUTTONS.settings]
   ]).resize();
@@ -639,7 +636,7 @@ async function showCashHistoryForDate(ctx, dateStr) {
   await ctx.replyWithHTML(msg);
 }
 
-async function showShopStatusMenu(ctx) {
+async function openShopNotify(ctx) {
   const telegramId = ctx.from.id;
   const role = getUserRole(telegramId);
   if (role !== 'logist') {
@@ -649,33 +646,24 @@ async function showShopStatusMenu(ctx) {
 
   const workplace = getUserField(telegramId, 'workplace');
   if (!workplace) {
-    await ctx.replyWithHTML('⚠️ Сначала выберите магазин в профиле.', getMenuForRole(telegramId));
+    await ctx.replyWithHTML('⚠️ Сначала выберите магазин в настройках.', getMenuForRole(telegramId));
     return;
   }
 
-  const current = getShopStatus(workplace);
-  const statusText = current
-    ? (current.status === 'open' ? 'ОТКРЫТ ✅' : 'ЗАКРЫТ 🔒')
-    : 'ЗАКРЫТ 🔒';
-
-  const buttons = [];
-  if (current && current.status === 'open') {
-    buttons.push([
-      Markup.button.callback('🔓 Открыть ✅', 'shop_open'),
-      Markup.button.callback('🔒 Закрыть', 'shop_close')
-    ]);
-  } else {
-    buttons.push([
-      Markup.button.callback('🔓 Открыть', 'shop_open'),
-      Markup.button.callback('🔒 Закрыть ✅', 'shop_close')
-    ]);
+  const fio = getUserField(telegramId, 'fio') || 'Логист';
+  const chatId = process.env.SHOP_STATUS_CHAT_ID;
+  if (chatId) {
+    try {
+      await bot.telegram.sendMessage(chatId,
+        `🏪 <b>${esc(workplace)} — ОТКРЫТ</b> ✅\n\nЛогист: ${esc(fio)}`,
+        { parse_mode: 'HTML' }
+      );
+    } catch (e) {
+      console.error('shop open notify error', e.message || e);
+    }
   }
-  buttons.push([Markup.button.callback('🏠 В меню', 'back_to_menu')]);
 
-  await ctx.replyWithHTML(
-    `🏪 <b>${esc(workplace)}</b>\n\nТекущий статус: <b>${statusText}</b>`,
-    Markup.inlineKeyboard(buttons)
-  );
+  await ctx.replyWithHTML(`✅ Уведомление отправлено: <b>${esc(workplace)} — ОТКРЫТ</b> ✅`, getMenuForRole(telegramId));
 }
 
 async function notifyLogistsAboutSelfClearance(courierId, courierFio, amount, formatted, workplace) {
@@ -799,6 +787,14 @@ function isButton(text, button, legacyText) {
 
 function formatStage(stage) {
   return stage === 'start' ? 'начало смены' : 'конец смены';
+}
+
+function getTimeGreeting(timezone = process.env.APP_TIMEZONE || 'Europe/Moscow') {
+  const hour = parseInt(new Date().toLocaleString('en-GB', { timeZone: timezone, hour: 'numeric', hour12: false }));
+  if (hour >= 5 && hour < 12) return 'Доброе утро';
+  if (hour >= 12 && hour < 18) return 'Добрый день';
+  if (hour >= 18 && hour < 23) return 'Добрый вечер';
+  return 'Доброй ночи';
 }
 
 function formatPhotoStatus(stage) {
@@ -2119,7 +2115,7 @@ async function sendHelp(ctx) {
       '❓ <b>Помощь</b>\n' +
       '━━━━━━━━━━━━━━━\n\n' +
       `1️⃣ <b>Записать время</b> — «${BUTTONS.punchTime}» отметить начало или конец смены.\n` +
-      `2️⃣ <b>Статус ИМ</b> — «${BUTTONS.shopStatus}» открыть/закрыть магазин, уведомление в группу.\n` +
+      `2️⃣ <b>Открыть ИМ</b> — «${BUTTONS.openShop}» отправить уведомление об открытии магазина в группу.\n` +
       `3️⃣ <b>Принять наличные</b> — «${BUTTONS.cashCollect}» посмотреть должников и отправить напоминание.\n` +
       `4️⃣ <b>Таблицы</b> — «${BUTTONS.sheetInfo}» информация о привязке таблиц.\n` +
       `5️⃣ <b>Настройки</b> — «${BUTTONS.settings}» магазин, смена сотрудника.\n\n` +
@@ -2745,7 +2741,8 @@ async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, o
 
     if (oldOrders > 0 && ordersCount > oldOrders && workplace) {
       const dayKey = getLbTodayKey();
-      const overtaken = findOvertakenCouriers(telegramId, workplace, oldOrders, ordersCount, dayKey);
+      const overtaken = findOvertakenCouriers(telegramId, workplace, oldOrders, ordersCount, dayKey)
+        .filter(v => getUserRole(v.telegramId) !== 'logist');
 
       for (const victim of overtaken) {
         try {
@@ -2834,7 +2831,7 @@ bot.start(async (ctx) => {
         } catch (e) { /* ignore */ }
       }
     }
-    await ctx.replyWithHTML('👋 <b>Привет!</b>\n\nЭто бот для учёта смены, времени и пробега автомобиля.');
+    await ctx.replyWithHTML(`${getTimeGreeting()}! 👋 <b>Привет!</b>\n\nЭто бот для учёта смены, времени и пробега автомобиля.`);
     await askForFio(ctx);
     return;
   }
@@ -2851,8 +2848,9 @@ bot.start(async (ctx) => {
 
   if (role === 'logist') {
     await ctx.replyWithHTML(
-      `👋 Привет, <b>${esc(getEmployeeDisplayName(profile.fio))}</b>!\n\n` +
+      `${getTimeGreeting()}, <b>${esc(getEmployeeDisplayName(profile.fio))}</b>! 👋\n\n` +
       `⏱ <b>Записать время</b> — отметить начало или конец смены.\n` +
+      `🔓 <b>Открыть ИМ</b> — отправить уведомление об открытии магазина в группу.\n` +
       `💳 <b>Принять наличные</b> — посмотреть курьеров с долгами и отправить напоминание.\n` +
       `📋 <b>Таблицы</b> — информация о привязке таблиц.\n` +
       `⚙️ <b>Настройки</b> — профиль, магазин, смена сотрудника.`,
@@ -2860,7 +2858,7 @@ bot.start(async (ctx) => {
     );
   } else {
     await ctx.replyWithHTML(
-      `👋 Привет, <b>${esc(getEmployeeDisplayName(profile.fio))}</b>!\n\n` +
+      `${getTimeGreeting()}, <b>${esc(getEmployeeDisplayName(profile.fio))}</b>! 👋\n\n` +
       `⏱ <b>Записать время</b> — отметить начало или конец смены, автоматически выбирается время старта и вносится в таблицу ботом.\n` +
       `🚗 <b>Фото пробега</b> — отправить фото одометра и бот автоматически скинет фото в нужный чат и запишет пробег в таблицу.\n` +
       `📄 <b>Отправить маршрутник</b> — прикрепить маршрутный лист, бот отправит фото в нужный чат.\n` +
@@ -3195,93 +3193,6 @@ bot.command('cancel', async (ctx) => {
 bot.action('back_to_menu', async (ctx) => {
   await ctx.answerCbQuery();
   await backToMainMenu(ctx);
-});
-
-bot.action('shop_open', async (ctx) => {
-  const telegramId = ctx.from.id;
-  const role = getUserRole(telegramId);
-  if (role !== 'logist') {
-    await ctx.answerCbQuery('❌ Только для логистов');
-    return;
-  }
-
-  const workplace = getUserField(telegramId, 'workplace');
-  if (!workplace) {
-    await ctx.answerCbQuery('⚠️ Сначала выберите магазин');
-    return;
-  }
-
-  setShopStatus(workplace, 'open', telegramId);
-  const fio = getUserField(telegramId, 'fio') || 'Логист';
-
-  const chatId = process.env.SHOP_STATUS_CHAT_ID;
-  if (chatId) {
-    try {
-      await bot.telegram.sendMessage(chatId,
-        `🏪 <b>${esc(workplace)} — ОТКРЫТ</b> ✅\n\nЛогист: ${esc(fio)}`,
-        { parse_mode: 'HTML' }
-      );
-    } catch (e) {
-      console.error('shop status send error', e.message || e);
-    }
-  }
-
-  const current = getShopStatus(workplace);
-  const buttons = [
-    [
-      Markup.button.callback('🔓 Открыть ✅', 'shop_open'),
-      Markup.button.callback('🔒 Закрыть', 'shop_close')
-    ],
-    [Markup.button.callback('🏠 В меню', 'back_to_menu')]
-  ];
-
-  try {
-    await ctx.editMessageReplyMarkup(Markup.inlineKeyboard(buttons));
-  } catch (e) { /* message not modified or too old */ }
-  await ctx.answerCbQuery('✅ Статус отправлен: ОТКРЫТ');
-});
-
-bot.action('shop_close', async (ctx) => {
-  const telegramId = ctx.from.id;
-  const role = getUserRole(telegramId);
-  if (role !== 'logist') {
-    await ctx.answerCbQuery('❌ Только для логистов');
-    return;
-  }
-
-  const workplace = getUserField(telegramId, 'workplace');
-  if (!workplace) {
-    await ctx.answerCbQuery('⚠️ Сначала выберите магазин');
-    return;
-  }
-
-  setShopStatus(workplace, 'closed', telegramId);
-  const fio = getUserField(telegramId, 'fio') || 'Логист';
-
-  const chatId = process.env.SHOP_STATUS_CHAT_ID;
-  if (chatId) {
-    try {
-      await bot.telegram.sendMessage(chatId,
-        `🏪 <b>${esc(workplace)} — ЗАКРЫТ</b> 🔒\n\nЛогист: ${esc(fio)}`,
-        { parse_mode: 'HTML' }
-      );
-    } catch (e) {
-      console.error('shop status send error', e.message || e);
-    }
-  }
-
-  const buttons = [
-    [
-      Markup.button.callback('🔓 Открыть', 'shop_open'),
-      Markup.button.callback('🔒 Закрыть ✅', 'shop_close')
-    ],
-    [Markup.button.callback('🏠 В меню', 'back_to_menu')]
-  ];
-
-  try {
-    await ctx.editMessageReplyMarkup(Markup.inlineKeyboard(buttons));
-  } catch (e) { /* message not modified or too old */ }
-  await ctx.answerCbQuery('✅ Статус отправлен: ЗАКРЫТ');
 });
 
 bot.action('show_my_id', async (ctx) => {
@@ -3685,7 +3596,7 @@ bot.action(/^sc_appr_(\d+)$/, async (ctx) => {
     courierFio: courierFio,
     workplace: workplace,
     amount: amount,
-    action: 'approved'
+    action: 'self_cleared'
   });
 
   try {
@@ -4424,7 +4335,7 @@ const TEXT_ROUTES = [
   { button: BUTTONS.issues, legacy: ['Проблема с заказом', '⚠️ Проблема'], handler: (ctx) => showIssuesMenu(ctx) },
   { button: BUTTONS.leaderBoard, legacy: ['Лидерборд', '🏆 Лидерборд'], handler: (ctx) => showLeaderboardMenu(ctx) },
   { button: BUTTONS.cashCollect, handler: (ctx) => showDebtorsList(ctx) },
-  { button: BUTTONS.shopStatus, handler: (ctx) => showShopStatusMenu(ctx) },
+  { button: BUTTONS.openShop, handler: (ctx) => openShopNotify(ctx) },
 
   // 4) Меню настроек
   { button: BUTTONS.settings, legacy: ['Настройки'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ <b>Настройки</b>', settingsMenu(id)) },

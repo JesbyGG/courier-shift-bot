@@ -35,13 +35,6 @@ db.exec(`
     amount REAL NOT NULL,
     action TEXT NOT NULL
   );
-
-  CREATE TABLE IF NOT EXISTS shop_status (
-    workplace TEXT PRIMARY KEY,
-    status TEXT NOT NULL,
-    updatedBy TEXT,
-    updatedAt TEXT
-  );
 `);
 
 // Migration logic

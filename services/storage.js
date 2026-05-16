@@ -415,19 +415,6 @@ function markUserSeen(telegramId) {
   _setRecord(telegramId, record);
 }
 
-function getShopStatus(workplace) {
-  const key = WORKPLACE_KEY_MAP[workplace] || workplace;
-  const row = db.prepare('SELECT status, updatedBy, updatedAt FROM shop_status WHERE workplace = ?').get(key);
-  if (!row) return null;
-  return { status: row.status, updatedBy: row.updatedBy, updatedAt: row.updatedAt };
-}
-
-function setShopStatus(workplace, status, updatedBy) {
-  const key = WORKPLACE_KEY_MAP[workplace] || workplace;
-  const stmt = db.prepare('INSERT OR REPLACE INTO shop_status (workplace, status, updatedBy, updatedAt) VALUES (?, ?, ?, ?)');
-  stmt.run(key, status, String(updatedBy || ''), new Date().toISOString());
-}
-
 module.exports = {
   flushNow,
   getUserField,
@@ -468,8 +455,5 @@ module.exports = {
   deleteReminder,
   getActiveRemindersForCourier,
   getSelfClearanceRequest,
-  cleanupStaleReminders,
-
-  getShopStatus,
-  setShopStatus
+  cleanupStaleReminders
 };
