@@ -1240,6 +1240,9 @@ async function maybeSendFunReaction(ctx, htmlText) {
 
 bot.use(async (ctx, next) => {
   if (ctx.chat?.type !== 'private') {
+    if (ctx.message?.text?.startsWith('/chatid')) {
+      return next();
+    }
     return;
   }
 
