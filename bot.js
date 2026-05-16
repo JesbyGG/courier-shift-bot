@@ -290,7 +290,18 @@ function getSettingsMenuForRole(telegramId) {
   if (role === 'logist') {
     return logistSettingsMenu();
   }
-  return settingsMenu(telegramId);
+  const showSheets = isAdminUser(telegramId) || isSheetAccessUser(telegramId);
+  const buttons = [
+    [BUTTONS.profile]
+  ];
+  if (showSheets) {
+    buttons.push([BUTTONS.sheetInfo, BUTTONS.myId]);
+  } else {
+    buttons.push([BUTTONS.myId]);
+  }
+  buttons.push([BUTTONS.help]);
+  buttons.push([BUTTONS.back]);
+  return Markup.keyboard(buttons).resize();
 }
 
 function getProfileMenuForRole(telegramId) {
