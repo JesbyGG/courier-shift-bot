@@ -182,10 +182,40 @@ function checkNotifications(telegramId, fio, workplace, currentDayOrders) {
   return [];
 }
 
+function getDayOrders(telegramId, dayKey) {
+  const record = _getRecord(telegramId);
+  if (!record || !record.dailyOrders) return 0;
+  return record.dailyOrders[dayKey] || 0;
+}
+
+function findOvertakenCouriers(telegramId, workplace, oldOrders, newOrders, dayKey) {
+  if (oldOrders <= 0 || newOrders <= oldOrders) return [];
+  const records = _getAllRecords();
+  const overtaken = [];
+  for (const [tid, record] of Object.entries(records)) {
+    if (tid === String(telegramId)) continue;
+    if (record.workplace !== workplace) continue;
+    if (!record.dailyOrders) continue;
+    const theirOrders = record.dailyOrders[dayKey] || 0;
+    if (theirOrders > oldOrders && theirOrders < newOrders) {
+      overtaken.push({
+        telegramId: tid,
+        fio: record.fio || 'Неизвестный',
+        orders: theirOrders
+      });
+    }
+  }
+  overtaken.sort((a, b) => b.orders - a.orders);
+  return overtaken;
+}
+
 module.exports = {
   recordOrders,
   calculateLeaderboard,
   formatLeaderboard,
   checkNotifications,
-  flushNow
+  flushNow,
+  getDayOrders,
+  findOvertakenCouriers,
+  getTodayKey
 };

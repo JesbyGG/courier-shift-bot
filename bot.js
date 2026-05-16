@@ -56,7 +56,7 @@ const {
   cleanupStaleReminders
 } = require('./services/storage');
 const { recognizeMileage, isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold } = require('./services/mileageOcr');
-const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, flushNow: flushLeaderboardNow } = require('./services/leaderboard');
+const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, flushNow: flushLeaderboardNow, getDayOrders: getLbDayOrders, findOvertakenCouriers, getTodayKey: getLbTodayKey } = require('./services/leaderboard');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, roundMinutesToHalfHour } = require('./utils');
 const { registerSheetCommand } = require('./sheetCommand');
 const { WORKPLACES, DEVICES, ROLES, LIMITS } = require('./config');
@@ -2685,7 +2685,7 @@ async function showLeaderboardResult(ctx, type, periodDays, workplace) {
   );
 }
 
-async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, ordersCount) {
+async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, ordersCount, oldOrders = 0) {
   try {
     const notifications = checkLeaderboardNotifications(telegramId, fio, workplace, ordersCount);
     for (const notif of notifications) {
@@ -2693,6 +2693,36 @@ async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, o
         await ctx.replyWithHTML(
           `🎉 <b>Новый личный рекорд!</b>\n\nВы доставили <b>${notif.value}</b> заказов за день!\nПредыдущий рекорд: ${notif.previous} заказов.`
         );
+      }
+    }
+
+    if (oldOrders > 0 && ordersCount > oldOrders && workplace) {
+      const dayKey = getLbTodayKey();
+      const overtaken = findOvertakenCouriers(telegramId, workplace, oldOrders, ordersCount, dayKey);
+
+      for (const victim of overtaken) {
+        try {
+          await bot.telegram.sendMessage(victim.telegramId,
+            `⚠️ <b>Вас обогнали в рейтинге!</b>\n\n` +
+            `${esc(fio)} доставил <b>${ordersCount}</b> заказов и обогнал вас.\n` +
+            `У вас сейчас <b>${victim.orders}</b> заказов.\n` +
+            `🏬 ${esc(workplace)}`,
+            { parse_mode: 'HTML' }
+          );
+        } catch (e) {
+          console.error('overtaken notify error', victim.telegramId, e.message || e);
+        }
+      }
+
+      if (overtaken.length > 0) {
+        const names = overtaken.map(v => `${esc(v.fio)} (${v.orders})`).join(', ');
+        try {
+          await ctx.replyWithHTML(
+            `🎉 <b>Вы обогнали в рейтинге!</b>\n\n${names}\n\nТеперь у вас <b>${ordersCount}</b> заказов.`
+          );
+        } catch (e) {
+          console.error('overtaken self notify error', e.message || e);
+        }
       }
     }
   } catch (err) {
@@ -3882,8 +3912,10 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
           console.error('эффективность: ошибка записи', effError.message || effError);
         }
         try {
+          const dayKey = getLbTodayKey();
+          const oldOrders = getLbDayOrders(String(telegramId), dayKey);
           recordLeaderboardOrders(String(telegramId), state.fio, state.workplace, totalOrders);
-          await handleLeaderboardNotifications(ctx, String(telegramId), state.fio, state.workplace, totalOrders);
+          await handleLeaderboardNotifications(ctx, String(telegramId), state.fio, state.workplace, totalOrders, oldOrders);
         } catch (lbErr) {
           console.error('leaderboard record error', lbErr.message || lbErr);
         }
@@ -3975,8 +4007,10 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
         console.error('эффективность: ошибка записи', effError.message || effError);
       }
       try {
+        const dayKey = getLbTodayKey();
+        const oldOrders = getLbDayOrders(String(telegramId), dayKey);
         recordLeaderboardOrders(String(telegramId), state.fio, state.workplace, totalOrders);
-        await handleLeaderboardNotifications(ctx, String(telegramId), state.fio, state.workplace, totalOrders);
+        await handleLeaderboardNotifications(ctx, String(telegramId), state.fio, state.workplace, totalOrders, oldOrders);
       } catch (lbErr) {
         console.error('leaderboard record error', lbErr.message || lbErr);
       }
