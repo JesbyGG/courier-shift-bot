@@ -32,15 +32,20 @@ function _getAllRecords() {
   return records;
 }
 
+function _formatLocalDate(date, timezone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+  const v = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  return `${v.year}-${v.month}-${v.day}`;
+}
+
 function getTodayKey() {
   const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
-  const now = new Date();
-  const offset = timezone === 'Europe/Moscow' ? 3 : -(now.getTimezoneOffset() / 60);
-  const local = new Date(now.getTime() + offset * 3600000);
-  const y = local.getUTCFullYear();
-  const m = String(local.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(local.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  return _formatLocalDate(new Date(), timezone);
 }
 
 function recordOrders(telegramId, fio, workplace, ordersCount) {
@@ -65,14 +70,9 @@ function recordOrders(telegramId, fio, workplace, ordersCount) {
 
 function getDaysAgo(days) {
   const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
-  const now = new Date();
-  const offset = timezone === 'Europe/Moscow' ? 3 : -(now.getTimezoneOffset() / 60);
-  const local = new Date(now.getTime() + offset * 3600000);
-  local.setUTCDate(local.getUTCDate() - days);
-  const y = local.getUTCFullYear();
-  const m = String(local.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(local.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const pastDate = new Date(Date.now() - days * msPerDay);
+  return _formatLocalDate(pastDate, timezone);
 }
 
 const WORKPLACE_SHORT = {
