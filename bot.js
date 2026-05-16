@@ -1,4 +1,3 @@
-// bot.js — Courier Shift Bot
 require('dotenv').config();
 require('./logger').initLogger();
 
