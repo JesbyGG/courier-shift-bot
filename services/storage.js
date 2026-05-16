@@ -39,8 +39,15 @@ function getFullProfile(telegramId) {
     fio: profile.fio || null,
     carNumber: profile.carNumber || null,
     workplace: profile.workplace || null,
-    device: profile.device || null
+    device: profile.device || null,
+    role: profile.role || null
   };
+}
+
+function getUserRole(telegramId) {
+  const record = _getRecord(telegramId);
+  if (!record) return 'courier';
+  return record.role || 'courier';
 }
 
 function deleteUser(telegramId) {
@@ -52,6 +59,171 @@ function clearPendingCashToSubmit(telegramId) {
   if (record && record.pendingCashToSubmit) {
     delete record.pendingCashToSubmit;
     _setRecord(telegramId, record);
+  }
+}
+
+function setCashConfirmationStatus(telegramId, status) {
+  const record = _getRecord(telegramId);
+  if (!record) return;
+  if (record.pendingCashToSubmit) {
+    record.pendingCashToSubmit.confirmationStatus = status;
+    _setRecord(telegramId, record);
+  }
+}
+
+function clearPendingCashAndReminders(telegramId) {
+  clearPendingCashToSubmit(telegramId);
+  const allReminders = _getAllReminders();
+  for (const reminder of allReminders) {
+    if (reminder.courierId === String(telegramId)) {
+      _deleteReminder(reminder._shortId);
+    }
+  }
+}
+
+function logCashAction({ logistId, logistFio, courierId, courierFio, workplace, amount, action }) {
+  const stmt = db.prepare(
+    'INSERT INTO cash_audit (timestamp, logistId, logistFio, courierId, courierFio, workplace, amount, action) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  );
+  stmt.run(
+    new Date().toISOString(),
+    logistId || null,
+    logistFio || null,
+    String(courierId),
+    courierFio || null,
+    workplace || null,
+    amount,
+    action
+  );
+}
+
+function getCashHistory(dateStr, workplace) {
+  let sql = "SELECT * FROM cash_audit WHERE DATE(timestamp) = DATE(?)";
+  const params = [dateStr];
+  if (workplace) {
+    sql += " AND workplace = ?";
+    params.push(workplace);
+  }
+  sql += " ORDER BY timestamp ASC";
+  return db.prepare(sql).all(...params);
+}
+
+function getDebtors(workplace) {
+  const ids = getAllUserIds();
+  const debtors = [];
+  for (const id of ids) {
+    const record = _getRecord(id);
+    if (!record || record.role === 'logist') continue;
+    const userWorkplace = record.workplace;
+    if (userWorkplace !== workplace) continue;
+    const pendingCash = record.pendingCashToSubmit;
+    const amount = Number(pendingCash?.amount || 0);
+    if (!Number.isFinite(amount) || amount < 1) continue;
+    debtors.push({
+      telegramId: id,
+      fio: record.fio || 'Неизвестный',
+      amount: amount,
+      formatted: pendingCash.formatted || String(amount),
+      workplace: userWorkplace
+    });
+  }
+  return debtors;
+}
+
+function findLogistsForWorkplace(workplace) {
+  const ids = getAllUserIds();
+  const logists = [];
+  for (const id of ids) {
+    const record = _getRecord(id);
+    if (!record || record.role !== 'logist') continue;
+    if (record.workplace !== workplace) continue;
+    logists.push({
+      telegramId: id,
+      fio: record.fio || 'Неизвестный',
+      chatId: id
+    });
+  }
+  return logists;
+}
+
+function _reminderKey(shortId) {
+  return `reminder_${shortId}`;
+}
+
+function setReminder(shortId, data) {
+  const key = _reminderKey(shortId);
+  const stmt = db.prepare('INSERT OR REPLACE INTO states (telegramId, data) VALUES (?, ?)');
+  stmt.run(key, JSON.stringify({ ...data, _shortId: shortId }));
+}
+
+function getReminder(shortId) {
+  const key = _reminderKey(shortId);
+  const row = db.prepare('SELECT data FROM states WHERE telegramId = ?').get(key);
+  if (!row) return null;
+  try {
+    return JSON.parse(row.data);
+  } catch (e) {
+    return null;
+  }
+}
+
+function updateReminder(shortId, updates) {
+  const existing = getReminder(shortId);
+  if (!existing) return null;
+  const merged = { ...existing, ...updates };
+  setReminder(shortId, merged);
+  return merged;
+}
+
+function deleteReminder(shortId) {
+  const key = _reminderKey(shortId);
+  db.prepare('DELETE FROM states WHERE telegramId = ?').run(key);
+}
+
+function _deleteReminder(shortId) {
+  deleteReminder(shortId);
+}
+
+function _getAllReminders() {
+  const rows = db.prepare("SELECT data FROM states WHERE telegramId LIKE 'reminder_%'").all();
+  const results = [];
+  for (const row of rows) {
+    try {
+      const data = JSON.parse(row.data);
+      results.push(data);
+    } catch (e) { /* skip malformed */ }
+  }
+  return results;
+}
+
+function getActiveRemindersForCourier(courierId) {
+  return _getAllReminders().filter(r => r.courierId === String(courierId) && r.status !== 'approved' && r.status !== 'declined');
+}
+
+function getSelfClearanceRequest(courierId) {
+  const record = _getRecord(courierId);
+  if (!record || !record.pendingCashToSubmit) return null;
+  const pcs = record.pendingCashToSubmit;
+  if (pcs.confirmationStatus === 'awaiting') {
+    return {
+      courierId: String(courierId),
+      courierFio: record.fio || 'Неизвестный',
+      amount: Number(pcs.amount || 0),
+      formatted: pcs.formatted || String(pcs.amount || 0),
+      workplace: pcs.workplace || record.workplace || null
+    };
+  }
+  return null;
+}
+
+function cleanupStaleReminders(maxAgeMs = 24 * 60 * 60 * 1000) {
+  const now = Date.now();
+  const all = _getAllReminders();
+  for (const reminder of all) {
+    const createdAt = new Date(reminder.createdAt || 0).getTime();
+    if (now - createdAt > maxAgeMs) {
+      deleteReminder(reminder._shortId);
+    }
   }
 }
 
@@ -248,8 +420,11 @@ module.exports = {
   getUserField,
   setUserField,
   getFullProfile,
+  getUserRole,
   deleteUser,
   clearPendingCashToSubmit,
+  setCashConfirmationStatus,
+  clearPendingCashAndReminders,
   getAllUserIds,
   
   resolveSheetInfo,
@@ -268,5 +443,17 @@ module.exports = {
   isSheetAccessUser,
   
   markUserSeen,
-  cleanupOldMonths
+  cleanupOldMonths,
+  
+  logCashAction,
+  getCashHistory,
+  getDebtors,
+  findLogistsForWorkplace,
+  setReminder,
+  getReminder,
+  updateReminder,
+  deleteReminder,
+  getActiveRemindersForCourier,
+  getSelfClearanceRequest,
+  cleanupStaleReminders
 };

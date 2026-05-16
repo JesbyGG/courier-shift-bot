@@ -26,8 +26,11 @@ const {
   getUserField,
   getFullProfile,
   setUserField,
+  getUserRole,
   deleteUser,
   clearPendingCashToSubmit,
+  setCashConfirmationStatus,
+  clearPendingCashAndReminders,
   getAllUserIds,
   resolveSheetInfo,
   flushNow: flushStorageNow,
@@ -39,13 +42,24 @@ const {
   cleanupOldMonths,
   getCurrentMonthKey,
   getNextMonthKey,
-  getWorkplaceSheetIdByMonth
+  getWorkplaceSheetIdByMonth,
+  logCashAction,
+  getCashHistory,
+  getDebtors,
+  findLogistsForWorkplace,
+  setReminder,
+  getReminder,
+  updateReminder,
+  deleteReminder,
+  getActiveRemindersForCourier,
+  getSelfClearanceRequest,
+  cleanupStaleReminders
 } = require('./services/storage');
 const { recognizeMileage, isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold } = require('./services/mileageOcr');
 const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, flushNow: flushLeaderboardNow } = require('./services/leaderboard');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, roundMinutesToHalfHour } = require('./utils');
 const { registerSheetCommand } = require('./sheetCommand');
-const { WORKPLACES, DEVICES, LIMITS } = require('./config');
+const { WORKPLACES, DEVICES, ROLES, LIMITS } = require('./config');
 
 const db = require('./db');
 
@@ -198,6 +212,8 @@ const BUTTONS = {
   switchUser: '✏️ Поменять сотрудника',
   sheetInfo: '📋 Таблицы',
   myId: '🆔 Мой ID',
+  cashCollect: '💳 Принять наличные',
+  cashHistory: '📋 История сборов',
   backToSettings: '↩️ К настройкам',
   back: '🏠 В меню'
 };
@@ -214,18 +230,7 @@ function mainMenu() {
 }
 
 function settingsMenu(telegramId) {
-  const showSheets = isAdminUser(telegramId) || isSheetAccessUser(telegramId);
-  const buttons = [
-    [BUTTONS.profile]
-  ];
-  if (showSheets) {
-    buttons.push([BUTTONS.sheetInfo, BUTTONS.myId]);
-  } else {
-    buttons.push([BUTTONS.myId]);
-  }
-  buttons.push([BUTTONS.help]);
-  buttons.push([BUTTONS.back]);
-  return Markup.keyboard(buttons).resize();
+  return getSettingsMenuForRole(telegramId);
 }
 
 function profileMenu() {
@@ -248,6 +253,76 @@ function deviceMenu() {
     DEVICES,
     [BUTTONS.back]
   ]).resize();
+}
+
+function logistMainMenu() {
+  return Markup.keyboard([
+    [BUTTONS.punchTime],
+    [BUTTONS.cashCollect],
+    [BUTTONS.sheetInfo, BUTTONS.settings]
+  ]).resize();
+}
+
+function logistSettingsMenu() {
+  return Markup.keyboard([
+    [BUTTONS.profile],
+    [BUTTONS.myId],
+    [BUTTONS.cashHistory],
+    [BUTTONS.help],
+    [BUTTONS.back]
+  ]).resize();
+}
+
+function logistProfileMenu() {
+  return Markup.keyboard([
+    [BUTTONS.changeWorkplace, BUTTONS.switchUser],
+    [BUTTONS.backToSettings]
+  ]).resize();
+}
+
+function getMenuForRole(telegramId) {
+  const role = getUserRole(telegramId);
+  return role === 'logist' ? logistMainMenu() : mainMenu();
+}
+
+function getSettingsMenuForRole(telegramId) {
+  const role = getUserRole(telegramId);
+  if (role === 'logist') {
+    return logistSettingsMenu();
+  }
+  return settingsMenu(telegramId);
+}
+
+function getProfileMenuForRole(telegramId) {
+  const role = getUserRole(telegramId);
+  if (role === 'logist') {
+    return logistProfileMenu();
+  }
+  return profileMenu();
+}
+
+function roleChoiceKeyboard() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback('👤 Курьер', 'role_courier')],
+    [Markup.button.callback('📦 Логист', 'role_logist')]
+  ]);
+}
+
+function isLogist(telegramId) {
+  return getUserRole(telegramId) === 'logist';
+}
+
+function requireRole(ctx, requiredRole) {
+  const role = getUserRole(ctx.from.id);
+  if (requiredRole === 'courier' && role === 'logist') {
+    ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
+    return false;
+  }
+  if (requiredRole === 'logist' && role !== 'logist') {
+    ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(ctx.from.id));
+    return false;
+  }
+  return true;
 }
 
 function skipMileageKeyboard() {
@@ -335,6 +410,253 @@ function cashSubmitConfirmKeyboard() {
     [Markup.button.callback('❌ Нет, не сдал', 'cash_submit_no')],
     [Markup.button.callback('🏠 В меню', 'back_to_menu')]
   ]);
+}
+
+function debtorListKeyboard(debtors, logistWorkplace) {
+  const buttons = [];
+  for (const debtor of debtors) {
+    const activeReminders = getActiveRemindersForCourier(debtor.telegramId);
+    let label = `👤 ${debtor.fio} — ${debtor.formatted || debtor.amount} ₽`;
+    if (activeReminders.length > 0) {
+      const remindedBy = activeReminders.map(r => r.logistFio).join(', ');
+      label += ` 🔔(${remindedBy})`;
+    }
+    const selfClearance = getSelfClearanceRequest(debtor.telegramId);
+    if (selfClearance) {
+      label = `👤 ${debtor.fio} — ${selfClearance.formatted || selfClearance.amount} ₽ ⏳`;
+    }
+    buttons.push([Markup.button.callback(label, `d_${debtor.telegramId}`)]);
+  }
+  if (buttons.length === 0) {
+    return null;
+  }
+  buttons.push([Markup.button.callback('🏠 В меню', 'back_to_menu')]);
+  return Markup.inlineKeyboard(buttons);
+}
+
+async function showDebtorsList(ctx) {
+  const telegramId = ctx.from.id;
+  const role = getUserRole(telegramId);
+  if (role !== 'logist') {
+    await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(telegramId));
+    return;
+  }
+
+  const workplace = getUserField(telegramId, 'workplace');
+  if (!workplace) {
+    await ctx.replyWithHTML('⚠️ Сначала выберите магазин в настройках.', getSettingsMenuForRole(telegramId));
+    return;
+  }
+
+  cleanupStaleReminders();
+
+  const debtors = getDebtors(workplace);
+
+  if (debtors.length === 0) {
+    await ctx.replyWithHTML('✅ Все деньги сданы, долгов нет.', getMenuForRole(telegramId));
+    return;
+  }
+
+  const totalAmount = debtors.reduce((sum, d) => sum + d.amount, 0);
+  const formattedTotal = formatMoneyRu(totalAmount);
+
+  await ctx.replyWithHTML(
+    `💳 <b>Курьеры с долгами</b> (${esc(workplace)})\n` +
+    `Всего к сдаче: <code>${formattedTotal}</code> ₽\n\n` +
+    `Нажмите на курьера, чтобы отправить напоминание:`,
+    debtorListKeyboard(debtors, workplace)
+  );
+}
+
+async function pokeCourier(ctx, courierId) {
+  const logistId = ctx.from.id;
+  const logistFio = getUserField(logistId, 'fio') || 'Логист';
+  const logistWorkplace = getUserField(logistId, 'workplace');
+  const courierRecord = getUserField(courierId, 'fio') ? {
+    fio: getUserField(courierId, 'fio'),
+    workplace: getUserField(courierId, 'workplace')
+  } : null;
+
+  if (!courierRecord || !courierRecord.fio) {
+    await ctx.answerCbQuery('⚠️ Курьер не найден.');
+    return;
+  }
+
+  const selfClearance = getSelfClearanceRequest(courierId);
+  if (selfClearance) {
+    await ctx.answerCbQuery();
+    await ctx.replyWithHTML(
+      `⏳ ${esc(courierRecord.fio)} уже отметил сдачу.\n` +
+      `Ожидает подтверждения: <code>${esc(selfClearance.formatted || String(selfClearance.amount))}</code> ₽`,
+      Markup.inlineKeyboard([
+        [Markup.button.callback('✅ Подтвердить', `sc_appr_${courierId}`)],
+        [Markup.button.callback('❌ Отклонить', `sc_decl_${courierId}`)]
+      ])
+    );
+    return;
+  }
+
+  const pendingCash = getUserField(courierId, 'pendingCashToSubmit');
+  const amount = Number(pendingCash?.amount || 0);
+  if (!Number.isFinite(amount) || amount < 1) {
+    await ctx.answerCbQuery('✅ Курьер уже сдал деньги.');
+    if (ctx.callbackQuery) {
+      try { await ctx.editMessageText('✅ Курьер уже сдал деньги.'); } catch (e) { /* ignore */ }
+    }
+    return;
+  }
+
+  const formatted = pendingCash?.formatted || formatMoneyRu(amount);
+  const shortId = crypto.randomBytes(4).toString('hex');
+
+  const reminderData = {
+    logistId: String(logistId),
+    logistChatId: String(logistId),
+    logistFio: logistFio,
+    courierId: String(courierId),
+    courierFio: courierRecord.fio,
+    amount: amount,
+    formatted: formatted,
+    workplace: courierRecord.workplace || logistWorkplace,
+    status: 'reminded',
+    createdAt: new Date().toISOString(),
+    logistMsgId: null,
+    courierMsgId: null
+  };
+
+  setReminder(shortId, reminderData);
+
+  logCashAction({
+    logistId: String(logistId),
+    logistFio: logistFio,
+    courierId: String(courierId),
+    courierFio: courierRecord.fio,
+    workplace: courierRecord.workplace || logistWorkplace,
+    amount: amount,
+    action: 'reminded'
+  });
+
+  const workpalceLabel = courierRecord.workplace || 'не указано';
+  const courierMsg = `🔔 <b>Логист ${esc(logistFio)} напоминает:</b>\n\n` +
+    `💵 У вас <code>${esc(formatted)}</code> ₽ к сдаче.\n` +
+    `🏬 <b>${esc(workpalceLabel)}</b>\n\n` +
+    `Сдали деньги?`;
+
+  try {
+    const sent = await bot.telegram.sendMessage(courierId, courierMsg, {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [Markup.button.callback('🏃 Уже бегу', `ack_${shortId}`)],
+          [Markup.button.callback('✅ Сдал', `c_${shortId}`)]
+        ]
+      }
+    });
+
+    const msgId = sent.message_id;
+    updateReminder(shortId, { courierMsgId: msgId });
+
+    if (ctx.callbackQuery) {
+      await ctx.answerCbQuery('✅ Напоминание отправлено');
+      try {
+        await ctx.editMessageText(`✅ Напоминание отправлено: <b>${esc(courierRecord.fio)}</b> — <code>${esc(formatted)}</code> ₽`, { parse_mode: 'HTML' });
+      } catch (e) { /* ignore */ }
+    } else {
+      await ctx.replyWithHTML(`✅ Напоминание отправлено: <b>${esc(courierRecord.fio)}</b> — <code>${esc(formatted)}</code> ₽`);
+    }
+  } catch (e) {
+    console.error('failed to send reminder to courier', e);
+    deleteReminder(shortId);
+    if (ctx.callbackQuery) {
+      await ctx.answerCbQuery('⚠️ Не удалось отправить уведомление курьеру.');
+    } else {
+      await ctx.replyWithHTML('⚠️ Не удалось отправить уведомление курьеру. Возможно, он заблокировал бота.');
+    }
+  }
+}
+
+async function showCashHistory(ctx) {
+  const telegramId = ctx.from.id;
+  const role = getUserRole(telegramId);
+  if (role !== 'logist') {
+    await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(telegramId));
+    return;
+  }
+
+  const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
+  const buttons = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    const dayLabel = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: timezone });
+    const prefix = i === 0 ? '📅 ' : '';
+    buttons.push([Markup.button.callback(`${prefix}${dayLabel}`, `ch_${dateStr}`)]);
+  }
+  buttons.push([Markup.button.callback('🏠 В меню', 'back_to_menu')]);
+
+  await ctx.replyWithHTML('📋 <b>История сборов</b>\n\nВыберите дату:', Markup.inlineKeyboard(buttons));
+}
+
+async function showCashHistoryForDate(ctx, dateStr) {
+  const telegramId = ctx.from.id;
+  const workplace = getUserField(telegramId, 'workplace');
+  const rows = getCashHistory(dateStr, workplace);
+
+  const approvedRows = rows.filter(r => r.action === 'approved' || r.action === 'self_cleared');
+
+  if (approvedRows.length === 0) {
+    await ctx.answerCbQuery();
+    await ctx.replyWithHTML(`📋 <b>История сборов за ${dateStr}</b>\n\nНет подтверждённых сдач за эту дату.`);
+    return;
+  }
+
+  const total = approvedRows.reduce((sum, r) => sum + r.amount, 0);
+  let msg = `📋 <b>История сборов за ${dateStr}</b>\n` +
+    `Всего собрано: <code>${formatMoneyRu(total)}</code> ₽\n\n`;
+
+  for (const row of approvedRows) {
+    const icon = row.action === 'self_cleared' ? '💵' : '✅';
+    const logistLabel = row.logistFio ? ` (логист: ${esc(row.logistFio)})` : ' (самостоятельно)';
+    msg += `${icon} ${esc(row.courierFio)} — <code>${formatMoneyRu(row.amount)}</code> ₽${logistLabel}\n`;
+  }
+
+  await ctx.replyWithHTML(msg);
+}
+
+async function notifyLogistsAboutSelfClearance(courierId, courierFio, amount, formatted, workplace) {
+  const logists = findLogistsForWorkplace(workplace);
+  const adminIds = getAdminIds();
+
+  const allRecipientIds = new Set();
+  for (const logist of logists) {
+    allRecipientIds.add(String(logist.telegramId));
+  }
+  for (const adminId of adminIds) {
+    if (!allRecipientIds.has(String(adminId))) {
+      allRecipientIds.add(String(adminId));
+    }
+  }
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('✅ Подтвердить', `sc_appr_${courierId}`)],
+    [Markup.button.callback('❌ Отклонить', `sc_decl_${courierId}`)]
+  ]);
+
+  for (const recipientId of allRecipientIds) {
+    try {
+      await bot.telegram.sendMessage(recipientId,
+        `💰 <b>Курьер отметил сдачу</b>\n\n` +
+        `👤 ${esc(courierFio)}\n` +
+        `💵 <code>${esc(formatted)}</code> ₽\n` +
+        `🏬 ${esc(workplace)}\n\n` +
+        `Подтвердите сдачу:`,
+        { parse_mode: 'HTML', reply_markup: keyboard }
+      );
+    } catch (e) {
+      console.error('failed to notify logist about self-clearance', recipientId, e.message);
+    }
+  }
 }
 
 if (!process.env.BOT_TOKEN) {
@@ -1387,13 +1709,19 @@ async function saveWorkplace(ctx, value) {
   const workplace = WORKPLACES.find((item) => item.toLowerCase() === String(value || '').trim().toLowerCase());
 
   if (!workplace) {
-    // Кнопки уже видны на клавиатуре — список в тексте дублирует их.
     await ctx.replyWithHTML('❌ Выберите магазин кнопкой ниже.', workplaceMenu());
     return;
   }
 
   setUserField(ctx.from.id, 'workplace', workplace);
   console.log('интернет-магазин сохранён');
+  const role = getUserRole(ctx.from.id);
+
+  if (role === 'logist') {
+    clearState(ctx.from.id);
+    await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`, logistMainMenu());
+    return;
+  }
 
   if (!getUserField(ctx.from.id, 'device')) {
     await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`);
@@ -1421,15 +1749,18 @@ async function saveDevice(ctx, value) {
 
 async function ensureProfile(ctx) {
   const profile = getFullProfile(ctx.from.id);
+  const role = getUserRole(ctx.from.id);
 
   if (!profile.fio) {
     await askForFio(ctx);
     return null;
   }
 
-  if (!profile.carNumber) {
-    await askForCarNumber(ctx, profile.fio);
-    return null;
+  if (role !== 'logist') {
+    if (!profile.carNumber) {
+      await askForCarNumber(ctx, profile.fio);
+      return null;
+    }
   }
 
   if (!profile.workplace) {
@@ -1437,9 +1768,11 @@ async function ensureProfile(ctx) {
     return null;
   }
 
-  if (!profile.device) {
-    await askForDevice(ctx, profile.fio);
-    return null;
+  if (role !== 'logist') {
+    if (!profile.device) {
+      await askForDevice(ctx, profile.fio);
+      return null;
+    }
   }
 
   return profile;
@@ -1458,7 +1791,7 @@ async function askForFio(ctx) {
   setState(telegramId, { awaitingFio: true });
   await ctx.replyWithHTML(
     '👤 <b>Авторизация</b>\n\nВведите имя и фамилию как в таблице.',
-    mainMenu()
+    Markup.keyboard([[BUTTONS.back]]).resize()
   );
 }
 
@@ -1478,7 +1811,14 @@ async function authorizeFio(ctx, fio) {
     setUserField(telegramId, 'fio', employee.fio);
     console.log('сотрудник найден');
     await ctx.replyWithHTML(`✅ Сотрудник найден: <b>${esc(employee.fio)}</b>`);
-    await askForCarNumber(ctx, employee.fio);
+
+    setState(telegramId, { awaitingRoleChoice: true, fio: employee.fio });
+    await ctx.replyWithHTML(
+      '👤 <b>Выберите вашу роль:</b>\n\n' +
+      '▫️ <b>Курьер</b> — доставка заказов, пробег, маршрутник, сверка, наличные\n' +
+      '▫️ <b>Логист</b> — учёт времени, сбор наличных с курьеров, таблицы',
+      roleChoiceKeyboard()
+    );
   } catch (error) {
     console.error('ошибка Google Sheets', error);
     await ctx.replyWithHTML('⚠️ Ошибка Google Таблицы.\nПопробуйте ещё раз или обратитесь к администратору.');
@@ -1560,6 +1900,10 @@ async function punchTimeFlow(ctx, explicitStage = null) {
 }
 
 async function mileageFlow(ctx, explicitStage = null) {
+  if (isLogist(ctx.from.id)) {
+    await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
+    return;
+  }
   const telegramId = ctx.from.id;
   const profile = await ensureProfile(ctx);
 
@@ -1604,6 +1948,10 @@ async function mileageFlow(ctx, explicitStage = null) {
 }
 
 async function routeSheetFlow(ctx) {
+  if (isLogist(ctx.from.id)) {
+    await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
+    return;
+  }
   const telegramId = ctx.from.id;
   const profile = await ensureProfile(ctx);
 
@@ -1627,6 +1975,10 @@ async function routeSheetFlow(ctx) {
 }
 
 async function reconciliationFlow(ctx) {
+  if (isLogist(ctx.from.id)) {
+    await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
+    return;
+  }
   const telegramId = ctx.from.id;
   const profile = await ensureProfile(ctx);
 
@@ -1668,6 +2020,10 @@ async function reconciliationFlow(ctx) {
 }
 
 async function showPendingCashStatus(ctx) {
+  if (isLogist(ctx.from.id)) {
+    await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
+    return;
+  }
   const profile = await ensureProfile(ctx);
   if (!profile) return;
 
@@ -1675,15 +2031,18 @@ async function showPendingCashStatus(ctx) {
   const amount = Number(pendingCash?.amount || 0);
 
   if (!Number.isFinite(amount) || amount < 1) {
-    await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы.', mainMenu());
+    await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы.', getMenuForRole(ctx.from.id));
+    return;
+  }
+
+  if (pendingCash?.confirmationStatus === 'awaiting') {
+    await ctx.replyWithHTML('⏳ Вы уже отметили сдачу. Ожидайте подтверждения логиста.', getMenuForRole(ctx.from.id));
     return;
   }
 
   const formatted = pendingCash?.formatted || formatMoneyRu(amount);
   const numberOnly = formatMoneyRuNumber(amount) || String(formatted || '').replace(/\s*₽$/, '');
   const workplace = pendingCash?.workplace || profile.workplace || 'не указано';
-  // Шутливый тон выводится только если включён FUN_TONE в .env.
-  // По умолчанию — деловой стиль без фамильярности.
   const fun = String(process.env.FUN_TONE || '').toLowerCase() === 'true';
   const lines = [
     `💵 <b>Деньги к сдаче</b>: <code>${esc(numberOnly)}</code> ₽`,
@@ -1696,6 +2055,24 @@ async function showPendingCashStatus(ctx) {
 }
 
 async function sendHelp(ctx) {
+  const role = getUserRole(ctx.from.id);
+
+  if (role === 'logist') {
+    await ctx.replyWithHTML(
+      '❓ <b>Помощь</b>\n' +
+      '━━━━━━━━━━━━━━━\n\n' +
+      `1️⃣ <b>Записать время</b> — «${BUTTONS.punchTime}» отметить начало или конец смены.\n` +
+      `2️⃣ <b>Принять наличные</b> — «${BUTTONS.cashCollect}» посмотреть должников и отправить напоминание.\n` +
+      `3️⃣ <b>Таблицы</b> — «${BUTTONS.sheetInfo}» информация о привязке таблиц.\n` +
+      `4️⃣ <b>Настройки</b> — «${BUTTONS.settings}» магазин, смена сотрудника.\n\n` +
+      '📋 Команды:',
+      Markup.inlineKeyboard([
+        [Markup.button.callback('📋 Команды', 'help_commands')]
+      ])
+    );
+    return;
+  }
+
   await ctx.replyWithHTML(
     '❓ <b>Помощь</b>\n' +
     '━━━━━━━━━━━━━━━\n\n' +
@@ -1718,15 +2095,22 @@ async function sendHelp(ctx) {
 
 async function sendCommandsList(ctx) {
   const isAdmin = isAdminUser(ctx.from.id);
+  const role = getUserRole(ctx.from.id);
   let msg = '📋 <b>Команды</b>\n' +
     '━━━━━━━━━━━━━━━\n\n' +
     '<b>Основные:</b>\n' +
     '/help — помощь\n' +
-    '/cancel — отмена текущего действия\n\n' +
-    '<b>Настройки:</b>\n' +
-    '/car — сменить номер машины\n' +
-    '/workplace — сменить магазин\n' +
-    '/device — сменить устройство\n\n';
+    '/cancel — отмена текущего действия\n\n';
+
+  if (role !== 'logist') {
+    msg += '<b>Настройки:</b>\n' +
+      '/car — сменить номер машины\n' +
+      '/workplace — сменить магазин\n' +
+      '/device — сменить устройство\n\n';
+  } else {
+    msg += '<b>Настройки:</b>\n' +
+      '/workplace — сменить магазин\n\n';
+  }
 
   if (isAdmin) {
     msg += '<b>Администратору:</b>\n' +
@@ -1735,18 +2119,27 @@ async function sendCommandsList(ctx) {
       '/sheet_access — доступ к «📋 Таблицы»\n' +
       '  <code>/sheet_access</code> — показать список\n' +
       '  <code>/sheet_access 123456789</code> — дать доступ\n' +
-      '  <code>/sheet_access - 123456789</code> — убрать доступ\n\n';
+      '  <code>/sheet_access - 123456789</code> — убрать доступ\n' +
+      '/role — сменить роль пользователя\n\n';
   }
 
-  msg += '<b>Кнопки меню:</b>\n' +
-    `⏱ <b>Время</b> — записать старт/конец\n` +
-    `🚗 <b>Пробег</b> — фото одометра → распознавание\n` +
-    `📄 <b>Маршрутник</b> — отправить фото\n` +
-    `📊 <b>Сверки</b> — фото терминала/пин-панели\n` +
-    `💵 <b>Наличные</b> — сумма к сдаче\n` +
-    `⚠️ <b>Проблема</b> — решить проблему с заказом\n` +
-    `🏆 <b>Лидерборд</b> — рейтинг курьеров\n` +
-    `⚙️ <b>Настройки</b> — машина, магазин, устройство, сотрудник`;
+  if (role === 'logist') {
+    msg += '<b>Кнопки меню:</b>\n' +
+      `⏱ <b>Время</b> — записать старт/конец\n` +
+      `💳 <b>Наличные</b> — посмотреть должников, отправить напоминание\n` +
+      `📋 <b>Таблицы</b> — информация о привязке таблиц\n` +
+      `⚙️ <b>Настройки</b> — магазин, сотрудник`;
+  } else {
+    msg += '<b>Кнопки меню:</b>\n' +
+      `⏱ <b>Время</b> — записать старт/конец\n` +
+      `🚗 <b>Пробег</b> — фото одометра → распознавание\n` +
+      `📄 <b>Маршрутник</b> — отправить фото\n` +
+      `📊 <b>Сверки</b> — фото терминала/пин-панели\n` +
+      `💵 <b>Наличные</b> — сумма к сдаче\n` +
+      `⚠️ <b>Проблема</b> — решить проблему с заказом\n` +
+      `🏆 <b>Лидерборд</b> — рейтинг курьеров\n` +
+      `⚙️ <b>Настройки</b> — машина, магазин, устройство, сотрудник`;
+  }
 
   await ctx.replyWithHTML(msg);
 }
@@ -2193,10 +2586,14 @@ async function backToMainMenu(ctx) {
       ? '⬅️ Возвращаю в меню. Пробег не сохранён.'
       : '⬅️ Возвращаю в меню.';
 
-  await ctx.replyWithHTML(message, mainMenu());
+  await ctx.replyWithHTML(message, getMenuForRole(ctx.from.id));
 }
 
 async function showLeaderboardMenu(ctx) {
+  if (isLogist(ctx.from.id)) {
+    await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
+    return;
+  }
   await ctx.replyWithHTML(
     '🏆 <b>Лидерборд</b>\n\nВыберите магазин:',
     Markup.inlineKeyboard([
@@ -2293,6 +2690,10 @@ async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, o
 }
 
 async function showIssuesMenu(ctx) {
+  if (isLogist(ctx.from.id)) {
+    await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
+    return;
+  }
   const deliveryUrl = process.env.ISSUE_DELIVERY_URL;
   const flowwowUrl = process.env.ISSUE_FLOWWOW_URL;
   const techsupportUrl = process.env.ISSUE_TECHSUPPORT_URL;
@@ -2358,23 +2759,40 @@ bot.start(async (ctx) => {
     return;
   }
 
-  await ctx.replyWithHTML(
-    `👋 Привет, <b>${esc(getEmployeeDisplayName(profile.fio))}</b>!\n\n` +
-    `⏱ <b>Записать время</b> — отметить начало или конец смены, автоматически выбирается время старта и вносится в таблицу ботом.\n` +
-    `🚗 <b>Фото пробега</b> — отправить фото одометра и бот автоматически скинет фото в нужный чат и запишет пробег в таблицу.\n` +
-    `📄 <b>Отправить маршрутник</b> — прикрепить маршрутный лист, бот отправит фото в нужный чат.\n` +
-    `📊 <b>Отправить сверку</b> — отправить фото сверки, бот отправит фото в нужный чат.\n` +
-    `💵 <b>Сдать наличные</b> — отметить сдачу наличных, также укажет сумму нужную сдать и подтверждение сдал/не сдал.\n` +
-    `⚠️ <b>Проблема с заказом</b> — сообщить о проблеме, бот предлагает варианты ссылками на нужный чат/бота поддержки.\n` +
-    `🏆 <b>Рейтинг</b> — посмотреть рейтинг курьеров.\n` +
-    `⚙️ <b>Настройки</b> — профиль, машина, магазин, также смена сотрудника и тд.`,
-    mainMenu()
-  );
+  const role = getUserRole(ctx.from.id);
+
+  if (role === 'logist') {
+    await ctx.replyWithHTML(
+      `👋 Привет, <b>${esc(getEmployeeDisplayName(profile.fio))}</b>!\n\n` +
+      `⏱ <b>Записать время</b> — отметить начало или конец смены.\n` +
+      `💳 <b>Принять наличные</b> — посмотреть курьеров с долгами и отправить напоминание.\n` +
+      `📋 <b>Таблицы</b> — информация о привязке таблиц.\n` +
+      `⚙️ <b>Настройки</b> — профиль, магазин, смена сотрудника.`,
+      logistMainMenu()
+    );
+  } else {
+    await ctx.replyWithHTML(
+      `👋 Привет, <b>${esc(getEmployeeDisplayName(profile.fio))}</b>!\n\n` +
+      `⏱ <b>Записать время</b> — отметить начало или конец смены, автоматически выбирается время старта и вносится в таблицу ботом.\n` +
+      `🚗 <b>Фото пробега</b> — отправить фото одометра и бот автоматически скинет фото в нужный чат и запишет пробег в таблицу.\n` +
+      `📄 <b>Отправить маршрутник</b> — прикрепить маршрутный лист, бот отправит фото в нужный чат.\n` +
+      `📊 <b>Отправить сверку</b> — отправить фото сверки, бот отправит фото в нужный чат.\n` +
+      `💵 <b>Сдать наличные</b> — отметить сдачу наличных, также укажет сумму нужную сдать и подтверждение сдал/не сдал.\n` +
+      `⚠️ <b>Проблема с заказом</b> — сообщить о проблеме, бот предлагает варианты ссылками на нужный чат/бота поддержки.\n` +
+      `🏆 <b>Рейтинг</b> — посмотреть рейтинг курьеров.\n` +
+      `⚙️ <b>Настройки</b> — профиль, машина, магазин, также смена сотрудника и тд.`,
+      mainMenu()
+    );
+  }
 });
 
 bot.help(sendHelp);
 
 bot.command('car', async (ctx) => {
+  if (isLogist(ctx.from.id)) {
+    await ctx.replyWithHTML('❌ Эта команда доступна только курьерам.', getMenuForRole(ctx.from.id));
+    return;
+  }
   const fio = getUserField(ctx.from.id, 'fio');
   if (!fio) { await askForFio(ctx); return; }
   await askForCarNumber(ctx, fio);
@@ -2387,6 +2805,10 @@ bot.command('workplace', async (ctx) => {
 });
 
 bot.command('device', async (ctx) => {
+  if (isLogist(ctx.from.id)) {
+    await ctx.replyWithHTML('❌ Эта команда доступна только курьерам.', getMenuForRole(ctx.from.id));
+    return;
+  }
   const fio = getUserField(ctx.from.id, 'fio');
   if (!fio) { await askForFio(ctx); return; }
   await askForDevice(ctx, fio);
@@ -2488,6 +2910,57 @@ bot.command('sheet_access', async (ctx) => {
   } else {
     await ctx.replyWithHTML(`ℹ️ Пользователь <code>${targetId}</code> уже имеет доступ.`);
   }
+});
+
+bot.command('role', async (ctx) => {
+  if (!isAdminUser(ctx.from.id)) {
+    return;
+  }
+
+  const args = (ctx.message.text || '').replace(/^\/role\s*/, '').trim().split(/\s+/);
+
+  if (args.length < 2) {
+    await ctx.replyWithHTML(
+      '🔑 <b>Смена роли</b>\n\n' +
+      'Использование: <code>/role &lt;telegram_id&gt; &lt;courier|logist&gt;</code>\n\n' +
+      'Примеры:\n' +
+      '<code>/role 123456789 courier</code> — сделать курьером\n' +
+      '<code>/role 123456789 logist</code> — сделать логистом'
+    );
+    return;
+  }
+
+  const targetId = args[0];
+  const newRole = args[1].toLowerCase();
+
+  if (newRole !== 'courier' && newRole !== 'logist') {
+    await ctx.replyWithHTML('❌ Роль должна быть <code>courier</code> или <code>logist</code>.');
+    return;
+  }
+
+  const currentFio = getUserField(targetId, 'fio');
+  if (!currentFio) {
+    await ctx.replyWithHTML(`❌ Пользователь <code>${targetId}</code> не найден.`);
+    return;
+  }
+
+  const oldRole = getUserRole(targetId);
+  const displayRole = newRole === 'logist' ? 'Логист' : 'Курьер';
+  const oldDisplayRole = oldRole === 'logist' ? 'Логист' : 'Курьер';
+
+  setUserField(targetId, 'role', newRole);
+
+  if (newRole === 'logist') {
+    const carNumber = getUserField(targetId, 'carNumber');
+    const device = getUserField(targetId, 'device');
+    if (carNumber) setUserField(targetId, 'carNumber', null);
+    if (device) setUserField(targetId, 'device', null);
+  }
+
+  await ctx.replyWithHTML(
+    `✅ Роль изменена: <b>${esc(currentFio)}</b> (<code>${targetId}</code>)\n\n` +
+    `${oldDisplayRole} → ${displayRole}`
+  );
 });
 
 function formatNoSheetMessage(result, workplace) {
@@ -2736,16 +3209,79 @@ bot.action('help_commands', async (ctx) => {
 
 bot.action('confirm_switch_user', async (ctx) => {
   await ctx.answerCbQuery();
+  const role = getUserRole(ctx.from.id);
   deleteUser(ctx.from.id);
   setState(ctx.from.id, { awaitingFio: true });
-  await ctx.replyWithHTML('👤 <b>Смена сотрудника</b>\n\nПредыдущие данные удалены.\nВведите имя и фамилию как в таблице.', mainMenu());
+  await ctx.replyWithHTML('👤 <b>Смена сотрудника</b>\n\nПредыдущие данные удалены.\nВведите имя и фамилию как в таблице.', getMenuForRole(ctx.from.id));
+});
+
+bot.action('role_courier', async (ctx) => {
+  await ctx.answerCbQuery();
+  const telegramId = ctx.from.id;
+  const state = getState(telegramId);
+  if (!state?.awaitingRoleChoice) {
+    await ctx.replyWithHTML('⚠️ Выбор роли устарел. Нажмите /start.', getMenuForRole(telegramId));
+    return;
+  }
+  setUserField(telegramId, 'role', 'courier');
+  clearState(telegramId);
+  await ctx.replyWithHTML('✅ Роль: <b>Курьер</b>\n\nТеперь введите номер машины.');
+  await askForCarNumber(ctx, state.fio);
+});
+
+bot.action('role_logist', async (ctx) => {
+  await ctx.answerCbQuery();
+  const telegramId = ctx.from.id;
+  const state = getState(telegramId);
+  if (!state?.awaitingRoleChoice) {
+    await ctx.replyWithHTML('⚠️ Выбор роли устарел. Нажмите /start.', getMenuForRole(telegramId));
+    return;
+  }
+  setUserField(telegramId, 'role', 'logist');
+  clearState(telegramId);
+  await ctx.replyWithHTML('✅ Роль: <b>Логист</b>\n\nТеперь выберите ваш магазин.', logistMainMenu());
+  await askForWorkplace(ctx, state.fio);
 });
 
 bot.action('cash_submit_yes', async (ctx) => {
   await ctx.answerCbQuery();
-  clearPendingCashToSubmit(ctx.from.id);
-  await ctx.replyWithHTML('✅ Записал как сданные. Спасибо.', mainMenu());
-  await sendFunReaction(ctx, 'success');
+  const telegramId = ctx.from.id;
+  const pendingCash = getUserField(telegramId, 'pendingCashToSubmit');
+  const amount = Number(pendingCash?.amount || 0);
+
+  if (!Number.isFinite(amount) || amount < 1) {
+    await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы.', getMenuForRole(telegramId));
+    return;
+  }
+
+  const formatted = pendingCash?.formatted || formatMoneyRu(amount);
+  const courierFio = getUserField(telegramId, 'fio') || 'Неизвестный';
+  const workplace = pendingCash?.workplace || getUserField(telegramId, 'workplace') || 'не указано';
+
+  setCashConfirmationStatus(telegramId, 'awaiting');
+
+  logCashAction({
+    logistId: null,
+    logistFio: null,
+    courierId: String(telegramId),
+    courierFio: courierFio,
+    workplace: workplace,
+    amount: amount,
+    action: 'self_cleared_requested'
+  });
+
+  await notifyLogistsAboutSelfClearance(telegramId, courierFio, amount, formatted, workplace);
+
+  try {
+    await ctx.editMessageText('⏳ Запрос отправлен. Ожидайте подтверждения логиста.');
+  } catch (e) { /* ignore */ }
+
+  await ctx.replyWithHTML(
+    `⏳ <b>Запрос отправлен</b>\n\n` +
+    `Вы отметили сдачу <code>${esc(formatted)}</code> ₽.\n` +
+    `Ожидайте подтверждения от логиста.`,
+    getMenuForRole(telegramId)
+  );
 });
 
 bot.action('cash_submit_no', async (ctx) => {
@@ -2754,7 +3290,290 @@ bot.action('cash_submit_no', async (ctx) => {
   const message = fun
     ? '😼 Тогда бегом сдавать деньги! Котоконтроль не дремлет 🐾\n\nКогда сдадите — нажмите «💵 Деньги к сдаче» и подтвердите.'
     : '⚠️ Не забудьте сдать деньги.\n\nКогда сдадите — нажмите «💵 Деньги к сдаче» и подтвердите.';
-  await ctx.replyWithHTML(message, mainMenu());
+  await ctx.replyWithHTML(message, getMenuForRole(telegramId));
+});
+
+bot.action(/^d_(\d+)$/, async (ctx) => {
+  const courierId = ctx.match[1];
+  await pokeCourier(ctx, courierId);
+});
+
+bot.action(/^ack_([0-9a-f]+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  await ctx.answerCbQuery();
+
+  const reminder = getReminder(shortId);
+  if (!reminder) {
+    try { await ctx.editMessageText('⚠️ Напоминание устарело или уже обработано.'); } catch (e) { /* ignore */ }
+    return;
+  }
+
+  if (reminder.status !== 'reminded' && reminder.status !== 'acknowledged') {
+    try { await ctx.editMessageText('⚠️ Напоминание уже обработано.'); } catch (e) { /* ignore */ }
+    return;
+  }
+
+  updateReminder(shortId, { status: 'acknowledged' });
+
+  const courierFio = reminder.courierFio;
+  const formatted = reminder.formatted;
+  const logistId = reminder.logistId;
+
+  logCashAction({
+    logistId: logistId,
+    logistFio: reminder.logistFio,
+    courierId: reminder.courierId,
+    courierFio: courierFio,
+    workplace: reminder.workplace,
+    amount: reminder.amount,
+    action: 'acknowledged'
+  });
+
+  try {
+    await ctx.editMessageText(
+      `✅ Отметка получена. Когда сдадите — нажмите «Сдал».\n\n` +
+      `💶 К сдаче: <code>${esc(formatted)}</code> ₽`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [Markup.button.callback('✅ Сдал', `c_${shortId}`)]
+          ]
+        }
+      }
+    );
+  } catch (e) { /* ignore */ }
+
+  try {
+    await bot.telegram.sendMessage(logistId,
+      `🏃 <b>${esc(courierFio)}</b> уже бежит сдавать <code>${esc(formatted)}</code> ₽`,
+      { parse_mode: 'HTML' }
+    );
+  } catch (e) {
+    console.error('failed to notify logist about acknowledgement', e.message);
+  }
+});
+
+bot.action(/^c_([0-9a-f]+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  await ctx.answerCbQuery();
+
+  const reminder = getReminder(shortId);
+  if (!reminder) {
+    try { await ctx.editMessageText('⚠️ Напоминание устарело или уже обработано.'); } catch (e) { /* ignore */ }
+    return;
+  }
+
+  if (reminder.status === 'approved' || reminder.status === 'declined') {
+    try { await ctx.editMessageText('✅ Наличные уже обработаны.'); } catch (e) { /* ignore */ }
+    return;
+  }
+
+  updateReminder(shortId, { status: 'confirmed' });
+
+  logCashAction({
+    logistId: reminder.logistId,
+    logistFio: reminder.logistFio,
+    courierId: reminder.courierId,
+    courierFio: reminder.courierFio,
+    workplace: reminder.workplace,
+    amount: reminder.amount,
+    action: 'confirmed'
+  });
+
+  try {
+    await ctx.editMessageText('⏳ Логист проверяет...', { parse_mode: 'HTML' });
+  } catch (e) { /* ignore */ }
+
+  try {
+    const sent = await bot.telegram.sendMessage(reminder.logistId,
+      `✅ <b>${esc(reminder.courierFio)}</b> сдал <code>${esc(reminder.formatted)}</code> ₽\n\nПодтвердите сдачу:`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [Markup.button.callback('✅ Подтвердить', `appr_${shortId}`)],
+            [Markup.button.callback('❌ Отклонить', `decl_${shortId}`)]
+          ]
+        }
+      }
+    );
+    updateReminder(shortId, { logistMsgId: sent.message_id });
+  } catch (e) {
+    console.error('failed to notify logist about confirmation', e.message);
+  }
+});
+
+bot.action(/^appr_([0-9a-f]+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  await ctx.answerCbQuery();
+
+  const reminder = getReminder(shortId);
+  if (!reminder) {
+    try { await ctx.editMessageText('⚠️ Напоминание устарело.'); } catch (e) { /* ignore */ }
+    return;
+  }
+
+  clearPendingCashAndReminders(reminder.courierId);
+
+  logCashAction({
+    logistId: reminder.logistId,
+    logistFio: reminder.logistFio,
+    courierId: reminder.courierId,
+    courierFio: reminder.courierFio,
+    workplace: reminder.workplace,
+    amount: reminder.amount,
+    action: 'approved'
+  });
+
+  deleteReminder(shortId);
+
+  try {
+    await ctx.editMessageText(`✅ Подтверждено: <b>${esc(reminder.courierFio)}</b> сдал <code>${esc(reminder.formatted)}</code> ₽`, { parse_mode: 'HTML' });
+  } catch (e) { /* ignore */ }
+
+  try {
+    await bot.telegram.sendMessage(reminder.courierId,
+      `✅ <b>${esc(reminder.logistFio)}</b> подтвердил сдачу <code>${esc(reminder.formatted)}</code> ₽\n\nСпасибо!`,
+      { parse_mode: 'HTML' }
+    );
+  } catch (e) {
+    console.error('failed to notify courier about approval', e.message);
+  }
+
+  await sendFunReaction(ctx, 'success');
+});
+
+bot.action(/^decl_([0-9a-f]+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  await ctx.answerCbQuery();
+
+  const reminder = getReminder(shortId);
+  if (!reminder) {
+    try { await ctx.editMessageText('⚠️ Напоминание устарело.'); } catch (e) { /* ignore */ }
+    return;
+  }
+
+  logCashAction({
+    logistId: reminder.logistId,
+    logistFio: reminder.logistFio,
+    courierId: reminder.courierId,
+    courierFio: reminder.courierFio,
+    workplace: reminder.workplace,
+    amount: reminder.amount,
+    action: 'declined'
+  });
+
+  updateReminder(shortId, { status: 'declined' });
+
+  try {
+    await ctx.editMessageText(`❌ Отклонено: <b>${esc(reminder.courierFio)}</b>`, { parse_mode: 'HTML' });
+  } catch (e) { /* ignore */ }
+
+  try {
+    await bot.telegram.sendMessage(reminder.courierId,
+      `❌ <b>${esc(reminder.logistFio)}</b> отклонил сдачу.\n\nПроверьте сумму и нажмите «Сдал» снова.`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [Markup.button.callback('✅ Сдал', `c_${shortId}`)]
+          ]
+        }
+      }
+    );
+  } catch (e) {
+    console.error('failed to notify courier about decline', e.message);
+  }
+});
+
+bot.action(/^sc_appr_(\d+)$/, async (ctx) => {
+  const courierId = ctx.match[1];
+  await ctx.answerCbQuery();
+
+  const pendingCash = getUserField(courierId, 'pendingCashToSubmit');
+  if (!pendingCash || pendingCash.confirmationStatus !== 'awaiting') {
+    try { await ctx.editMessageText('✅ Уже подтверждено другим логистом.'); } catch (e) { /* ignore */ }
+    return;
+  }
+
+  const courierFio = getUserField(courierId, 'fio') || 'Неизвестный';
+  const amount = Number(pendingCash.amount || 0);
+  const formatted = pendingCash.formatted || formatMoneyRu(amount);
+  const workplace = pendingCash.workplace || getUserField(courierId, 'workplace') || 'не указано';
+  const logistId = String(ctx.from.id);
+  const logistFio = getUserField(logistId, 'fio') || 'Логист';
+
+  clearPendingCashAndReminders(courierId);
+
+  logCashAction({
+    logistId: logistId,
+    logistFio: logistFio,
+    courierId: courierId,
+    courierFio: courierFio,
+    workplace: workplace,
+    amount: amount,
+    action: 'approved'
+  });
+
+  try {
+    await ctx.editMessageText(`✅ Подтверждено: <b>${esc(courierFio)}</b> сдал <code>${esc(formatted)}</code> ₽`, { parse_mode: 'HTML' });
+  } catch (e) { /* ignore */ }
+
+  try {
+    await bot.telegram.sendMessage(courierId,
+      `✅ <b>${esc(logistFio)}</b> подтвердил сдачу <code>${esc(formatted)}</code> ₽\n\nСпасибо!`,
+      { parse_mode: 'HTML' }
+    );
+  } catch (e) {
+    console.error('failed to notify courier about sc approval', e.message);
+  }
+});
+
+bot.action(/^sc_decl_(\d+)$/, async (ctx) => {
+  const courierId = ctx.match[1];
+  await ctx.answerCbQuery();
+
+  const pendingCash = getUserField(courierId, 'pendingCashToSubmit');
+  if (!pendingCash || pendingCash.confirmationStatus !== 'awaiting') {
+    try { await ctx.editMessageText('⚠️ Запрос уже обработан.'); } catch (e) { /* ignore */ }
+    return;
+  }
+
+  setCashConfirmationStatus(courierId, null);
+
+  const courierFio = getUserField(courierId, 'fio') || 'Неизвестный';
+  const logistId = String(ctx.from.id);
+  const logistFio = getUserField(logistId, 'fio') || 'Логист';
+
+  logCashAction({
+    logistId: logistId,
+    logistFio: logistFio,
+    courierId: courierId,
+    courierFio: courierFio,
+    workplace: pendingCash.workplace || 'не указано',
+    amount: Number(pendingCash.amount || 0),
+    action: 'declined'
+  });
+
+  try {
+    await ctx.editMessageText(`❌ Отклонено: <b>${esc(courierFio)}</b>`, { parse_mode: 'HTML' });
+  } catch (e) { /* ignore */ }
+
+  try {
+    await bot.telegram.sendMessage(courierId,
+      `❌ <b>${esc(logistFio)}</b> отклонил сдачу.\n\nПроверьте сумму и попробуйте снова.`,
+      { parse_mode: 'HTML' }
+    );
+  } catch (e) {
+    console.error('failed to notify courier about sc decline', e.message);
+  }
+});
+
+bot.action(/^ch_(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
+  const dateStr = ctx.match[1];
+  await ctx.answerCbQuery();
+  await showCashHistoryForDate(ctx, dateStr);
 });
 
 bot.action('edit_time', async (ctx) => {
@@ -2762,7 +3581,7 @@ bot.action('edit_time', async (ctx) => {
   const state = getState(ctx.from.id);
 
   if (!state?.awaitingTimeChange || !state?.courierRow || !state?.day || !state?.stage) {
-    await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.punchTime}».`, mainMenu());
+    await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.punchTime}».`, getMenuForRole(ctx.from.id));
     return;
   }
 
@@ -2780,7 +3599,7 @@ bot.action('edit_time', async (ctx) => {
     `• с половиной — <code>7,5</code> или <code>7.5</code>\n` +
     `• часы:минуты — <code>07:30</code>, <code>07:44</code>, <code>08.46</code>, <code>8 14</code>\n\n` +
     `Минуты округлятся до ближайших 30 (08:14 → 8, 08:46 → 9).`,
-    mainMenu()
+    getMenuForRole(ctx.from.id)
   );
 });
 
@@ -2861,7 +3680,7 @@ function replaceTimeAction(stage) {
       const label = stage === 'start' ? 'Старт' : 'Конец';
       await ctx.replyWithHTML(
         `${icon} <b>${label} смены</b> заменён: <code>${esc(result.timeValue)}</code>`,
-        mainMenu()
+        getMenuForRole(ctx.from.id)
       );
     } catch (error) {
       console.error('ошибка Google Sheets', error);
@@ -3226,6 +4045,10 @@ async function handleMileagePhoto(ctx, state, fileId) {
 }
 
 bot.on('photo', async (ctx) => {
+  if (isLogist(ctx.from.id)) {
+    await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
+    return;
+  }
   const telegramId = ctx.from.id;
   const state = getState(telegramId);
 
@@ -3268,7 +4091,7 @@ async function handleManualTime(ctx, state, text) {
     console.log('время изменено', state.stage);
     const icon = state.stage === 'start' ? '🟢' : '🔴';
     const label = state.stage === 'start' ? 'Старт' : 'Конец';
-    await ctx.replyWithHTML(`${icon} <b>${label} смены</b> изменён: <code>${esc(timeValue)}</code>`, mainMenu());
+    await ctx.replyWithHTML(`${icon} <b>${label} смены</b> изменён: <code>${esc(timeValue)}</code>`, getMenuForRole(ctx.from.id));
   } catch (error) {
     console.error('ошибка Google Sheets', error);
     await ctx.replyWithHTML('⚠️ Не удалось изменить время.\nПопробуйте ещё раз или обратитесь к администратору.');
@@ -3295,7 +4118,7 @@ async function handleSwitchUser(ctx, state, text, telegramId) {
 }
 
 async function handleSheetsInfo(ctx, state, text, telegramId) {
-  const hasAccess = isAdminUser(telegramId) || isSheetAccessUser(telegramId);
+  const hasAccess = isAdminUser(telegramId) || isSheetAccessUser(telegramId) || getUserRole(telegramId) === 'logist';
   if (!hasAccess) {
     // Раньше предлагали «нажмите Мой ID», но эта кнопка спрятана в
     // подменю Управление — пользователь не знал куда идти. Теперь
@@ -3411,6 +4234,7 @@ const TEXT_ROUTES = [
   { state: 'awaitingWorkplace', handler: (ctx, s, text) => saveWorkplace(ctx, text) },
   { state: 'awaitingDevice', handler: (ctx, s, text) => saveDevice(ctx, text) },
   { state: 'awaitingFio', handler: (ctx, s, text) => authorizeFio(ctx, text) },
+  { state: 'awaitingRoleChoice', handler: (ctx) => ctx.replyWithHTML('⚠️ Выберите роль кнопкой выше.', roleChoiceKeyboard()) },
   { state: 'awaitingManualTime', handler: (ctx, state, text) => handleManualTime(ctx, state, text) },
   { state: 'awaitingUpdateEdit', handler: (ctx, state, text) => handleUpdateEditText(ctx, state, text) },
   { state: 'awaitingManualMileage', handler: (ctx, state, text) => handleManualMileageInput(ctx, state, text) },
@@ -3423,14 +4247,19 @@ const TEXT_ROUTES = [
   { button: BUTTONS.cashCheck, legacy: ['Деньги к сдаче', '💵 Наличные'], handler: (ctx) => showPendingCashStatus(ctx) },
   { button: BUTTONS.issues, legacy: ['Проблема с заказом', '⚠️ Проблема'], handler: (ctx) => showIssuesMenu(ctx) },
   { button: BUTTONS.leaderBoard, legacy: ['Лидерборд', '🏆 Лидерборд'], handler: (ctx) => showLeaderboardMenu(ctx) },
+  { button: BUTTONS.cashCollect, handler: (ctx) => showDebtorsList(ctx) },
 
   // 4) Меню настроек
   { button: BUTTONS.settings, legacy: ['Настройки'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ <b>Настройки</b>', settingsMenu(id)) },
-  { button: BUTTONS.profile, legacy: ['Профиль'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('✏️ <b>Профиль</b>', profileMenu()) },
+  { button: BUTTONS.profile, legacy: ['Профиль'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('✏️ <b>Профиль</b>', getProfileMenuForRole(ctx.from.id)) },
   { button: BUTTONS.help, legacy: ['Помощь'], handler: (ctx) => sendHelp(ctx) },
 
   // 5) Профиль (требуют ФИО)
   { button: BUTTONS.changeCar, legacy: ['Изменить номер машины', 'Номер машины'], handler: async (ctx) => {
+    if (isLogist(ctx.from.id)) {
+      await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
+      return;
+    }
     const fio = await requireFio(ctx);
     if (fio) await askForCarNumber(ctx, fio);
   }},
@@ -3439,14 +4268,19 @@ const TEXT_ROUTES = [
     if (fio) await askForWorkplace(ctx, fio);
   }},
   { button: BUTTONS.changeDevice, legacy: ['Изменить устройство', 'Устройство'], handler: async (ctx) => {
+    if (isLogist(ctx.from.id)) {
+      await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
+      return;
+    }
     const fio = await requireFio(ctx);
     if (fio) await askForDevice(ctx, fio);
   }},
   { button: BUTTONS.switchUser, legacy: ['Поменять сотрудника', 'Сменить сотрудника', 'Сотрудник'], handler: handleSwitchUser },
 
-  // 6) Настройки (Таблицы, Мой ID)
+  // 6) Настройки (Таблицы, Мой ID, История сборов)
   { button: BUTTONS.sheetInfo, legacy: ['Таблицы'], handler: handleSheetsInfo },
-  { button: BUTTONS.myId, legacy: ['Мой ID'], handler: handleMyId }
+  { button: BUTTONS.myId, legacy: ['Мой ID'], handler: handleMyId },
+  { button: BUTTONS.cashHistory, handler: (ctx) => showCashHistory(ctx) }
 ];
 
 function matchTextRoute(route, text, state) {
@@ -3471,7 +4305,7 @@ bot.on('text', async (ctx) => {
   }
 
   // Fallback: текст не подошёл ни под одну ветку
-  await ctx.replyWithHTML('Выберите действие в меню или используйте /help.', mainMenu());
+  await ctx.replyWithHTML('Выберите действие в меню или используйте /help.', getMenuForRole(telegramId));
 });
 
 bot.catch((error, ctx) => {
@@ -3506,7 +4340,8 @@ async function setupBotCommands() {
       { command: 'car', description: 'Изменить номер машины' },
       { command: 'workplace', description: 'Изменить магазин' },
       { command: 'device', description: 'Изменить устройство' },
-      { command: 'cancel', description: 'Отмена' }
+      { command: 'cancel', description: 'Отмена' },
+      { command: 'role', description: 'Сменить роль (админ)' }
     ], { scope: { type: 'all_private_chats' } });
   } catch (e) {
     console.error('setMyCommands private error', e.message);

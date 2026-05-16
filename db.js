@@ -23,6 +23,18 @@ db.exec(`
     telegramId TEXT PRIMARY KEY,
     data TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS cash_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    logistId TEXT,
+    logistFio TEXT,
+    courierId TEXT NOT NULL,
+    courierFio TEXT NOT NULL,
+    workplace TEXT NOT NULL,
+    amount REAL NOT NULL,
+    action TEXT NOT NULL
+  );
 `);
 
 // Migration logic

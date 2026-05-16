@@ -4,6 +4,7 @@
 
 const WORKPLACES = ['ИМ Восток', 'ИМ Центр'];
 const DEVICES = ['Терминал', 'Пин-Панель'];
+const ROLES = ['Курьер', 'Логист'];
 
 // Маппинг русских названий магазинов в короткие ключи (для storage / sheet IDs).
 const WORKPLACE_KEY_MAP = {
@@ -67,6 +68,7 @@ const STORAGE_BROKEN_SUFFIX = '.broken';
 module.exports = {
   WORKPLACES,
   DEVICES,
+  ROLES,
   WORKPLACE_KEY_MAP,
   LIMITS,
   SHEET_TEMPLATE,
