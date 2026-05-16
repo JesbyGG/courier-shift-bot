@@ -4,6 +4,7 @@ require('./logger').initLogger();
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const { execSync } = require('child_process');
 
 const crypto = require('crypto');
 
@@ -137,6 +138,37 @@ function _getChangedFiles(previousFiles, currentFiles) {
     .sort();
 }
 
+function _getCurrentGitHash() {
+  try {
+    return execSync('git rev-parse HEAD', { encoding: 'utf8', cwd: __dirname }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function _getGitLogSince(fromHash) {
+  if (!fromHash) return null;
+  try {
+    const log = execSync(`git log --oneline --no-merges ${fromHash}..HEAD`, { encoding: 'utf8', cwd: __dirname });
+    return log.split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+      .map(line => {
+        let msg = line.replace(/^[0-9a-f]+\s+/, '');
+        msg = msg.replace(/^(feat|fix|refactor|chore|docs|style|perf|test|build|ci|revert):\s*/i, '');
+        const originalEmojiMatch = msg.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})\s*/u);
+        if (originalEmojiMatch) {
+          return msg.charAt(0).toUpperCase() + msg.slice(1);
+        }
+        msg = msg.charAt(0).toUpperCase() + msg.slice(1);
+        return msg;
+      })
+      .filter(msg => msg.length > 0);
+  } catch {
+    return null;
+  }
+}
+
 function _bumpVersion(version, bumpType) {
   const parts = version.split('.').map(Number);
   if (bumpType === 'major') {
@@ -159,35 +191,46 @@ function checkVersion() {
   const stored = _getCurrentVersion();
   if (!stored) {
     const initialVersion = '2.0.0';
+    const gitHash = _getCurrentGitHash();
     const data = {
       version: initialVersion,
       lastHash: currentHash,
       files: currentFiles,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      gitHash: gitHash || undefined,
+      updates: []
     };
     fs.writeFileSync(versionPath, JSON.stringify(data, null, 2), 'utf8');
     return {
       version: initialVersion,
       changed: true,
       prevVersion: null,
-      changedFiles: Object.keys(currentFiles).sort()
+      changedFiles: Object.keys(currentFiles).sort(),
+      updates: []
     };
   }
   if (stored.lastHash === currentHash) {
-    return { version: stored.version, changed: false, prevVersion: null, changedFiles: [] };
+    return { version: stored.version, changed: false, prevVersion: null, changedFiles: [], updates: stored.updates || [] };
   }
   const changedFiles = _getChangedFiles(stored.files, currentFiles);
   const bumpType = getChangelogBump();
   const newVersion = _bumpVersion(stored.version, bumpType);
+  let updates = _getGitLogSince(stored.gitHash);
+  if (!updates || updates.length === 0) {
+    updates = null;
+  }
+  const gitHash = _getCurrentGitHash();
   const data = {
     version: newVersion,
     lastHash: currentHash,
     files: currentFiles,
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
+    gitHash: gitHash || undefined,
+    updates: updates || []
   };
   fs.writeFileSync(versionPath, JSON.stringify(data, null, 2), 'utf8');
   console.log(`version bumped: ${stored.version} → ${newVersion} (${bumpType})`);
-  return { version: newVersion, changed: true, prevVersion: stored.version, changedFiles };
+  return { version: newVersion, changed: true, prevVersion: stored.version, changedFiles, updates: updates || [] };
 }
 
 function getVersion() {
@@ -2238,20 +2281,11 @@ function getChangelogBump() {
   return 'patch';
 }
 
-function consumeChangelogEntry() {
-  const changelog = loadChangelog();
-  if (!changelog || !Array.isArray(changelog.updates) || changelog.updates.length === 0) return;
-  changelog.updates.pop();
-  try {
-    const tmp = changelogPath + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(changelog, null, 2), 'utf8');
-    fs.renameSync(tmp, changelogPath);
-  } catch (err) {
-    console.error('changelog consume error', err.message);
+function buildUpdateHighlights(changedFiles = [], version, updates = []) {
+  if (Array.isArray(updates) && updates.length > 0) {
+    return updates;
   }
-}
 
-function buildUpdateHighlights(changedFiles = [], version) {
   const changelogNotes = getLatestChangelogNotes();
   if (changelogNotes && changelogNotes.length > 0) {
     return changelogNotes;
@@ -2289,8 +2323,8 @@ function buildUpdateHighlights(changedFiles = [], version) {
   return highlights.slice(0, 4);
 }
 
-function formatUpdateMessage(version, changedFiles = []) {
-  const highlights = buildUpdateHighlights(changedFiles);
+function formatUpdateMessage(version, changedFiles = [], updates = []) {
+  const highlights = buildUpdateHighlights(changedFiles, version, updates);
   const lines = highlights.map((item) => `• ${esc(item)}`).join('\n');
 
   return (
@@ -2301,14 +2335,14 @@ function formatUpdateMessage(version, changedFiles = []) {
   );
 }
 
-async function notifyUsersAboutUpdate(version, changedFiles = []) {
+async function notifyUsersAboutUpdate(version, changedFiles = [], updates = []) {
   const currentVersion = version || getVersion();
   const userIds = getAllUserIds();
   let notified = 0;
   let skipped = 0;
   let failed = 0;
 
-  const message = formatUpdateMessage(currentVersion, changedFiles);
+  const message = formatUpdateMessage(currentVersion, changedFiles, updates);
 
   for (const telegramId of userIds) {
     const lastVersion = getUserField(telegramId, 'version');
@@ -2341,14 +2375,14 @@ async function notifyUsersAboutUpdate(version, changedFiles = []) {
 
 const _pendingUpdates = {};
 
-async function askAdminsAboutUpdate(version, changedFiles = []) {
+async function askAdminsAboutUpdate(version, changedFiles = [], updates = []) {
   const adminIds = getAdminIds();
   if (adminIds.length === 0) {
     console.log('no admin IDs configured, skipping update approval');
     return;
   }
 
-  const message = formatUpdateMessage(version, changedFiles);
+  const message = formatUpdateMessage(version, changedFiles, updates);
   const previewText = (
     `🔔 <b>Обнаружено обновление v${esc(version)}</b>\n\n` +
     '<b>Предпросмотр сообщения:</b>\n\n' +
@@ -2364,7 +2398,7 @@ async function askAdminsAboutUpdate(version, changedFiles = []) {
     [Markup.button.callback('⏭️ Пропустить', `upd_skip:${version}`)]
   ]);
 
-  _pendingUpdates[version] = { changedFiles, message };
+  _pendingUpdates[version] = { changedFiles, updates, message };
 
   for (const adminId of adminIds) {
     try {
@@ -2391,8 +2425,7 @@ bot.action(/^upd_send:(.+)$/, async (ctx) => {
   }
   delete _pendingUpdates[version];
   await ctx.editMessageText('✅ Уведомление отправляется...', { parse_mode: 'HTML' });
-  await notifyUsersAboutUpdate(version, pending.changedFiles);
-  consumeChangelogEntry();
+  await notifyUsersAboutUpdate(version, pending.changedFiles, pending.updates || []);
   try {
     await ctx.editMessageText(`✅ Уведомление v${esc(version)} отправлено всем пользователям.`, { parse_mode: 'HTML' });
   } catch {}
@@ -4448,7 +4481,7 @@ async function setupBotCommands() {
 
 async function startBot(retry = 0) {
   try {
-    const { version, changed, changedFiles } = checkVersion();
+    const { version, changed, changedFiles, updates } = checkVersion();
     initGoogleSheets();
     const removedMonths = cleanupOldMonths();
     if (removedMonths > 0) {
@@ -4483,7 +4516,7 @@ async function startBot(retry = 0) {
     // Уведомление админам об обновлении — только при changed && первом запуске
     if (changed && retry === 0) {
       setTimeout(() => {
-        askAdminsAboutUpdate(version, changedFiles).catch((error) => {
+        askAdminsAboutUpdate(version, changedFiles, updates).catch((error) => {
           console.error('admin update ask fatal', error.message || error);
         });
       }, 3000);
