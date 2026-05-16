@@ -146,6 +146,20 @@ function _getCurrentGitHash() {
   }
 }
 
+const COMMIT_PREFIX_RU = {
+  feat: '✨ Добавлено',
+  fix: '🔧 Исправлено',
+  refactor: '♻️ Переработано',
+  chore: '🔧 Техническое',
+  docs: '📝 Документация',
+  style: '🎨 Оформление',
+  perf: '⚡ Оптимизация',
+  test: '🧪 Тесты',
+  build: '📦 Сборка',
+  ci: '⚙️ CI/CD',
+  revert: '↩️ Откат'
+};
+
 function _getGitLogSince(fromHash) {
   if (!fromHash) return null;
   try {
@@ -155,9 +169,15 @@ function _getGitLogSince(fromHash) {
       .filter(Boolean)
       .map(line => {
         let msg = line.replace(/^[0-9a-f]+\s+/, '');
-        msg = msg.replace(/^(feat|fix|refactor|chore|docs|style|perf|test|build|ci|revert):\s*/i, '');
-        const originalEmojiMatch = msg.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})\s*/u);
-        if (originalEmojiMatch) {
+        const prefixMatch = msg.match(/^(feat|fix|refactor|chore|docs|style|perf|test|build|ci|revert):\s*/i);
+        if (prefixMatch) {
+          const prefix = prefixMatch[1].toLowerCase();
+          const ruPrefix = COMMIT_PREFIX_RU[prefix] || prefix;
+          msg = msg.slice(prefixMatch[0].length);
+          msg = msg.charAt(0).toUpperCase() + msg.slice(1);
+          return `${ruPrefix}: ${msg}`;
+        }
+        if (msg.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})\s*/u)) {
           return msg.charAt(0).toUpperCase() + msg.slice(1);
         }
         msg = msg.charAt(0).toUpperCase() + msg.slice(1);
