@@ -4500,6 +4500,10 @@ async function setupBotCommands() {
 }
 
 async function startBot(retry = 0) {
+  if (process.env.BOT_DISABLED === 'true') {
+    console.log('bot disabled — .env BOT_DISABLED=true');
+    return;
+  }
   try {
     const { version, changed, changedFiles, updates } = checkVersion();
     initGoogleSheets();
