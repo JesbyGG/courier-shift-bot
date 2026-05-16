@@ -2886,9 +2886,6 @@ async function notifyAdmins(html, options = {}) {
 }
 
 bot.command('chatid', async (ctx) => {
-  if (!isAdminUser(ctx.from.id)) {
-    return;
-  }
   await ctx.replyWithHTML(
     `📍 <b>Chat info</b>\n\nchat_id: <code>${ctx.chat.id}</code>\nmessage_thread_id: <code>${ctx.message.message_thread_id || 'нет'}</code>`
   );
