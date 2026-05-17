@@ -3464,12 +3464,12 @@ bot.action('cash_submit_yes', async (ctx) => {
 });
 
 bot.action('cash_submit_no', async (ctx) => {
-  await ctx.answerCbQuery();
+  await ctx.answerCbQuery('❌ Отложено');
   const fun = String(process.env.FUN_TONE || '').toLowerCase() === 'true';
   const message = fun
     ? '😼 Тогда бегом сдавать деньги! Котоконтроль не дремлет 🐾\n\nКогда сдадите — нажмите «💵 Деньги к сдаче» и подтвердите.'
     : '⚠️ Не забудьте сдать деньги.\n\nКогда сдадите — нажмите «💵 Деньги к сдаче» и подтвердите.';
-  await ctx.replyWithHTML(message, getMenuForRole(telegramId));
+  await ctx.replyWithHTML(message, getMenuForRole(ctx.from.id));
 });
 
 bot.action(/^d_(\d+)$/, async (ctx) => {
