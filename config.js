@@ -12,6 +12,13 @@ const WORKPLACE_KEY_MAP = {
   'ИМ Центр': 'center'
 };
 
+// Фичи по магазинам (чтобы не хардкодить 'ИМ Восток' / 'ИМ Центр' в бизнес-логике).
+// Добавляя новый магазин — просто укажи здесь, какие функции доступны.
+const WORKPLACE_FEATURES = {
+  'ИМ Восток': { cashCollection: true, leaderboard: true },
+  'ИМ Центр': { cashCollection: false, leaderboard: true }
+};
+
 // Жёсткие ограничения окружения. Можно переопределять через .env.
 const LIMITS = {
   // Максимальный объём файла лога на диске (50 MB)
@@ -70,6 +77,7 @@ module.exports = {
   DEVICES,
   ROLES,
   WORKPLACE_KEY_MAP,
+  WORKPLACE_FEATURES,
   LIMITS,
   SHEET_TEMPLATE,
   STORAGE_BROKEN_SUFFIX

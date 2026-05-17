@@ -1,5 +1,5 @@
 const { Markup } = require('telegraf');
-const { WORKPLACES, DEVICES, BUTTONS } = require('../config');
+const { WORKPLACES, DEVICES, BUTTONS, WORKPLACE_FEATURES } = require('../config');
 const {
   getUserField,
   getUserRole,
@@ -41,11 +41,11 @@ function deviceMenu() {
 
 function logistMainMenu(telegramId) {
   const workplace = getUserField(telegramId, 'workplace');
-  const isEast = workplace === 'ИМ Восток';
+  const features = WORKPLACE_FEATURES[workplace] || {};
   const rows = [
     [BUTTONS.punchTime, BUTTONS.openShop]
   ];
-  if (isEast) {
+  if (features.cashCollection) {
     rows.push([BUTTONS.cashCollect, BUTTONS.cashHistory]);
   }
   rows.push([BUTTONS.sheetInfo, BUTTONS.settings]);

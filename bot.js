@@ -60,7 +60,7 @@ const { recognizeMileage, isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMi
 const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, flushNow: flushLeaderboardNow, getDayOrders: getLbDayOrders, findOvertakenCouriers, getTodayKey: getLbTodayKey } = require('./services/leaderboard');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, roundMinutesToHalfHour } = require('./utils');
 const { registerSheetCommand } = require('./sheetCommand');
-const { WORKPLACES, DEVICES, ROLES, LIMITS } = require('./config');
+const { WORKPLACES, DEVICES, ROLES, LIMITS, WORKPLACE_FEATURES } = require('./config');
 const { isAdminUser, getAdminIds } = require('./services/auth');
 const {
   mainMenu,
@@ -340,8 +340,9 @@ async function showDebtorsList(ctx) {
     return;
   }
 
-  if (workplace === 'ИМ Центр') {
-    await ctx.replyWithHTML('❌ В Центре приём наличных не предусмотрен.', getMenuForRole(telegramId));
+  const features = WORKPLACE_FEATURES[workplace];
+  if (!features || !features.cashCollection) {
+    await ctx.replyWithHTML('❌ В этом магазине приём наличных не предусмотрен.', getMenuForRole(telegramId));
     return;
   }
 
@@ -481,8 +482,9 @@ async function showCashHistory(ctx) {
   }
 
   const workplace = getUserField(telegramId, 'workplace');
-  if (workplace === 'ИМ Центр') {
-    await ctx.replyWithHTML('❌ В Центре приём наличных не предусмотрен.', getMenuForRole(telegramId));
+  const features = WORKPLACE_FEATURES[workplace];
+  if (!features || !features.cashCollection) {
+    await ctx.replyWithHTML('❌ В этом магазине приём наличных не предусмотрен.', getMenuForRole(telegramId));
     return;
   }
 
@@ -2003,17 +2005,18 @@ async function sendHelp(ctx) {
 
   if (role === 'logist') {
     const workplace = getUserField(ctx.from.id, 'workplace');
-    const isEast = workplace === 'ИМ Восток';
+    const features = WORKPLACE_FEATURES[workplace] || {};
+    const hasCash = features.cashCollection;
     let logistHelp = '❓ <b>Помощь</b>\n' +
       '━━━━━━━━━━━━━━━\n\n' +
       `1️⃣ <b>Записать время</b> — «${BUTTONS.punchTime}» отметить начало или конец смены.\n` +
       `2️⃣ <b>Открыть ИМ</b> — «${BUTTONS.openShop}» отправить уведомление об открытии магазина в группу.\n`;
-    if (isEast) {
+    if (hasCash) {
       logistHelp += `3️⃣ <b>Принять наличные</b> — «${BUTTONS.cashCollect}» посмотреть должников и отправить напоминание.\n`;
       logistHelp += `4️⃣ <b>История сборов</b> — «${BUTTONS.cashHistory}» просмотр истории по датам.\n`;
     }
-    logistHelp += `${isEast ? '5️⃣' : '3️⃣'} <b>Таблицы</b> — «${BUTTONS.sheetInfo}» информация о привязке таблиц.\n`;
-    logistHelp += `${isEast ? '6️⃣' : '4️⃣'} <b>Настройки</b> — «${BUTTONS.settings}» магазин, смена сотрудника.\n\n`;
+    logistHelp += `${hasCash ? '5️⃣' : '3️⃣'} <b>Таблицы</b> — «${BUTTONS.sheetInfo}» информация о привязке таблиц.\n`;
+    logistHelp += `${hasCash ? '6️⃣' : '4️⃣'} <b>Настройки</b> — «${BUTTONS.settings}» магазин, смена сотрудника.\n\n`;
     logistHelp += '📋 Команды:';
     await ctx.replyWithHTML(
       logistHelp,
@@ -2561,11 +2564,14 @@ async function showLeaderboardMenu(ctx) {
     await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
     return;
   }
+  const wpButtons = WORKPLACES.map((wp) => {
+    const key = WORKPLACE_KEY_MAP[wp] || wp;
+    return [Markup.button.callback(`🏬 ${wp}`, `lb_wp_${key}`)];
+  });
   await ctx.replyWithHTML(
     '🏆 <b>Лидерборд</b>\n\nВыберите магазин:',
     Markup.inlineKeyboard([
-      [Markup.button.callback('🏬 ИМ Восток', 'lb_wp_east')],
-      [Markup.button.callback('🏬 ИМ Центр', 'lb_wp_center')],
+      ...wpButtons,
       [Markup.button.callback('🌐 Общий', 'lb_wp_all')],
       [Markup.button.callback('🏠 В меню', 'back_to_menu')]
     ])
@@ -2573,8 +2579,8 @@ async function showLeaderboardMenu(ctx) {
 }
 
 async function showLeaderboardTypeMenu(ctx, workplace) {
-  const wpLabels = { east: 'ИМ Восток', center: 'ИМ Центр', all: 'Общий' };
-  const wpLabel = wpLabels[workplace] || workplace;
+  const reverseMap = Object.fromEntries(Object.entries(WORKPLACE_KEY_MAP).map(([k, v]) => [v, k]));
+  const wpLabel = reverseMap[workplace] || (workplace === 'all' ? 'Общий' : workplace);
   await ctx.replyWithHTML(
     `🏆 <b>Лидерборд — ${esc(wpLabel)}</b>\n\nВыберите тип рейтинга:`,
     Markup.inlineKeyboard([
@@ -3129,21 +3135,23 @@ bot.action('issues_back', async (ctx) => {
   await backToMainMenu(ctx);
 });
 
-bot.action(/^lb_wp_(east|center|all)$/, async (ctx) => {
+const _workplaceKeys = Object.values(WORKPLACE_KEY_MAP).concat(['all']).join('|');
+
+bot.action(new RegExp(`^lb_wp_(${_workplaceKeys})$`), async (ctx) => {
   await ctx.answerCbQuery();
   const workplace = ctx.match[1];
   try { await ctx.deleteMessage(); } catch {}
   await showLeaderboardTypeMenu(ctx, workplace);
 });
 
-bot.action(/^lb_day_(east|center|all)$/, async (ctx) => {
+bot.action(new RegExp(`^lb_day_(${_workplaceKeys})$`), async (ctx) => {
   await ctx.answerCbQuery();
   const workplace = ctx.match[1];
   try { await ctx.deleteMessage(); } catch {}
   await showLeaderboardPeriods(ctx, workplace);
 });
 
-bot.action(/^lb_total_(east|center|all)$/, async (ctx) => {
+bot.action(new RegExp(`^lb_total_(${_workplaceKeys})$`), async (ctx) => {
   await ctx.answerCbQuery();
   const workplace = ctx.match[1];
   try { await ctx.deleteMessage(); } catch {}
@@ -3239,7 +3247,8 @@ bot.action('cash_submit_yes', async (ctx) => {
   const courierFio = getUserField(telegramId, 'fio') || 'Неизвестный';
   const workplace = pendingCash?.workplace || getUserField(telegramId, 'workplace') || 'не указано';
 
-  if (workplace === 'ИМ Центр') {
+  const wpFeatures = WORKPLACE_FEATURES[workplace];
+  if (!wpFeatures || !wpFeatures.cashCollection) {
     clearPendingCashAndReminders(telegramId);
     logCashAction({
       logistId: null,
