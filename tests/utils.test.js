@@ -1,6 +1,7 @@
 const path = require('path');
 const {
   normalizeFio,
+  normalizeFioWords,
   getColumnLetter,
   getCourierColumnsByDay,
   getMileageColumnsByDay,
@@ -27,6 +28,14 @@ module.exports = {
     { name: 'normalizeFio: null/undefined → пустая строка', fn: (a) => {
       a.equal(normalizeFio(null), '');
       a.equal(normalizeFio(undefined), '');
+    }},
+
+    // normalizeFioWords
+    { name: 'normalizeFioWords: порядок слов не важен', fn: (a) => {
+      a.equal(normalizeFioWords('Иванов Иван'), normalizeFioWords('Иван Иванов'));
+    }},
+    { name: 'normalizeFioWords: лишние пробелы и ё', fn: (a) => {
+      a.equal(normalizeFioWords('  Ёлкин   Пётр  '), normalizeFioWords('Петр Елкин'));
     }},
 
     // getColumnLetter

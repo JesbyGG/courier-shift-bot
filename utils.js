@@ -7,6 +7,14 @@ function normalizeFio(fio) {
     .toLowerCase();
 }
 
+function normalizeFioWords(fio) {
+  return normalizeFio(fio)
+    .split(' ')
+    .filter(Boolean)
+    .sort()
+    .join(' ');
+}
+
 function getColumnLetter(columnNumber) {
   let number = Number(columnNumber);
   let letter = '';
@@ -127,6 +135,7 @@ function isScheduleMarker(value) {
 
 module.exports = {
   normalizeFio,
+  normalizeFioWords,
   getColumnLetter,
   getCourierColumnsByDay,
   getMileageColumnsByDay,

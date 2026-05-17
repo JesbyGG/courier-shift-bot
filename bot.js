@@ -319,19 +319,23 @@ function deviceMenu() {
   ]).resize();
 }
 
-function logistMainMenu() {
-  return Markup.keyboard([
-    [BUTTONS.punchTime, BUTTONS.openShop],
-    [BUTTONS.cashCollect],
-    [BUTTONS.sheetInfo, BUTTONS.settings]
-  ]).resize();
+function logistMainMenu(telegramId) {
+  const workplace = getUserField(telegramId, 'workplace');
+  const isEast = workplace === 'ИМ Восток';
+  const rows = [
+    [BUTTONS.punchTime, BUTTONS.openShop]
+  ];
+  if (isEast) {
+    rows.push([BUTTONS.cashCollect, BUTTONS.cashHistory]);
+  }
+  rows.push([BUTTONS.sheetInfo, BUTTONS.settings]);
+  return Markup.keyboard(rows).resize();
 }
 
 function logistSettingsMenu() {
   return Markup.keyboard([
     [BUTTONS.profile],
     [BUTTONS.myId],
-    [BUTTONS.cashHistory],
     [BUTTONS.help],
     [BUTTONS.back]
   ]).resize();
@@ -346,7 +350,7 @@ function logistProfileMenu() {
 
 function getMenuForRole(telegramId) {
   const role = getUserRole(telegramId);
-  return role === 'logist' ? logistMainMenu() : mainMenu();
+  return role === 'logist' ? logistMainMenu(telegramId) : mainMenu();
 }
 
 function getSettingsMenuForRole(telegramId) {
@@ -523,6 +527,11 @@ async function showDebtorsList(ctx) {
     return;
   }
 
+  if (workplace === 'ИМ Центр') {
+    await ctx.replyWithHTML('❌ В Центре приём наличных не предусмотрен.', getMenuForRole(telegramId));
+    return;
+  }
+
   cleanupStaleReminders();
 
   const debtors = getDebtors(workplace);
@@ -658,6 +667,12 @@ async function showCashHistory(ctx) {
     return;
   }
 
+  const workplace = getUserField(telegramId, 'workplace');
+  if (workplace === 'ИМ Центр') {
+    await ctx.replyWithHTML('❌ В Центре приём наличных не предусмотрен.', getMenuForRole(telegramId));
+    return;
+  }
+
   const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
   const buttons = [];
   for (let i = 0; i < 7; i++) {
@@ -756,7 +771,7 @@ async function notifyLogistsAboutSelfClearance(courierId, courierFio, amount, fo
         `💵 <code>${esc(formatted)}</code> ₽\n` +
         `🏬 ${esc(workplace)}\n\n` +
         `Подтвердите сдачу:`,
-        { parse_mode: 'HTML', reply_markup: keyboard }
+        { parse_mode: 'HTML', ...keyboard }
       );
     } catch (e) {
       console.error('failed to notify logist about self-clearance', recipientId, e.message);
@@ -1835,7 +1850,7 @@ async function saveWorkplace(ctx, value) {
 
   if (role === 'logist') {
     clearState(ctx.from.id);
-    await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`, logistMainMenu());
+    await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`, logistMainMenu(ctx.from.id));
     return;
   }
 
@@ -2174,15 +2189,21 @@ async function sendHelp(ctx) {
   const role = getUserRole(ctx.from.id);
 
   if (role === 'logist') {
-    await ctx.replyWithHTML(
-      '❓ <b>Помощь</b>\n' +
+    const workplace = getUserField(ctx.from.id, 'workplace');
+    const isEast = workplace === 'ИМ Восток';
+    let logistHelp = '❓ <b>Помощь</b>\n' +
       '━━━━━━━━━━━━━━━\n\n' +
       `1️⃣ <b>Записать время</b> — «${BUTTONS.punchTime}» отметить начало или конец смены.\n` +
-      `2️⃣ <b>Открыть ИМ</b> — «${BUTTONS.openShop}» отправить уведомление об открытии магазина в группу.\n` +
-      `3️⃣ <b>Принять наличные</b> — «${BUTTONS.cashCollect}» посмотреть должников и отправить напоминание.\n` +
-      `4️⃣ <b>Таблицы</b> — «${BUTTONS.sheetInfo}» информация о привязке таблиц.\n` +
-      `5️⃣ <b>Настройки</b> — «${BUTTONS.settings}» магазин, смена сотрудника.\n\n` +
-      '📋 Команды:',
+      `2️⃣ <b>Открыть ИМ</b> — «${BUTTONS.openShop}» отправить уведомление об открытии магазина в группу.\n`;
+    if (isEast) {
+      logistHelp += `3️⃣ <b>Принять наличные</b> — «${BUTTONS.cashCollect}» посмотреть должников и отправить напоминание.\n`;
+      logistHelp += `4️⃣ <b>История сборов</b> — «${BUTTONS.cashHistory}» просмотр истории по датам.\n`;
+    }
+    logistHelp += `${isEast ? '5️⃣' : '3️⃣'} <b>Таблицы</b> — «${BUTTONS.sheetInfo}» информация о привязке таблиц.\n`;
+    logistHelp += `${isEast ? '6️⃣' : '4️⃣'} <b>Настройки</b> — «${BUTTONS.settings}» магазин, смена сотрудника.\n\n`;
+    logistHelp += '📋 Команды:';
+    await ctx.replyWithHTML(
+      logistHelp,
       Markup.inlineKeyboard([
         [Markup.button.callback('📋 Команды', 'help_commands')]
       ])
@@ -2907,7 +2928,7 @@ bot.start(async (ctx) => {
       `💳 <b>Принять наличные</b> — посмотреть курьеров с долгами и отправить напоминание.\n` +
       `📋 <b>Таблицы</b> — информация о привязке таблиц.\n` +
       `⚙️ <b>Настройки</b> — профиль, магазин, смена сотрудника.`,
-      logistMainMenu()
+      logistMainMenu(ctx.from.id)
     );
   } else {
     await ctx.replyWithHTML(
@@ -3345,10 +3366,9 @@ bot.action('help_commands', async (ctx) => {
 
 bot.action('confirm_switch_user', async (ctx) => {
   await ctx.answerCbQuery();
-  const role = getUserRole(ctx.from.id);
   deleteUser(ctx.from.id);
   setState(ctx.from.id, { awaitingFio: true });
-  await ctx.replyWithHTML('👤 <b>Смена сотрудника</b>\n\nПредыдущие данные удалены.\nВведите имя и фамилию как в таблице.', getMenuForRole(ctx.from.id));
+  await ctx.replyWithHTML('👤 <b>Смена сотрудника</b>\n\nПредыдущие данные удалены.\nВведите имя и фамилию как в таблице.');
 });
 
 bot.action('role_courier', async (ctx) => {
@@ -3375,7 +3395,7 @@ bot.action('role_logist', async (ctx) => {
   }
   setUserField(telegramId, 'role', 'logist');
   clearState(telegramId);
-  await ctx.replyWithHTML('✅ Роль: <b>Логист</b>\n\nТеперь выберите ваш магазин.', logistMainMenu());
+  await ctx.replyWithHTML('✅ Роль: <b>Логист</b>\n\nТеперь выберите ваш магазин.', logistMainMenu(ctx.from.id));
   await askForWorkplace(ctx, state.fio);
 });
 
@@ -3393,6 +3413,29 @@ bot.action('cash_submit_yes', async (ctx) => {
   const formatted = pendingCash?.formatted || formatMoneyRu(amount);
   const courierFio = getUserField(telegramId, 'fio') || 'Неизвестный';
   const workplace = pendingCash?.workplace || getUserField(telegramId, 'workplace') || 'не указано';
+
+  if (workplace === 'ИМ Центр') {
+    clearPendingCashAndReminders(telegramId);
+    logCashAction({
+      logistId: null,
+      logistFio: null,
+      courierId: String(telegramId),
+      courierFio: courierFio,
+      workplace: workplace,
+      amount: amount,
+      action: 'self_cleared'
+    });
+    try {
+      await ctx.editMessageText(`✅ <b>${esc(courierFio)}</b>, сдача <code>${esc(formatted)}</code> ₽ подтверждена.`);
+    } catch (e) { /* ignore */ }
+    await ctx.replyWithHTML(
+      `✅ <b>Сдача подтверждена</b>\n\n` +
+      `Вы сдали <code>${esc(formatted)}</code> ₽.\n` +
+      `Спасибо!`,
+      getMenuForRole(telegramId)
+    );
+    return;
+  }
 
   setCashConfirmationStatus(telegramId, 'awaiting');
 
@@ -3625,7 +3668,7 @@ bot.action(/^decl_([0-9a-f]+)$/, async (ctx) => {
 
 bot.action(/^sc_appr_(\d+)$/, async (ctx) => {
   const courierId = ctx.match[1];
-  await ctx.answerCbQuery();
+  await ctx.answerCbQuery('✅ Сдача подтверждена');
 
   const pendingCash = getUserField(courierId, 'pendingCashToSubmit');
   if (!pendingCash || pendingCash.confirmationStatus !== 'awaiting') {
@@ -3668,7 +3711,7 @@ bot.action(/^sc_appr_(\d+)$/, async (ctx) => {
 
 bot.action(/^sc_decl_(\d+)$/, async (ctx) => {
   const courierId = ctx.match[1];
-  await ctx.answerCbQuery();
+  await ctx.answerCbQuery('❌ Сдача отклонена');
 
   const pendingCash = getUserField(courierId, 'pendingCashToSubmit');
   if (!pendingCash || pendingCash.confirmationStatus !== 'awaiting') {

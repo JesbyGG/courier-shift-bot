@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Telegram-бот для учёта смен курьеров</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#f0f2f5;color:#1a1a2e;line-height:1.7;padding:20px}
+.container{max-width:900px;margin:0 auto}
+.header{background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;border-radius:16px;padding:40px;margin-bottom:30px;text-align:center}
+.header h1{font-size:28px;margin-bottom:8px}
+.header p{font-size:16px;opacity:.85}
+.section{background:#fff;border-radius:12px;padding:30px;margin-bottom:25px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.section h2{font-size:22px;margin-bottom:16px;padding-bottom:8px;border-bottom:2px solid #e0e0e0}
+.role-block{margin-bottom:30px}
+.role-block:last-child{margin-bottom:0}
+.role-block h2{font-size:20px}
+.role-block p{margin-bottom:12px;color:#555}
+table{width:100%;border-collapse:collapse;margin:12px 0}
+th,td{text-align:left;padding:10px 14px;border:1px solid #e0e0e0;vertical-align:top}
+th{background:#f8f9fa;font-weight:600;font-size:14px}
+.btn{font-weight:600;white-space:nowrap}
+.process{margin-bottom:35px}
+.process:last-child{margin-bottom:0}
+.story{background:#eef6ff;padding:12px 16px;border-radius:8px;margin-bottom:12px;color:#1a1a2e}
+.dialog td.who{font-weight:600;white-space:nowrap;background:#fafafa}
+.dialog td.who.bot{color:#2563eb}
+.dialog td.who.courier{color:#16a34a}
+.dialog td.who.logist{color:#d97706}
+.dialog td.msg{white-space:pre-line;font-size:14px}
+.note{background:#fef9e7;padding:12px 16px;border-radius:8px;margin-top:12px;color:#5a4a00;font-size:14px}
+.benefits-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.benefit{background:#f8f9fa;border-radius:10px;padding:16px;display:flex;gap:14px;align-items:flex-start}
+.benefit-icon{font-size:28px;flex-shrink:0}
+.benefit strong{font-size:15px}
+.benefit div{font-size:14px;color:#555}
+.req-list{padding-left:20px;margin:12px 0}
+.req-list li{margin-bottom:8px}
+.footer{text-align:center;color:#888;font-size:13px;padding:20px}
+@media(max-width:600px){.benefits-grid{grid-template-columns:1fr}.container{padding:0}.header{padding:24px 16px}.section{padding:20px 16px}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>📋 Telegram-бот для учёта смен курьеров</h1>
+    <p>Как это работает — описание для руководителя</p>
+    <p style="margin-top:6px;font-size:14px;opacity:.7">16 мая 2026 г.</p>
+  </div>
+
+  <div class="section">
+    <h2>👥 Кто пользуется ботом</h2>
+    
+      <div class="role-block">
+        <h2>👤 Курьер</h2>
+        <p>Сотрудник, который выходит на доставку. С помощью бота отмечает начало и конец смены, отправляет фото пробега, маршрутные листы и сверки, взаимодействует с логистом по наличным.</p>
+        <table class="btn-table">
+          <thead><tr><th style="width:180px;">Кнопка</th><th>Что делает</th></tr></thead>
+          <tbody><tr><td class="btn">⏱ Записать время</td><td>Нажать в начале и в конце смены. Бот сам запишет время в таблицу.</td></tr>
+<tr><td class="btn">🚗 Фото пробега</td><td>Сфотографировать приборку — бот сам распознаёт цифры, отправляет фото в чат и записывает пробег.</td></tr>
+<tr><td class="btn">📄 Маршрутник</td><td>Отправить фото маршрутного листа — бот перешлёт в нужный чат.</td></tr>
+<tr><td class="btn">📊 Отправить сверку</td><td>Сфотографировать чек терминала или пин-панели. Бот распознаёт количество заказов и сумму наличных, отправляет в чат.</td></tr>
+<tr><td class="btn">💵 Сдать наличные</td><td>Бот показывает, сколько накопилось к сдаче. После подтверждения отправляет запрос логисту.</td></tr>
+<tr><td class="btn">🏆 Рейтинг</td><td>Посмотреть своё место среди коллег: сегодня, за неделю, за месяц. Можно выбрать магазин.</td></tr>
+<tr><td class="btn">⚠️ Проблема с заказом</td><td>Ссылки на чаты поддержки, если случилась проблема.</td></tr>
+<tr><td class="btn">⚙️ Настройки</td><td>Профиль, номер машины, магазин, устройство.</td></tr></tbody>
+        </table>
+      </div>
+      <div class="role-block">
+        <h2>📦 Логист</h2>
+        <p>Сотрудник, который контролирует смены и сбор наличных. Не выезжает на доставку, работает через бота удалённо.</p>
+        <table class="btn-table">
+          <thead><tr><th style="width:180px;">Кнопка</th><th>Что делает</th></tr></thead>
+          <tbody><tr><td class="btn">⏱ Записать время</td><td>Отметить начало и конец смены.</td></tr>
+<tr><td class="btn">🔓 Открыть ИМ</td><td>Одной кнопкой отправить в группу уведомление: «ИМ Восток — ОТКРЫТ». Все видят, что магазин работает.</td></tr>
+<tr><td class="btn">💳 Принять наличные</td><td>Посмотреть, кто из курьеров должен деньги. Нажать на фамилию — курьеру придёт напоминание.</td></tr>
+<tr><td class="btn">📋 История сборов</td><td>Посмотреть, кто и когда сдал наличные за последние 7 дней.</td></tr>
+<tr><td class="btn">⚙️ Настройки</td><td>Поменять магазин, сотрудника, посмотреть свой ID.</td></tr></tbody>
+        </table>
+      </div>
+  </div>
+
+  <div class="section">
+    <h2>⚙️ Как это работает — примеры</h2>
+    <p style="margin-bottom:16px">Ниже — реальные диалоги, которые происходят в Telegram. Именно так бот выглядит для сотрудников.</p>
+    
+      <div class="process">
+        <h2>📌 Начало смены</h2>
+        <p class="story">Курьер пришёл на работу. Открывает бота, нажимает кнопку — смена началась.</p>
+        <table class="dialog">
+          <thead><tr><th style="width:140px;">Кто</th><th>Сообщение</th></tr></thead>
+          <tbody><tr><td class="who courier">Курьер</td><td class="msg">нажимает «⏱ Записать время» → «🟢 Начать смену»</td></tr>
+<tr><td class="who bot">Бот</td><td class="msg">✅ Смена начата: 09:00
+🟢 Старт: 09:00
+🏬 ИМ Восток</td></tr></tbody>
+        </table>
+        <p class="note">💡 Время записывается в общую таблицу. Руководитель видит, кто вышел и во сколько. В конце смены курьер нажимает «Закончить смену» — так же автоматически.</p>
+      </div>
+      <div class="process">
+        <h2>📌 Фото пробега</h2>
+        <p class="story">Курьер сфотографировал приборку в начале смены и отправил боту.</p>
+        <table class="dialog">
+          <thead><tr><th style="width:140px;">Кто</th><th>Сообщение</th></tr></thead>
+          <tbody><tr><td class="who courier">Курьер</td><td class="msg">нажимает «🚗 Фото пробега» → отправляет фото</td></tr>
+<tr><td class="who bot">Бот</td><td class="msg">📸 Распознан пробег: 54 321 км
+
+🟢 Начало смены: 09:00
+🚗 Пробег старт: 54 321 км</td></tr></tbody>
+        </table>
+        <p class="note">💡 Бот сам «читает» цифры с фото. Если распознать не удалось — предложит ввести пробег вручную или загрузить фото заново. Фото автоматически отправляется в рабочий чат, где его видят все.</p>
+      </div>
+      <div class="process">
+        <h2>📌 Сверка + Накопление наличных</h2>
+        <p class="story">В конце смены курьер фотографирует чек терминала (или пин-панели) — бот распознаёт, сколько заказов сделано и сколько наличных нужно сдать.</p>
+        <table class="dialog">
+          <thead><tr><th style="width:140px;">Кто</th><th>Сообщение</th></tr></thead>
+          <tbody><tr><td class="who courier">Курьер</td><td class="msg">нажимает «📊 Отправить сверку» → отправляет фото чека</td></tr>
+<tr><td class="who bot">Бот</td><td class="msg">📊 Сверка — Терминал
+👤 Иванов Иван
+🏬 ИМ Восток
+
+Заказы: 24
+Наличные: 15 200 ₽</td></tr>
+<tr><td class="who ">После этого</td><td class="msg">Курьер видит в меню: 💵 К сдаче: 15 200 ₽</td></tr></tbody>
+        </table>
+        <p class="note">💡 Заказы идут в рейтинг курьеров. Наличные копятся — в конце дня или по запросу логиста курьер нажимает «Сдать наличные».</p>
+      </div>
+      <div class="process">
+        <h2>📌 Сдача наличных — курьер инициирует</h2>
+        <p class="story">Курьер нажимает «Сдать наличные», подтверждает сумму — бот отправляет запрос логисту.</p>
+        <table class="dialog">
+          <thead><tr><th style="width:140px;">Кто</th><th>Сообщение</th></tr></thead>
+          <tbody><tr><td class="who courier">Курьер</td><td class="msg">нажимает «💵 Сдать наличные» → «✅ Да, сдал»</td></tr>
+<tr><td class="who bot">Бот — курьеру</td><td class="msg">⏳ Запрос отправлен. Ожидайте подтверждения логиста.</td></tr>
+<tr><td class="who bot">Бот — логисту</td><td class="msg">💰 Курьер отметил сдачу
+
+👤 Иванов Иван
+💵 15 200 ₽
+🏬 ИМ Восток
+
+Подтвердите сдачу:
+[✅ Подтвердить] [❌ Отклонить]</td></tr>
+<tr><td class="who logist">Логист</td><td class="msg">нажимает «✅ Подтвердить»</td></tr>
+<tr><td class="who bot">Бот — курьеру</td><td class="msg">✅ Логист Петров подтвердил сдачу 15 200 ₽
+
+Спасибо!</td></tr></tbody>
+        </table>
+        <p class="note">💡 Без подтверждения логиста сдача не засчитывается. Это гарантирует, что деньги реально сданы, а не просто отмечены в боте.</p>
+      </div>
+      <div class="process">
+        <h2>📌 Сдача наличных — логист напоминает</h2>
+        <p class="story">Логист видит список должников, нажимает на фамилию — курьеру приходит напоминание.</p>
+        <table class="dialog">
+          <thead><tr><th style="width:140px;">Кто</th><th>Сообщение</th></tr></thead>
+          <tbody><tr><td class="who logist">Логист</td><td class="msg">нажимает «💳 Принять наличные»</td></tr>
+<tr><td class="who bot">Бот — логисту</td><td class="msg">💳 Курьеры с долгами (ИМ Восток)
+Всего к сдаче: 34 700 ₽
+
+👤 Иванов Иван — 15 200 ₽
+👤 Петров Сергей — 19 500 ₽</td></tr>
+<tr><td class="who logist">Логист</td><td class="msg">нажимает на «Иванов Иван»</td></tr>
+<tr><td class="who bot">Бот — курьеру</td><td class="msg">🔔 Логист Петров напоминает:
+
+💵 У вас 15 200 ₽ к сдаче.
+
+[🏃 Уже бегу] [✅ Сдал]</td></tr>
+<tr><td class="who courier">Курьер</td><td class="msg">нажимает «🏃 Уже бегу»</td></tr>
+<tr><td class="who bot">Бот — логисту</td><td class="msg">🏃 Иванов Иван уже бежит сдавать 15 200 ₽</td></tr></tbody>
+        </table>
+        <p class="note">💡 Логист видит, кто отреагировал, а кто нет. Если курьер нажал «Сдал» — логист подтверждает или отклоняет.</p>
+      </div>
+      <div class="process">
+        <h2>📌 Открытие магазина (логист)</h2>
+        <p class="story">Логист открывает магазин и одним нажатием оповещает всю группу.</p>
+        <table class="dialog">
+          <thead><tr><th style="width:140px;">Кто</th><th>Сообщение</th></tr></thead>
+          <tbody><tr><td class="who logist">Логист</td><td class="msg">нажимает «🔓 Открыть ИМ»</td></tr>
+<tr><td class="who bot">Бот — логисту</td><td class="msg">✅ Уведомление отправлено: ИМ Восток — ОТКРЫТ ✅</td></tr>
+<tr><td class="who bot">Бот — в группу</td><td class="msg">🏪 ИМ Восток — ОТКРЫТ ✅
+
+Логист: Иванов Иван</td></tr></tbody>
+        </table>
+        <p class="note">💡 Все сотрудники в группе видят, что магазин открыт. Никому не нужно писать отдельно.</p>
+      </div>
+      <div class="process">
+        <h2>📌 Рейтинг и уведомления об обгонах</h2>
+        <p class="story">После каждой сверки заказы попадают в рейтинг. Курьер может в любой момент посмотреть, кто лидирует.</p>
+        <table class="dialog">
+          <thead><tr><th style="width:140px;">Кто</th><th>Сообщение</th></tr></thead>
+          <tbody><tr><td class="who courier">Курьер</td><td class="msg">нажимает «🏆 Рейтинг» → выбирает «ИМ Восток», «Топ за сегодня»</td></tr>
+<tr><td class="who bot">Бот</td><td class="msg">🏆 Рейтинг — ИМ Восток
+Топ за сегодня:
+
+🥇 1. Иванов — 24 заказа
+🥈 2. Петров — 18 заказов
+🥉 3. Сидоров — 15 заказов</td></tr>
+<tr><td class="who ">Если курьер побил свой рекорд:</td><td class="msg"></td></tr>
+<tr><td class="who bot">Бот — курьеру</td><td class="msg">🎉 Новый личный рекорд!
+
+Вы доставили 24 заказа за день!
+Предыдущий рекорд: 20 заказов.</td></tr>
+<tr><td class="who ">Если кого-то обогнали:</td><td class="msg"></td></tr>
+<tr><td class="who ">Бот — обогнанному</td><td class="msg">⚠️ Вас обогнали в рейтинге!
+
+Иванов Иван доставил 24 заказа.</td></tr>
+<tr><td class="who ">Бот — кто обогнал</td><td class="msg">🎉 Вы обогнали в рейтинге: Петров С. (18 заказов)</td></tr></tbody>
+        </table>
+        <p class="note">💡 Рейтинг считается только по тем, кто работает в одном магазине. Каждый видит своё место и может стремиться к лучшему.</p>
+      </div>
+  </div>
+
+  <div class="section">
+    <h2>✅ Что даёт внедрение</h2>
+    <div class="benefits-grid">
+      <div class="benefit"><span class="benefit-icon">✅</span><div><strong>Автоматизация</strong><br>Сотрудникам не нужно ничего записывать вручную. Время, пробег, заказы — всё фиксируется само.</div></div>
+<div class="benefit"><span class="benefit-icon">💰</span><div><strong>Контроль наличных</strong><br>Логист видит, кто сколько должен, напоминает и подтверждает сдачу. Никаких «я забыл» и «мне не сказали».</div></div>
+<div class="benefit"><span class="benefit-icon">📊</span><div><strong>Google Таблицы</strong><br>Все данные попадают в таблицы, к которым у руководителя есть доступ. Можно открыть в любой момент и посмотреть.</div></div>
+<div class="benefit"><span class="benefit-icon">🏆</span><div><strong>Мотивация</strong><br>Рейтинг и уведомления о рекордах — соревновательный элемент, который повышает вовлечённость.</div></div>
+<div class="benefit"><span class="benefit-icon">📷</span><div><strong>Фото подтверждения</strong><br>Каждое фото пробега, маршрутника и сверки уходит в отдельный чат. Всегда можно перепроверить.</div></div>
+<div class="benefit"><span class="benefit-icon">🔄</span><div><strong>Два уровня контроля</strong><br>Наличные не списываются автоматически — логист подтверждает каждую сдачу. Исключены ошибки и злоупотребления.</div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>📱 Что нужно для работы</h2>
+    <ul class="req-list">
+      <li>Телефон с установленным Telegram</li>
+<li>Telegram-группа (создаётся за 2 минуты) для общих уведомлений и фото</li>
+<li>Таблица Google Sheets со списком сотрудников и их ФИО</li>
+<li>Интернет на телефоне (мобильный или Wi-Fi)</li>
+    </ul>
+  </div>
+
+  <div class="footer">
+    Telegram-бот для учёта смен курьеров — 16 мая 2026 г.
+  </div>
+</div>
+</body>
+</html>

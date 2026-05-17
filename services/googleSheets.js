@@ -1,6 +1,7 @@
 const { JWT } = require('google-auth-library');
 const {
   normalizeFio,
+  normalizeFioWords,
   getColumnLetter,
   getCourierColumnsByDay,
   getMileageColumnsByDay,
@@ -258,13 +259,13 @@ async function findCourierByFio(fio, workplace, sheetContext = null) {
 
   const config = getSheetConfig(workplace);
   const rows = await getValues(`${quoteSheetName(config.courierSheet)}!${config.courierFioRange}`, spreadsheetId);
-  const target = normalizeFio(fio);
+  const target = normalizeFioWords(fio);
 
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
     const rowFio = getRowValueByColumn(row, config.courierFioRange, config.courierFioColumn) || row[row.length - 1] || '';
 
-    if (normalizeFio(rowFio) === target) {
+    if (normalizeFioWords(rowFio) === target) {
       return { row: index + 3, fio: rowFio, auto: row[0] || '', spreadsheetId };
     }
   }
@@ -279,14 +280,14 @@ async function findMileageByFio(fio, workplace, sheetContext = null) {
 
   const config = getSheetConfig(workplace);
   const rows = await getValues(`${quoteSheetName(config.mileageSheet)}!${config.mileageFioRange}`, spreadsheetId);
-  const target = normalizeFio(fio);
+  const target = normalizeFioWords(fio);
 
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
     const rowFio = getRowValueByColumn(row, config.mileageFioRange, config.mileageFioColumn) || row[row.length - 1] || '';
     const auto = getRowValueByColumn(row, config.mileageFioRange, config.mileageAutoColumn) || row[0] || '';
 
-    if (normalizeFio(rowFio) === target) {
+    if (normalizeFioWords(rowFio) === target) {
       return { row: index + 3, fio: rowFio, auto, spreadsheetId };
     }
   }
@@ -312,13 +313,13 @@ async function findCourierInAllSheets(fio) {
       if (!titles.includes(config.courierSheet)) continue;
 
       const rows = await getValues(`${quoteSheetName(config.courierSheet)}!${config.courierFioRange}`, spreadsheetId);
-      const target = normalizeFio(fio);
+      const target = normalizeFioWords(fio);
 
       for (let index = 0; index < rows.length; index += 1) {
         const row = rows[index];
         const rowFio = getRowValueByColumn(row, config.courierFioRange, config.courierFioColumn) || row[row.length - 1] || '';
 
-        if (normalizeFio(rowFio) === target) {
+        if (normalizeFioWords(rowFio) === target) {
           return { row: index + 3, fio: rowFio, auto: row[0] || '', spreadsheetId, workplace };
         }
       }
