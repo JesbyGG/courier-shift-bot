@@ -61,6 +61,31 @@ const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeade
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, roundMinutesToHalfHour } = require('./utils');
 const { registerSheetCommand } = require('./sheetCommand');
 const { WORKPLACES, DEVICES, ROLES, LIMITS } = require('./config');
+const { isAdminUser, getAdminIds } = require('./services/auth');
+const {
+  mainMenu,
+  profileMenu,
+  workplaceMenu,
+  deviceMenu,
+  logistMainMenu,
+  logistSettingsMenu,
+  logistProfileMenu,
+  getMenuForRole,
+  getSettingsMenuForRole,
+  getProfileMenuForRole,
+  roleChoiceKeyboard,
+  skipMileageKeyboard,
+  mileageConfirmKeyboard,
+  mileageSavedKeyboard,
+  routeSheetKeyboard,
+  manualMileageKeyboard,
+  replaceKeyboard,
+  timeChangeKeyboard,
+  mileageReplaceKeyboard,
+  switchUserKeyboard,
+  cashSubmitConfirmKeyboard,
+  debtorListKeyboard
+} = require('./menus/keyboards');
 
 const db = require('./db');
 
@@ -284,109 +309,6 @@ const BUTTONS = {
 
 // WORKPLACES, DEVICES — теперь из config.js (см. импорт выше)
 
-function mainMenu() {
-  return Markup.keyboard([
-    [BUTTONS.punchTime, BUTTONS.mileage],
-    [BUTTONS.routeSheet, BUTTONS.reconciliation],
-    [BUTTONS.cashCheck, BUTTONS.issues],
-    [BUTTONS.leaderBoard, BUTTONS.settings]
-  ]).resize();
-}
-
-function settingsMenu(telegramId) {
-  return getSettingsMenuForRole(telegramId);
-}
-
-function profileMenu() {
-  return Markup.keyboard([
-    [BUTTONS.changeCar, BUTTONS.changeWorkplace],
-    [BUTTONS.changeDevice, BUTTONS.switchUser],
-    [BUTTONS.backToSettings]
-  ]).resize();
-}
-
-function workplaceMenu() {
-  return Markup.keyboard([
-    WORKPLACES,
-    [BUTTONS.back]
-  ]).resize();
-}
-
-function deviceMenu() {
-  return Markup.keyboard([
-    DEVICES,
-    [BUTTONS.back]
-  ]).resize();
-}
-
-function logistMainMenu(telegramId) {
-  const workplace = getUserField(telegramId, 'workplace');
-  const isEast = workplace === 'ИМ Восток';
-  const rows = [
-    [BUTTONS.punchTime, BUTTONS.openShop]
-  ];
-  if (isEast) {
-    rows.push([BUTTONS.cashCollect, BUTTONS.cashHistory]);
-  }
-  rows.push([BUTTONS.sheetInfo, BUTTONS.settings]);
-  return Markup.keyboard(rows).resize();
-}
-
-function logistSettingsMenu() {
-  return Markup.keyboard([
-    [BUTTONS.profile],
-    [BUTTONS.myId],
-    [BUTTONS.help],
-    [BUTTONS.back]
-  ]).resize();
-}
-
-function logistProfileMenu() {
-  return Markup.keyboard([
-    [BUTTONS.changeWorkplace, BUTTONS.switchUser],
-    [BUTTONS.backToSettings]
-  ]).resize();
-}
-
-function getMenuForRole(telegramId) {
-  const role = getUserRole(telegramId);
-  return role === 'logist' ? logistMainMenu(telegramId) : mainMenu();
-}
-
-function getSettingsMenuForRole(telegramId) {
-  const role = getUserRole(telegramId);
-  if (role === 'logist') {
-    return logistSettingsMenu();
-  }
-  const showSheets = isAdminUser(telegramId) || isSheetAccessUser(telegramId);
-  const buttons = [
-    [BUTTONS.profile]
-  ];
-  if (showSheets) {
-    buttons.push([BUTTONS.sheetInfo, BUTTONS.myId]);
-  } else {
-    buttons.push([BUTTONS.myId]);
-  }
-  buttons.push([BUTTONS.help]);
-  buttons.push([BUTTONS.back]);
-  return Markup.keyboard(buttons).resize();
-}
-
-function getProfileMenuForRole(telegramId) {
-  const role = getUserRole(telegramId);
-  if (role === 'logist') {
-    return logistProfileMenu();
-  }
-  return profileMenu();
-}
-
-function roleChoiceKeyboard() {
-  return Markup.inlineKeyboard([
-    [Markup.button.callback('👤 Курьер', 'role_courier')],
-    [Markup.button.callback('📦 Логист', 'role_logist')]
-  ]);
-}
-
 function isLogist(telegramId) {
   return getUserRole(telegramId) === 'logist';
 }
@@ -402,115 +324,6 @@ function requireRole(ctx, requiredRole) {
     return false;
   }
   return true;
-}
-
-function skipMileageKeyboard() {
-  // Раньше тут была одна кнопка «Пропустить» — если у курьера нет камеры,
-  // он застрял бы. Теперь альтернатива «Ввести вручную» сразу под рукой.
-  return Markup.inlineKeyboard([
-    [Markup.button.callback('✏️ Ввести вручную', 'edit_mileage')],
-    [
-      Markup.button.callback('⏭️ Пропустить', 'skip_mileage'),
-      Markup.button.callback('🏠 В меню', 'back_to_menu')
-    ]
-  ]);
-}
-
-function mileageConfirmKeyboard() {
-  return Markup.inlineKeyboard([
-    [Markup.button.callback('📷 Загрузить фото повторно', 'retry_mileage_photo')],
-    [Markup.button.callback('✏️ Ввести вручную', 'edit_mileage')],
-    [
-      Markup.button.callback('⏭️ Пропустить', 'skip_mileage'),
-      Markup.button.callback('🏠 В меню', 'back_to_menu')
-    ]
-  ]);
-}
-
-function mileageSavedKeyboard() {
-  return Markup.inlineKeyboard([
-    [Markup.button.callback('✏️ Изменить пробег', 'edit_mileage')]
-  ]);
-}
-
-function routeSheetKeyboard() {
-  // «Завершить» — явный сигнал «закончил отправлять фото», убирает
-  // двусмысленность кнопки «В меню» (которая выглядит как отмена).
-  return Markup.inlineKeyboard([
-    [
-      Markup.button.callback('✅ Завершить', 'route_sheet_done'),
-      Markup.button.callback('🏠 В меню', 'back_to_menu')
-    ]
-  ]);
-}
-
-function manualMileageKeyboard() {
-  return Markup.inlineKeyboard([
-    [Markup.button.callback('📷 Загрузить фото повторно', 'retry_mileage_photo')],
-    [
-      Markup.button.callback('⏭️ Пропустить', 'skip_mileage'),
-      Markup.button.callback('🏠 В меню', 'back_to_menu')
-    ]
-  ]);
-}
-
-function replaceKeyboard() {
-  return Markup.inlineKeyboard([
-    [Markup.button.callback('🟢 Изменить начало', 'replace_start')],
-    [Markup.button.callback('🔴 Изменить конец', 'replace_end')],
-    [Markup.button.callback('❌ Отмена', 'back_to_menu')]
-  ]);
-}
-
-function timeChangeKeyboard() {
-  return Markup.inlineKeyboard([
-    [Markup.button.callback('✏️ Изменить время', 'edit_time')]
-  ]);
-}
-
-function mileageReplaceKeyboard() {
-  return Markup.inlineKeyboard([
-    [Markup.button.callback('🟢 Изменить пробег начала', 'replace_mileage_start')],
-    [Markup.button.callback('🔴 Изменить пробег конца', 'replace_mileage_end')],
-    [Markup.button.callback('❌ Отмена', 'back_to_menu')]
-  ]);
-}
-
-function switchUserKeyboard() {
-  return Markup.inlineKeyboard([
-    [Markup.button.callback('✅ Да, сменить', 'confirm_switch_user')],
-    [Markup.button.callback('❌ Отмена', 'back_to_menu')]
-  ]);
-}
-
-function cashSubmitConfirmKeyboard() {
-  return Markup.inlineKeyboard([
-    [Markup.button.callback('✅ Да, сдал', 'cash_submit_yes')],
-    [Markup.button.callback('❌ Нет, не сдал', 'cash_submit_no')],
-    [Markup.button.callback('🏠 В меню', 'back_to_menu')]
-  ]);
-}
-
-function debtorListKeyboard(debtors, logistWorkplace) {
-  const buttons = [];
-  for (const debtor of debtors) {
-    const activeReminders = getActiveRemindersForCourier(debtor.telegramId);
-    let label = `👤 ${debtor.fio} — ${debtor.formatted || debtor.amount} ₽`;
-    if (activeReminders.length > 0) {
-      const remindedBy = activeReminders.map(r => r.logistFio).join(', ');
-      label += ` 🔔(${remindedBy})`;
-    }
-    const selfClearance = getSelfClearanceRequest(debtor.telegramId);
-    if (selfClearance) {
-      label = `👤 ${debtor.fio} — ${selfClearance.formatted || selfClearance.amount} ₽ ⏳`;
-    }
-    buttons.push([Markup.button.callback(label, `d_${debtor.telegramId}`)]);
-  }
-  if (buttons.length === 0) {
-    return null;
-  }
-  buttons.push([Markup.button.callback('🏠 В меню', 'back_to_menu')]);
-  return Markup.inlineKeyboard(buttons);
 }
 
 async function showDebtorsList(ctx) {
@@ -3003,21 +2816,7 @@ bot.command('device', async (ctx) => {
 // Парсим ADMIN_IDS из .env. Кэшируем результат в _adminIdsCache, чтобы
 // не разбирать строку на каждом сообщении (раньше это происходило в
 // 5+ местах кода).
-let _adminIdsCache = null;
-let _adminIdsRaw = null;
 
-function getAdminIds() {
-  const raw = String(process.env.ADMIN_IDS || '');
-  if (raw === _adminIdsRaw && _adminIdsCache) return _adminIdsCache;
-  _adminIdsRaw = raw;
-  _adminIdsCache = raw.split(',').map((id) => Number(id.trim())).filter(Number.isFinite);
-  return _adminIdsCache;
-}
-
-function isAdminUser(telegramId) {
-  const adminIds = getAdminIds();
-  return adminIds.length > 0 && adminIds.includes(Number(telegramId));
-}
 
 async function notifyAdmins(html, options = {}) {
   // Уведомить всех админов. Заблокированный админ пропускается без шума.
@@ -3950,6 +3749,51 @@ async function handleRouteSheetPhoto(ctx, state, fileId) {
   }
 }
 
+async function finalizeReconciliationPostSend(ctx, state, telegramId, totalOrders) {
+  const errors = [];
+
+  if (totalOrders && totalOrders > 0 && state.fio && state.workplace) {
+    const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
+    const { day } = getCurrentDateInfo(timezone);
+
+    try {
+      const result = await updateEfficiencyOrders(state.fio, state.workplace, day, totalOrders);
+      if (result.ok) {
+        console.log(`эффективность: записано ${totalOrders} заказов для ${state.fio}, день ${day}, ячейка ${result.cell}`);
+      } else {
+        console.error('эффективность: не удалось записать', result.error);
+        errors.push('заказы в таблицу эффективности');
+      }
+    } catch (effError) {
+      console.error('эффективность: ошибка записи', effError.message || effError);
+      errors.push('заказы в таблицу эффективности');
+    }
+
+    try {
+      const dayKey = getLbTodayKey();
+      const oldOrders = getLbDayOrders(String(telegramId), dayKey);
+      recordLeaderboardOrders(String(telegramId), state.fio, state.workplace, totalOrders);
+      await handleLeaderboardNotifications(ctx, String(telegramId), state.fio, state.workplace, totalOrders, oldOrders);
+    } catch (lbErr) {
+      console.error('leaderboard record error', lbErr.message || lbErr);
+      errors.push('рейтинг');
+    }
+  }
+
+  if (errors.length > 0) {
+    try {
+      await ctx.replyWithHTML(
+        `⚠️ <b>Фото отправлены, но не удалось записать:</b>\n` +
+        errors.map((e) => `• ${esc(e)}`).join('\n') +
+        '\n\nСообщите администратору.',
+        getMenuForRole(telegramId)
+      );
+    } catch (notifyErr) {
+      console.error('failed to notify user about reconciliation errors', notifyErr.message);
+    }
+  }
+}
+
 async function handleReconciliationPhoto(ctx, state, fileId) {
   const telegramId = ctx.from.id;
   const photosSent = (state.reconciliationPhotosSent || 0) + 1;
@@ -4062,28 +3906,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       await ctx.replyWithHTML(`✅ <b>Все фото (2 шт.) отправлены.</b>${ocrWarning}`, mainMenu());
 
       const totalOrders = state.reconciliationPhoto1TotalOrders;
-      if (totalOrders && totalOrders > 0 && state.fio && state.workplace) {
-        const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
-        const { day } = getCurrentDateInfo(timezone);
-        try {
-          const result = await updateEfficiencyOrders(state.fio, state.workplace, day, totalOrders);
-          if (result.ok) {
-            console.log(`эффективность: записано ${totalOrders} заказов для ${state.fio}, день ${day}, ячейка ${result.cell}`);
-          } else {
-            console.error('эффективность: не удалось записать', result.error);
-          }
-        } catch (effError) {
-          console.error('эффективность: ошибка записи', effError.message || effError);
-        }
-        try {
-          const dayKey = getLbTodayKey();
-          const oldOrders = getLbDayOrders(String(telegramId), dayKey);
-          recordLeaderboardOrders(String(telegramId), state.fio, state.workplace, totalOrders);
-          await handleLeaderboardNotifications(ctx, String(telegramId), state.fio, state.workplace, totalOrders, oldOrders);
-        } catch (lbErr) {
-          console.error('leaderboard record error', lbErr.message || lbErr);
-        }
-      }
+      await finalizeReconciliationPostSend(ctx, state, telegramId, totalOrders);
     } catch (error) {
       console.error('telegram send reconciliation album error', error);
       await ctx.replyWithHTML('⚠️ Не удалось отправить фото.\nПопробуйте ещё раз или обратитесь к администратору.', routeSheetKeyboard());
@@ -4157,28 +3980,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     await ctx.replyWithHTML(`✅ <b>Все фото (${total} шт.) отправлены.</b>${ocrWarning}`, mainMenu());
 
     const totalOrders = cashInfo.totalOrders;
-    if (totalOrders && totalOrders > 0 && state.fio && state.workplace) {
-      const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
-      const { day } = getCurrentDateInfo(timezone);
-      try {
-        const result = await updateEfficiencyOrders(state.fio, state.workplace, day, totalOrders);
-        if (result.ok) {
-          console.log(`эффективность: записано ${totalOrders} заказов для ${state.fio}, день ${day}, ячейка ${result.cell}`);
-        } else {
-          console.error('эффективность: не удалось записать', result.error);
-        }
-      } catch (effError) {
-        console.error('эффективность: ошибка записи', effError.message || effError);
-      }
-      try {
-        const dayKey = getLbTodayKey();
-        const oldOrders = getLbDayOrders(String(telegramId), dayKey);
-        recordLeaderboardOrders(String(telegramId), state.fio, state.workplace, totalOrders);
-        await handleLeaderboardNotifications(ctx, String(telegramId), state.fio, state.workplace, totalOrders, oldOrders);
-      } catch (lbErr) {
-        console.error('leaderboard record error', lbErr.message || lbErr);
-      }
-    }
+    await finalizeReconciliationPostSend(ctx, state, telegramId, totalOrders);
   } catch (error) {
     console.error('telegram send reconciliation photo error', error);
     await ctx.replyWithHTML('⚠️ Не удалось отправить фото.\nПопробуйте ещё раз или обратитесь к администратору.', routeSheetKeyboard());
