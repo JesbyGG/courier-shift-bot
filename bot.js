@@ -2415,6 +2415,29 @@ async function notifyUsersAboutUpdate(version, changedFiles = [], updates = []) 
 }
 
 const _pendingUpdates = {};
+const PENDING_UPDATES_FILE = path.join(__dirname, 'pending_updates.json');
+
+function loadPendingUpdates() {
+  try {
+    if (fs.existsSync(PENDING_UPDATES_FILE)) {
+      const data = JSON.parse(fs.readFileSync(PENDING_UPDATES_FILE, 'utf8'));
+      Object.assign(_pendingUpdates, data);
+      console.log('loaded pending updates', Object.keys(data));
+    }
+  } catch (e) {
+    console.error('failed to load pending updates', e.message);
+  }
+}
+
+function savePendingUpdates() {
+  try {
+    fs.writeFileSync(PENDING_UPDATES_FILE, JSON.stringify(_pendingUpdates, null, 2));
+  } catch (e) {
+    console.error('failed to save pending updates', e.message);
+  }
+}
+
+loadPendingUpdates();
 
 async function askAdminsAboutUpdate(version, changedFiles = [], updates = []) {
   const adminIds = getAdminIds();
@@ -2440,6 +2463,7 @@ async function askAdminsAboutUpdate(version, changedFiles = [], updates = []) {
   ]);
 
   _pendingUpdates[version] = { changedFiles, updates, message };
+  savePendingUpdates();
 
   for (const adminId of adminIds) {
     try {
@@ -2465,6 +2489,7 @@ bot.action(/^upd_send:(.+)$/, async (ctx) => {
     return;
   }
   delete _pendingUpdates[version];
+  savePendingUpdates();
   await ctx.editMessageText('✅ Уведомление отправляется...', { parse_mode: 'HTML' });
   await notifyUsersAboutUpdate(version, pending.changedFiles, pending.updates || []);
   try {
@@ -2495,6 +2520,7 @@ bot.action(/^upd_skip:(.+)$/, async (ctx) => {
   }
   const version = ctx.match[1];
   delete _pendingUpdates[version];
+  savePendingUpdates();
   try {
     await ctx.editMessageText(`⏭️ Уведомление v${esc(version)} пропущено.`, { parse_mode: 'HTML' });
   } catch {}
@@ -4376,6 +4402,7 @@ async function handleUpdateEditText(ctx, state, text) {
     '\n\n💙 Хорошей смены!'
   );
   _pendingUpdates[editVersion] = { ...pending, message: fullMessage };
+  savePendingUpdates();
   const keyboard = Markup.inlineKeyboard([
     [
       Markup.button.callback('✅ Отправить', `upd_send:${editVersion}`),
