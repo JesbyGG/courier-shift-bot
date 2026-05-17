@@ -35,6 +35,20 @@ db.exec(`
     amount REAL NOT NULL,
     action TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS pending_cash (
+    telegramId TEXT PRIMARY KEY,
+    amount REAL NOT NULL DEFAULT 0,
+    formatted TEXT,
+    orders INTEGER,
+    workplace TEXT,
+    sourceLabel TEXT,
+    confirmationStatus TEXT,
+    updatedAt TEXT,
+    fileId TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_pending_cash_workplace ON pending_cash(workplace);
 `);
 
 // Migration logic
@@ -99,5 +113,56 @@ function migrateJsonToSqlite() {
 }
 
 migrateJsonToSqlite();
+
+// Migrate pendingCashToSubmit from users JSON blob to dedicated pending_cash table
+function migratePendingCashToTable() {
+  const rows = db.prepare('SELECT telegramId, data FROM users').all();
+  const stmt = db.prepare(
+    'INSERT OR REPLACE INTO pending_cash (telegramId, amount, formatted, orders, workplace, sourceLabel, confirmationStatus, updatedAt, fileId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  );
+  const insertMany = db.transaction((items) => {
+    for (const item of items) {
+      stmt.run(
+        item.telegramId,
+        item.amount,
+        item.formatted,
+        item.orders,
+        item.workplace,
+        item.sourceLabel,
+        item.confirmationStatus,
+        item.updatedAt,
+        item.fileId
+      );
+    }
+  });
+
+  const items = [];
+  for (const row of rows) {
+    try {
+      const data = JSON.parse(row.data);
+      const pcs = data.pendingCashToSubmit;
+      if (pcs && Number(pcs.amount || 0) >= 1) {
+        items.push({
+          telegramId: row.telegramId,
+          amount: Number(pcs.amount || 0),
+          formatted: pcs.formatted || null,
+          orders: pcs.orders || null,
+          workplace: pcs.workplace || null,
+          sourceLabel: pcs.sourceLabel || null,
+          confirmationStatus: pcs.confirmationStatus || null,
+          updatedAt: pcs.updatedAt || new Date().toISOString(),
+          fileId: pcs.fileId || null
+        });
+      }
+    } catch (e) { /* skip malformed */ }
+  }
+
+  if (items.length > 0) {
+    insertMany(items);
+    console.log(`Migrated ${items.length} pendingCash records to pending_cash table`);
+  }
+}
+
+migratePendingCashToTable();
 
 module.exports = db;

@@ -54,25 +54,53 @@ function deleteUser(telegramId) {
   db.prepare('DELETE FROM users WHERE telegramId = ?').run(String(telegramId));
 }
 
-function clearPendingCashToSubmit(telegramId) {
-  const record = _getRecord(telegramId);
-  if (record && record.pendingCashToSubmit) {
-    delete record.pendingCashToSubmit;
-    _setRecord(telegramId, record);
-  }
+function getPendingCash(telegramId) {
+  const row = db.prepare('SELECT * FROM pending_cash WHERE telegramId = ?').get(String(telegramId));
+  if (!row) return null;
+  return {
+    amount: Number(row.amount || 0),
+    formatted: row.formatted || null,
+    orders: row.orders || null,
+    workplace: row.workplace || null,
+    sourceLabel: row.sourceLabel || null,
+    confirmationStatus: row.confirmationStatus || null,
+    updatedAt: row.updatedAt || null,
+    fileId: row.fileId || null
+  };
+}
+
+function setPendingCash(telegramId, data) {
+  const stmt = db.prepare(
+    'INSERT OR REPLACE INTO pending_cash (telegramId, amount, formatted, orders, workplace, sourceLabel, confirmationStatus, updatedAt, fileId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  );
+  stmt.run(
+    String(telegramId),
+    Number(data?.amount || 0),
+    data?.formatted || null,
+    data?.orders || null,
+    data?.workplace || null,
+    data?.sourceLabel || null,
+    data?.confirmationStatus || null,
+    data?.updatedAt || new Date().toISOString(),
+    data?.fileId || null
+  );
+}
+
+function deletePendingCash(telegramId) {
+  db.prepare('DELETE FROM pending_cash WHERE telegramId = ?').run(String(telegramId));
 }
 
 function setCashConfirmationStatus(telegramId, status) {
-  const record = _getRecord(telegramId);
-  if (!record) return;
-  if (record.pendingCashToSubmit) {
-    record.pendingCashToSubmit.confirmationStatus = status;
-    _setRecord(telegramId, record);
-  }
+  const row = db.prepare('SELECT * FROM pending_cash WHERE telegramId = ?').get(String(telegramId));
+  if (!row) return;
+  const stmt = db.prepare(
+    'UPDATE pending_cash SET confirmationStatus = ? WHERE telegramId = ?'
+  );
+  stmt.run(status, String(telegramId));
 }
 
 function clearPendingCashAndReminders(telegramId) {
-  clearPendingCashToSubmit(telegramId);
+  deletePendingCash(telegramId);
   const allReminders = _getAllReminders();
   for (const reminder of allReminders) {
     if (reminder.courierId === String(telegramId)) {
@@ -109,22 +137,28 @@ function getCashHistory(dateStr, workplace) {
 }
 
 function getDebtors(workplace) {
-  const ids = getAllUserIds();
+  const rows = db.prepare(
+    "SELECT pc.telegramId, pc.amount, pc.formatted, u.data " +
+    "FROM pending_cash pc " +
+    "JOIN users u ON u.telegramId = pc.telegramId " +
+    "WHERE pc.workplace = ? AND pc.amount >= 1"
+  ).all(workplace);
+
   const debtors = [];
-  for (const id of ids) {
-    const record = _getRecord(id);
-    if (!record || record.role === 'logist') continue;
-    const userWorkplace = record.workplace;
-    if (userWorkplace !== workplace) continue;
-    const pendingCash = record.pendingCashToSubmit;
-    const amount = Number(pendingCash?.amount || 0);
-    if (!Number.isFinite(amount) || amount < 1) continue;
+  for (const row of rows) {
+    let record;
+    try {
+      record = JSON.parse(row.data);
+    } catch (e) {
+      continue;
+    }
+    if (record.role === 'logist') continue;
     debtors.push({
-      telegramId: id,
+      telegramId: row.telegramId,
       fio: record.fio || 'Неизвестный',
-      amount: amount,
-      formatted: pendingCash.formatted || String(amount),
-      workplace: userWorkplace
+      amount: Number(row.amount || 0),
+      formatted: row.formatted || String(row.amount || 0),
+      workplace: workplace
     });
   }
   return debtors;
@@ -201,19 +235,16 @@ function getActiveRemindersForCourier(courierId) {
 }
 
 function getSelfClearanceRequest(courierId) {
-  const record = _getRecord(courierId);
-  if (!record || !record.pendingCashToSubmit) return null;
-  const pcs = record.pendingCashToSubmit;
-  if (pcs.confirmationStatus === 'awaiting') {
-    return {
-      courierId: String(courierId),
-      courierFio: record.fio || 'Неизвестный',
-      amount: Number(pcs.amount || 0),
-      formatted: pcs.formatted || String(pcs.amount || 0),
-      workplace: pcs.workplace || record.workplace || null
-    };
-  }
-  return null;
+  const pcs = getPendingCash(courierId);
+  if (!pcs || pcs.confirmationStatus !== 'awaiting') return null;
+  const record = _getRecord(courierId) || {};
+  return {
+    courierId: String(courierId),
+    courierFio: record.fio || 'Неизвестный',
+    amount: Number(pcs.amount || 0),
+    formatted: pcs.formatted || String(pcs.amount || 0),
+    workplace: pcs.workplace || record.workplace || null
+  };
 }
 
 function cleanupStaleReminders(maxAgeMs = 24 * 60 * 60 * 1000) {
@@ -422,11 +453,13 @@ module.exports = {
   getFullProfile,
   getUserRole,
   deleteUser,
-  clearPendingCashToSubmit,
+  getPendingCash,
+  setPendingCash,
+  deletePendingCash,
   setCashConfirmationStatus,
   clearPendingCashAndReminders,
   getAllUserIds,
-  
+
   resolveSheetInfo,
   getWorkplaceSheetId,
   setWorkplaceSheetId,
@@ -436,15 +469,15 @@ module.exports = {
   getCurrentMonthKey,
   getNextMonthKey,
   isValidMonthKey,
-  
+
   getSheetAccessUsers,
   addSheetAccessUser,
   removeSheetAccessUser,
   isSheetAccessUser,
-  
+
   markUserSeen,
   cleanupOldMonths,
-  
+
   logCashAction,
   getCashHistory,
   getDebtors,

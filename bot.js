@@ -29,7 +29,9 @@ const {
   setUserField,
   getUserRole,
   deleteUser,
-  clearPendingCashToSubmit,
+  getPendingCash,
+  setPendingCash,
+  deletePendingCash,
   setCashConfirmationStatus,
   clearPendingCashAndReminders,
   getAllUserIds,
@@ -394,7 +396,7 @@ async function pokeCourier(ctx, courierId) {
     return;
   }
 
-  const pendingCash = getUserField(courierId, 'pendingCashToSubmit');
+  const pendingCash = getPendingCash(courierId);
   const amount = Number(pendingCash?.amount || 0);
   if (!Number.isFinite(amount) || amount < 1) {
     await ctx.answerCbQuery('✅ Курьер уже сдал деньги.');
@@ -1826,7 +1828,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
     );
 
     if (result.stage === 'start') {
-      const pendingCash = getUserField(telegramId, 'pendingCashToSubmit');
+      const pendingCash = getPendingCash(telegramId);
       const pendingAmount = Number(pendingCash?.amount || 0);
 
       if (Number.isFinite(pendingAmount) && pendingAmount >= 1) {
@@ -1973,7 +1975,7 @@ async function showPendingCashStatus(ctx) {
   const profile = await ensureProfile(ctx);
   if (!profile) return;
 
-  const pendingCash = getUserField(ctx.from.id, 'pendingCashToSubmit');
+  const pendingCash = getPendingCash(ctx.from.id);
   const amount = Number(pendingCash?.amount || 0);
 
   if (!Number.isFinite(amount) || amount < 1) {
@@ -3235,7 +3237,7 @@ bot.action('role_logist', async (ctx) => {
 bot.action('cash_submit_yes', async (ctx) => {
   await ctx.answerCbQuery();
   const telegramId = ctx.from.id;
-  const pendingCash = getUserField(telegramId, 'pendingCashToSubmit');
+  const pendingCash = getPendingCash(telegramId);
   const amount = Number(pendingCash?.amount || 0);
 
   if (!Number.isFinite(amount) || amount < 1) {
@@ -3504,7 +3506,7 @@ bot.action(/^sc_appr_(\d+)$/, async (ctx) => {
   const courierId = ctx.match[1];
   await ctx.answerCbQuery('✅ Сдача подтверждена');
 
-  const pendingCash = getUserField(courierId, 'pendingCashToSubmit');
+  const pendingCash = getPendingCash(courierId);
   if (!pendingCash || pendingCash.confirmationStatus !== 'awaiting') {
     try { await ctx.editMessageText('✅ Уже подтверждено другим логистом.'); } catch (e) { /* ignore */ }
     return;
@@ -3547,7 +3549,7 @@ bot.action(/^sc_decl_(\d+)$/, async (ctx) => {
   const courierId = ctx.match[1];
   await ctx.answerCbQuery('❌ Сдача отклонена');
 
-  const pendingCash = getUserField(courierId, 'pendingCashToSubmit');
+  const pendingCash = getPendingCash(courierId);
   if (!pendingCash || pendingCash.confirmationStatus !== 'awaiting') {
     try { await ctx.editMessageText('⚠️ Запрос уже обработан.'); } catch (e) { /* ignore */ }
     return;
@@ -3822,7 +3824,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     ];
 
     if (shouldAttachCash && cashFormatted) {
-      const previousPending = getUserField(telegramId, 'pendingCashToSubmit');
+      const previousPending = getPendingCash(telegramId);
       const previousAmount = Number(previousPending?.amount || 0);
       const totalAmount = Number.isFinite(previousAmount) && previousAmount >= 1
         ? previousAmount + cashInfo.amount
@@ -3832,7 +3834,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
 
       captionLines.push(`💵 К сдаче в следующую смену: <code>${esc(currentNumberOnly)}</code> ₽`);
 
-      setUserField(telegramId, 'pendingCashToSubmit', {
+      setPendingCash(telegramId, {
         amount: totalAmount,
         formatted: totalFormatted,
         orders: cashInfo.orders,
@@ -3935,7 +3937,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
   ];
 
   if (shouldAttachCash && cashFormatted) {
-    const previousPending = getUserField(telegramId, 'pendingCashToSubmit');
+    const previousPending = getPendingCash(telegramId);
     const previousAmount = Number(previousPending?.amount || 0);
     const totalAmount = Number.isFinite(previousAmount) && previousAmount >= 1
       ? previousAmount + cashInfo.amount
@@ -3945,7 +3947,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
 
     captionLines.push(`💵 К сдаче в следующую смену: <code>${esc(currentNumberOnly)}</code> ₽`);
 
-    setUserField(telegramId, 'pendingCashToSubmit', {
+    setPendingCash(telegramId, {
       amount: totalAmount,
       formatted: totalFormatted,
       orders: cashInfo.orders,
