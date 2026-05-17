@@ -1418,10 +1418,6 @@ function shouldWarnAboutReconciliationOcr(cashInfo) {
   return ['ocr_timeout', 'error', 'local_ocr_error', 'local_ocr_timeout', 'no_ocr_result'].includes(cashInfo.reason);
 }
 
-async function recognizeReconciliationCashLocal() {
-  return { orders: null, amount: null, totalOrders: null, valid: false, reason: 'local_ocr_disabled', source: 'none' };
-}
-
 async function recognizeReconciliationCash(ctx, fileId) {
   try {
     const link = await ctx.telegram.getFileLink(fileId);
@@ -3688,19 +3684,33 @@ bot.action('replace_end', replaceTimeAction('end'));
 bot.action('skip_mileage', async (ctx) => {
   await ctx.answerCbQuery();
   const state = getState(ctx.from.id);
-  const photoReceived = Boolean(state?.photoReceived);
   const savedMileage = state?.savedMileage;
 
+  if (savedMileage) {
+    clearState(ctx.from.id);
+    await ctx.replyWithHTML('⬅️ Возвращаю в меню.', getMenuForRole(ctx.from.id));
+    return;
+  }
+
+  await ctx.replyWithHTML(
+    '⚠️ <b>Пропустить пробег?</b>\n\nПробег не будет записан в таблицу.',
+    Markup.inlineKeyboard([
+      [Markup.button.callback('✅ Да, пропустить', 'confirm_skip_mileage')],
+      [Markup.button.callback('❌ Отмена', 'cancel_skip_mileage')]
+    ])
+  );
+});
+
+bot.action('confirm_skip_mileage', async (ctx) => {
+  await ctx.answerCbQuery('⏭️ Пропущено');
   clearState(ctx.from.id);
-  console.log('пропуск пробега', { photoReceived });
+  console.log('пропуск пробега подтверждён');
+  await ctx.replyWithHTML('⏭️ Пробег пропущен.', getMenuForRole(ctx.from.id));
+});
 
-  const message = savedMileage
-    ? '⬅️ Возвращаю в меню.'
-    : photoReceived
-      ? '⬅️ Возвращаю в меню. Пробег не сохранён.'
-      : '⏭️ Пробег пропущен.';
-
-  await ctx.replyWithHTML(message, mainMenu());
+bot.action('cancel_skip_mileage', async (ctx) => {
+  await ctx.answerCbQuery('Отменено');
+  try { await ctx.deleteMessage(); } catch {}
 });
 
 bot.action('edit_mileage', async (ctx) => {

@@ -207,13 +207,6 @@ function isValidImageBuffer(buffer) {
   return false;
 }
 
-function isOcrUncertain(groups, ocrMileage) {
-  // AI vision is removed. This function just returns false.
-  return false;
-}
-
-// AI vision logic completely removed
-
 async function recognizeMileage(ctx, fileId, options = {}) {
   const startTime = Date.now();
   const onStatus = options.onStatus || null;
