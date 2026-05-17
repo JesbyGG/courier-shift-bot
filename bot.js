@@ -62,7 +62,7 @@ const { recognizeMileage, isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMi
 const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, flushNow: flushLeaderboardNow, getDayOrders: getLbDayOrders, findOvertakenCouriers, getTodayKey: getLbTodayKey } = require('./services/leaderboard');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, roundMinutesToHalfHour } = require('./utils');
 const { registerSheetCommand } = require('./sheetCommand');
-const { WORKPLACES, DEVICES, ROLES, LIMITS, WORKPLACE_FEATURES } = require('./config');
+const { WORKPLACES, DEVICES, ROLES, LIMITS, WORKPLACE_FEATURES, WORKPLACE_KEY_MAP } = require('./config');
 const { isAdminUser, getAdminIds } = require('./services/auth');
 const {
   mainMenu,
