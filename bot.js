@@ -62,7 +62,7 @@ const { recognizeMileage, isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMi
 const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, flushNow: flushLeaderboardNow, getDayOrders: getLbDayOrders, findOvertakenCouriers, getTodayKey: getLbTodayKey } = require('./services/leaderboard');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, roundMinutesToHalfHour } = require('./utils');
 const { registerSheetCommand } = require('./sheetCommand');
-const { WORKPLACES, DEVICES, ROLES, LIMITS, WORKPLACE_FEATURES, WORKPLACE_KEY_MAP } = require('./config');
+const { WORKPLACES, DEVICES, ROLES, LIMITS, WORKPLACE_FEATURES, WORKPLACE_KEY_MAP, BUTTONS } = require('./config');
 const { isAdminUser, getAdminIds } = require('./services/auth');
 const {
   mainMenu,
@@ -285,29 +285,7 @@ function getVersion() {
   return stored ? stored.version : '2.0.0';
 }
 
-const BUTTONS = {
-  punchTime: '⏱ Записать время',
-  mileage: '🚗 Фото пробега',
-  routeSheet: '📄 Отправить маршрутник',
-  reconciliation: '📊 Отправить сверку',
-  cashCheck: '💵 Сдать наличные',
-  issues: '⚠️ Проблема с заказом',
-  leaderBoard: '🏆 Рейтинг',
-  settings: '⚙️ Настройки',
-  help: '❓ Помощь',
-  profile: '✏️ Профиль',
-  changeCar: '✏️ Изменить номер машины',
-  changeWorkplace: '✏️ Поменять магазин',
-  changeDevice: '✏️ Изменить устройство',
-  switchUser: '✏️ Поменять сотрудника',
-  sheetInfo: '📋 Таблицы',
-  myId: '🆔 Мой ID',
-  cashCollect: '💳 Принять наличные',
-  cashHistory: '📋 История сборов',
-  openShop: '🔓 Открыть ИМ',
-  backToSettings: '↩️ К настройкам',
-  back: '🏠 В меню'
-};
+
 
 // WORKPLACES, DEVICES — теперь из config.js (см. импорт выше)
 
@@ -4274,7 +4252,7 @@ const TEXT_ROUTES = [
   { button: BUTTONS.openShop, handler: (ctx) => openShopNotify(ctx) },
 
   // 4) Меню настроек
-  { button: BUTTONS.settings, legacy: ['Настройки'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ <b>Настройки</b>', settingsMenu(id)) },
+  { button: BUTTONS.settings, legacy: ['Настройки'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ <b>Настройки</b>', getSettingsMenuForRole(id)) },
   { button: BUTTONS.profile, legacy: ['Профиль'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('✏️ <b>Профиль</b>', getProfileMenuForRole(ctx.from.id)) },
   { button: BUTTONS.help, legacy: ['Помощь'], handler: (ctx) => sendHelp(ctx) },
 

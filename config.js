@@ -69,6 +69,30 @@ const SHEET_TEMPLATE = {
   }
 };
 
+const BUTTONS = {
+  punchTime: '⏱ Записать время',
+  mileage: '🚗 Фото пробега',
+  routeSheet: '📄 Отправить маршрутник',
+  reconciliation: '📊 Отправить сверку',
+  cashCheck: '💵 Сдать наличные',
+  issues: '⚠️ Проблема с заказом',
+  leaderBoard: '🏆 Рейтинг',
+  settings: '⚙️ Настройки',
+  help: '❓ Помощь',
+  profile: '✏️ Профиль',
+  changeCar: '✏️ Изменить номер машины',
+  changeWorkplace: '✏️ Поменять магазин',
+  changeDevice: '✏️ Изменить устройство',
+  switchUser: '✏️ Поменять сотрудника',
+  sheetInfo: '📋 Таблицы',
+  myId: '🆔 Мой ID',
+  cashCollect: '💳 Принять наличные',
+  cashHistory: '📋 История сборов',
+  openShop: '🔓 Открыть ИМ',
+  backToSettings: '↩️ К настройкам',
+  back: '🏠 В меню'
+};
+
 // Имя файла, в который переименовываются битые файлы при загрузке.
 const STORAGE_BROKEN_SUFFIX = '.broken';
 
@@ -80,5 +104,6 @@ module.exports = {
   WORKPLACE_FEATURES,
   LIMITS,
   SHEET_TEMPLATE,
+  BUTTONS,
   STORAGE_BROKEN_SUFFIX
 };
