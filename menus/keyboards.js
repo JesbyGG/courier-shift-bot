@@ -4,7 +4,8 @@ const {
   getUserField,
   getUserRole,
   getActiveRemindersForCourier,
-  getSelfClearanceRequest
+  getSelfClearanceRequest,
+  isSheetAccessUser
 } = require('../services/storage');
 const { isAdminUser } = require('../services/auth');
 
