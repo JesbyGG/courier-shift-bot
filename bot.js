@@ -2382,13 +2382,23 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
   let state = getState(telegramId);
   const mileageValue = parseMileageNumber(mileage);
 
-  // Если состояние очищено (пользователь ушёл в меню) но есть fallback —
-  // используем его. Проверяем, что пользователь не начал новый пробег.
-  if ((!state || !state.mileageRow || !state.day) && fallbackState) {
-    const liveFallback = getState(telegramId);
-    if (!liveFallback || liveFallback.fileId !== fallbackState.fileId) {
-      state = fallbackState;
+  // Если состояние очищено (пользователь ушёл в меню) — используем fallback.
+  // Если пользователь начал новое фото (fileId изменился) — не пишем старый результат.
+  if (!state || !state.mileageRow || !state.day) {
+    if (!fallbackState) {
+      await replyFn('⚠️ Не удалось записать пробег.\nПопробуйте ещё раз или обратитесь к администратору.');
+      return;
     }
+    const live = getState(telegramId);
+    if (live && live.fileId && live.fileId !== fallbackState.fileId) {
+      console.log('mileage: user started new photo, skipping old save');
+      return;
+    }
+    state = fallbackState;
+  } else if (state.fileId && fallbackState && state.fileId !== fallbackState.fileId) {
+    // Живое состояние есть, но fileId разный — пользователь начал новый пробег
+    console.log('mileage: live state has different fileId, skipping old save');
+    return;
   }
 
   if (!state || !state.mileageRow || !state.day || !state.stage) {
@@ -2606,6 +2616,12 @@ const sendMediaGroupToReconciliationChat = (ctx, items) => forwardMediaGroup(ctx
 
 async function backToMainMenu(ctx) {
   const state = getState(ctx.from.id);
+
+  if (state?.mileageProcessing) {
+    await ctx.replyWithHTML('📸 Обработка фото пробега продолжается... результат придёт в новый чат.', getMenuForRole(ctx.from.id));
+    return;
+  }
+
   clearState(ctx.from.id);
 
   const message = state?.savedMileage
@@ -4635,19 +4651,7 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
       })
     ]);
 
-    const currentState = getState(telegramId);
-    if (!currentState?.mileageProcessing || currentState.fileId !== fileId) {
-      console.log('mileage processing cancelled by user (before OCR)');
-      return;
-    }
-
     const sourceBuffer = await downloadTelegramFile({ telegram }, fileId);
-
-    const currentState2 = getState(telegramId);
-    if (!currentState2?.mileageProcessing || currentState2.fileId !== fileId) {
-      console.log('mileage processing cancelled by user (after download)');
-      return;
-    }
 
     const mileageValue = await recognizeMileage({ telegram, chat: { id: chatId } }, fileId, {
       ...recognitionOptions,
