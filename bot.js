@@ -2373,14 +2373,23 @@ bot.action(/^upd_skip:(.+)$/, async (ctx) => {
 });
 
 async function saveMileageFromState(ctx, mileage, options = {}) {
-  const { sourceBuffer, telegram, chatId } = options;
+  const { sourceBuffer, telegram, chatId, fallbackState } = options;
   const replyFn = telegram
     ? (html, extra) => telegram.sendMessage(chatId, html, { parse_mode: 'HTML', ...(extra || {}) })
     : (html, extra) => ctx.replyWithHTML(html, extra);
 
   const telegramId = ctx.from.id;
-  const state = getState(telegramId);
+  let state = getState(telegramId);
   const mileageValue = parseMileageNumber(mileage);
+
+  // Если состояние очищено (пользователь ушёл в меню) но есть fallback —
+  // используем его. Проверяем, что пользователь не начал новый пробег.
+  if ((!state || !state.mileageRow || !state.day) && fallbackState) {
+    const liveFallback = getState(telegramId);
+    if (!liveFallback || liveFallback.fileId !== fallbackState.fileId) {
+      state = fallbackState;
+    }
+  }
 
   if (!state || !state.mileageRow || !state.day || !state.stage) {
     await replyFn('⚠️ Не удалось записать пробег.\nПопробуйте ещё раз или обратитесь к администратору.');
@@ -2459,10 +2468,10 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
     await replyFn('⚠️ Не удалось записать пробег.\nПопробуйте ещё раз или обратитесь к администратору.');
   } finally {
     if (telegram) {
-      setState(telegramId, {
-        ...getState(telegramId),
-        mileageProcessing: false
-      });
+      const finalState = getState(telegramId);
+      if (finalState) {
+        setState(telegramId, { ...finalState, mileageProcessing: false });
+      }
     }
   }
 }
@@ -4647,12 +4656,6 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
       }
     });
 
-    const currentState3 = getState(telegramId);
-    if (!currentState3?.mileageProcessing || currentState3.fileId !== fileId) {
-      console.log('mileage processing cancelled by user (after OCR)');
-      return;
-    }
-
     if (!mileageValue) {
       if (sourceBuffer) {
         saveOcrDebugImage(sourceBuffer, {
@@ -4667,14 +4670,17 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
         });
       }
 
-      setState(telegramId, {
-        ...photoState,
-        mileageProcessing: false,
-        awaitingMileagePhoto: true,
-        awaitingManualMileage: true,
-        recognizedMileage: null,
-        ocrValue: null
-      });
+      const cs = getState(telegramId);
+      if (cs?.fileId === fileId) {
+        setState(telegramId, {
+          ...photoState,
+          mileageProcessing: false,
+          awaitingMileagePhoto: true,
+          awaitingManualMileage: true,
+          recognizedMileage: null,
+          ocrValue: null
+        });
+      }
       await sendMsg(
         '⚠️ <b>Не удалось распознать пробег</b>\n\nОтправьте фото повторно крупным планом, введите вручную или нажмите «⏭️ Пропустить».',
         mileageConfirmKeyboard()
@@ -4682,27 +4688,25 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
       return;
     }
 
-    setState(telegramId, { ...photoState, recognizedMileage: mileageValue, ocrValue: mileageValue });
+    // OCR успешно распознал — сохраняем в любом случае, даже если пользователь
+    // нажимал кнопки во время обработки. Используем originalState как fallback.
     await saveMileageFromState(
       { from: { id: telegramId }, telegram, replyWithHTML: sendMsg },
       mileageValue,
-      { sourceBuffer, telegram, chatId }
+      { sourceBuffer, telegram, chatId, fallbackState: originalState }
     );
   } catch (error) {
     console.error('background mileage processing error', error);
-    try {
-      const cs = getState(telegramId);
-      if (cs?.mileageProcessing) {
-        setState(telegramId, {
-          ...cs,
-          mileageProcessing: false,
-          awaitingMileagePhoto: true,
-          awaitingManualMileage: true
-        });
-        await sendMsg('⚠️ <b>Ошибка обработки фото</b>\nПопробуйте ещё раз.', mileageConfirmKeyboard());
-      }
-    } catch (e2) {
-      console.error('background error notification failed', e2.message);
+    await sendMsg('⚠️ <b>Ошибка обработки фото</b>\nПопробуйте ещё раз.', mileageConfirmKeyboard());
+  } finally {
+    const cs = getState(telegramId);
+    if (cs && cs.fileId === fileId && cs.mileageProcessing) {
+      setState(telegramId, {
+        ...cs,
+        mileageProcessing: false,
+        awaitingMileagePhoto: true,
+        awaitingManualMileage: true
+      });
     }
   }
 }
