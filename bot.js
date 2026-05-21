@@ -61,8 +61,8 @@ const {
 const { recognizeMileage, isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold } = require('./services/mileageOcr');
 const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, flushNow: flushLeaderboardNow, getDayOrders: getLbDayOrders, findOvertakenCouriers, getTodayKey: getLbTodayKey } = require('./services/leaderboard');
 const { addXp, getTotalXp, getRank, getRankProgress, formatRankInfo, getXpForAction } = require('./services/xp');
-const { checkMilestoneAchievements, unlockAchievement, getUnlockedAchievements } = require('./services/achievements');
-const { updateStreak, getStreakBonus } = require('./services/streak');
+const { checkMilestoneAchievements, unlockAchievement, getUnlockedAchievements, getAllAchievements } = require('./services/achievements');
+const { updateStreak, getStreak, getStreakBonus } = require('./services/streak');
 const { updateChallengeProgress, generateWeeklyChallenges } = require('./services/challenges');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, roundMinutesToHalfHour } = require('./utils');
 const { registerSheetCommand } = require('./sheetCommand');
