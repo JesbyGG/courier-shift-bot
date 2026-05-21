@@ -1,5 +1,34 @@
 const axios = require('axios');
 
+const OCR_CONCURRENCY = 2;
+let activeOcrRequests = 0;
+const ocrQueue = [];
+
+function enqueueOcrRequest(fn) {
+  return new Promise((resolve, reject) => {
+    ocrQueue.push({ fn, resolve, reject });
+    processNextOcrRequest();
+  });
+}
+
+function processNextOcrRequest() {
+  if (activeOcrRequests >= OCR_CONCURRENCY || ocrQueue.length === 0) return;
+  activeOcrRequests++;
+  const { fn, resolve, reject } = ocrQueue.shift();
+  Promise.resolve().then(() => fn()).then(
+    (result) => {
+      resolve(result);
+      activeOcrRequests--;
+      processNextOcrRequest();
+    },
+    (error) => {
+      reject(error);
+      activeOcrRequests--;
+      processNextOcrRequest();
+    }
+  );
+}
+
 function isRapidOcrEnabled() {
   return process.env.RAPIDOCR_ENABLED !== 'false';
 }
@@ -137,10 +166,10 @@ async function recognizeMileageWithRapidOcr(imageBuffer, options = {}) {
   }
 
   try {
-    const response = await axios.post(rapidOcrUrl, imageBuffer, {
+    const response = await enqueueOcrRequest(() => axios.post(rapidOcrUrl, imageBuffer, {
       timeout: 60000,
       headers: { 'Content-Type': 'application/octet-stream' }
-    });
+    }));
     const parsed = response.data;
     console.log('RapidOCR HTTP result', JSON.stringify(parsed).substring(0, 500));
     return mapRapidOcrResult(parsed, options);
@@ -267,10 +296,10 @@ async function recognizeTextWithRapidOcr(imageBuffer) {
 
   try {
     const url = rapidOcrUrl.replace(/\/+$/, '') + '/text';
-    const response = await axios.post(url, imageBuffer, {
+    const response = await enqueueOcrRequest(() => axios.post(url, imageBuffer, {
       timeout: 60000,
       headers: { 'Content-Type': 'application/octet-stream' }
-    });
+    }));
     const items = response.data?.text_items;
     if (!Array.isArray(items) || items.length === 0) {
       return null;
@@ -287,6 +316,7 @@ async function recognizeTextWithRapidOcr(imageBuffer) {
 
 module.exports = {
   recognizeMileage,
+  downloadTelegramFile,
   recognizeTextWithRapidOcr,
   isRapidOcrEnabled,
   getMinMileageThreshold

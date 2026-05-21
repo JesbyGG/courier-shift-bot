@@ -58,7 +58,8 @@ const {
   getSelfClearanceRequest,
   cleanupStaleReminders
 } = require('./services/storage');
-const { recognizeMileage, isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold } = require('./services/mileageOcr');
+const { recognizeMileage, downloadTelegramFile, isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold } = require('./services/mileageOcr');
+const { saveOcrDebugImage, updateOcrDebugStatus } = require('./services/ocrDebug');
 const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, flushNow: flushLeaderboardNow, getDayOrders: getLbDayOrders, getWorkplaceRecord, setWorkplaceRecord, getDailyTop3, findOvertakenCouriers, getTodayKey: getLbTodayKey } = require('./services/leaderboard');
 const { addXp, getTotalXp, getRank, getRankProgress, formatRankInfo, getXpForAction } = require('./services/xp');
 const { checkMilestoneAchievements, unlockAchievement, getUnlockedAchievements, getAllAchievements } = require('./services/achievements');
@@ -2371,18 +2372,23 @@ bot.action(/^upd_skip:(.+)$/, async (ctx) => {
   await ctx.answerCbQuery('Пропущено');
 });
 
-async function saveMileageFromState(ctx, mileage) {
+async function saveMileageFromState(ctx, mileage, options = {}) {
+  const { sourceBuffer, telegram, chatId } = options;
+  const replyFn = telegram
+    ? (html, extra) => telegram.sendMessage(chatId, html, { parse_mode: 'HTML', ...(extra || {}) })
+    : (html, extra) => ctx.replyWithHTML(html, extra);
+
   const telegramId = ctx.from.id;
   const state = getState(telegramId);
   const mileageValue = parseMileageNumber(mileage);
 
   if (!state || !state.mileageRow || !state.day || !state.stage) {
-    await ctx.replyWithHTML('⚠️ Не удалось записать пробег.\nПопробуйте ещё раз или обратитесь к администратору.');
+    await replyFn('⚠️ Не удалось записать пробег.\nПопробуйте ещё раз или обратитесь к администратору.');
     return;
   }
 
   if (!mileageValue) {
-    await ctx.replyWithHTML('❌ Неверный пробег. Допустимы только 2-6 цифр.\nНапример: <code>25408</code>');
+    await replyFn('❌ Неверный пробег. Допустимы только 2-6 цифр.\nНапример: <code>25408</code>');
     return;
   }
 
@@ -2393,7 +2399,7 @@ async function saveMileageFromState(ctx, mileage) {
       if (startCell) {
         const sheetContext = resolveSheetInfo(startCell.workplace);
         if (!sheetContext.sheetId) {
-          await ctx.replyWithHTML(formatNoSheetMessage({
+          await replyFn(formatNoSheetMessage({
             noSheet: true,
             noSheetForMonth: sheetContext.noSheetForMonth,
             monthKey: sheetContext.monthKey
@@ -2406,7 +2412,7 @@ async function saveMileageFromState(ctx, mileage) {
         const maxDelta = getMaxShiftMileageDelta();
 
         if (startValue && mileageValue < startValue) {
-          await ctx.replyWithHTML(
+          await replyFn(
             `❌ Пробег конца смены не может быть меньше старта.\n` +
             `Старт: <code>${startValue}</code> км\n` +
             `Введено: <code>${mileageValue}</code> км`
@@ -2415,7 +2421,7 @@ async function saveMileageFromState(ctx, mileage) {
         }
 
         if (startValue && (mileageValue - startValue) > maxDelta) {
-          await ctx.replyWithHTML(
+          await replyFn(
             `❌ Слишком большой прирост пробега за смену.\n` +
             `Старт: <code>${startValue}</code> км\n` +
             `Введено: <code>${mileageValue}</code> км\n` +
@@ -2430,21 +2436,34 @@ async function saveMileageFromState(ctx, mileage) {
     console.log('пробег записан');
     addXp(telegramId, getXpForAction('mileage'), 'Запись пробега');
     updateChallengeProgress(telegramId, 'mileages');
-    logOcrFeedback(telegramId, state.ocrValue || null, mileageValue);
+    logOcrFeedback(telegramId, state.ocrValue || null, mileageValue, sourceBuffer, {
+      stage: state.stage,
+      workplace: state.workplace,
+      fio: state.fio,
+      fileId: state.fileId
+    });
     setState(telegramId, {
       ...state,
       awaitingMileagePhoto: false,
       awaitingManualMileage: false,
       photoReceived: true,
-      savedMileage: mileageValue
+      savedMileage: mileageValue,
+      mileageProcessing: false
     });
-    await ctx.replyWithHTML(
+    await replyFn(
       `✅ <b>Пробег сохранён</b>: <code>${mileageValue}</code> км\n\nЕсли неверно — нажмите «Изменить пробег».`,
       mileageSavedKeyboard()
     );
   } catch (error) {
     console.error('ошибка Google Sheets', error);
-    await ctx.replyWithHTML('⚠️ Не удалось записать пробег.\nПопробуйте ещё раз или обратитесь к администратору.');
+    await replyFn('⚠️ Не удалось записать пробег.\nПопробуйте ещё раз или обратитесь к администратору.');
+  } finally {
+    if (telegram) {
+      setState(telegramId, {
+        ...getState(telegramId),
+        mileageProcessing: false
+      });
+    }
   }
 }
 
@@ -3303,33 +3322,51 @@ function formatNoSheetMessage(result, workplace) {
 const ocrFeedbackPath = path.join(__dirname, 'ocr_feedback.json');
 const MAX_OCR_FEEDBACK = LIMITS.MAX_OCR_FEEDBACK;
 
-function logOcrFeedback(telegramId, ocrMileage, confirmedMileage) {
+function logOcrFeedback(telegramId, ocrMileage, confirmedMileage, sourceBuffer, meta = {}) {
   if (!Number.isFinite(confirmedMileage) || confirmedMileage <= 0) return;
-  if (ocrMileage === confirmedMileage) return;
 
-  try {
-    let feedback = [];
+  const isMismatch = ocrMileage !== confirmedMileage;
+
+  if (isMismatch) {
     try {
-      if (fs.existsSync(ocrFeedbackPath)) {
-        feedback = JSON.parse(fs.readFileSync(ocrFeedbackPath, 'utf8'));
+      let feedback = [];
+      try {
+        if (fs.existsSync(ocrFeedbackPath)) {
+          feedback = JSON.parse(fs.readFileSync(ocrFeedbackPath, 'utf8'));
+        }
+      } catch (e) { /* ignore */ }
+
+      feedback.push({
+        ocr: ocrMileage,
+        confirmed: confirmedMileage,
+        diff: confirmedMileage - (ocrMileage || 0),
+        date: new Date().toISOString(),
+        userId: telegramId
+      });
+
+      if (feedback.length > MAX_OCR_FEEDBACK) {
+        feedback = feedback.slice(-MAX_OCR_FEEDBACK);
       }
-    } catch (e) { /* ignore */ }
 
-    feedback.push({
-      ocr: ocrMileage,
-      confirmed: confirmedMileage,
-      diff: confirmedMileage - (ocrMileage || 0),
-      date: new Date().toISOString(),
-      userId: telegramId
-    });
-
-    if (feedback.length > MAX_OCR_FEEDBACK) {
-      feedback = feedback.slice(-MAX_OCR_FEEDBACK);
+      fs.writeFileSync(ocrFeedbackPath, JSON.stringify(feedback, null, 2), 'utf8');
+    } catch (error) {
+      console.error('OCR feedback log error', error.message);
     }
 
-    fs.writeFileSync(ocrFeedbackPath, JSON.stringify(feedback, null, 2), 'utf8');
-  } catch (error) {
-    console.error('OCR feedback log error', error.message);
+    if (sourceBuffer) {
+      saveOcrDebugImage(sourceBuffer, {
+        status: 'ocr_mismatch',
+        ocrResult: ocrMileage,
+        userCorrectedValue: confirmedMileage,
+        telegramId,
+        stage: meta.stage || null,
+        workplace: meta.workplace || null,
+        fio: meta.fio || null,
+        fileId: meta.fileId || null
+      });
+    }
+  } else if (ocrMileage === confirmedMileage && ocrMileage !== null) {
+    updateOcrDebugStatus(meta.fileId, 'confirmed_ok');
   }
 }
 
@@ -4124,6 +4161,7 @@ bot.action('retry_mileage_photo', async (ctx) => {
 
   setState(ctx.from.id, {
     ...state,
+    mileageProcessing: false,
     awaitingMileagePhoto: true,
     awaitingManualMileage: false,
     recognizedMileage: null,
@@ -4207,6 +4245,13 @@ bot.action('skip_mileage', async (ctx) => {
   const state = getState(ctx.from.id);
   const savedMileage = state?.savedMileage;
 
+  if (state?.mileageProcessing) {
+    setState(ctx.from.id, { ...state, mileageProcessing: false, awaitingMileagePhoto: false, awaitingManualMileage: false });
+    clearState(ctx.from.id);
+    await ctx.replyWithHTML('⏭️ Обработка фото отменена.', getMenuForRole(ctx.from.id));
+    return;
+  }
+
   if (savedMileage) {
     clearState(ctx.from.id);
     await ctx.replyWithHTML('⬅️ Возвращаю в меню.', getMenuForRole(ctx.from.id));
@@ -4243,7 +4288,7 @@ bot.action('edit_mileage', async (ctx) => {
     return;
   }
 
-  setState(ctx.from.id, { ...state, awaitingManualMileage: true, awaitingMileagePhoto: false });
+  setState(ctx.from.id, { ...state, mileageProcessing: false, awaitingManualMileage: true, awaitingMileagePhoto: false });
   await ctx.replyWithHTML('✏️ <b>Ввод пробега вручную</b>\n\nВведите пробег только цифрами или загрузите фото повторно.', manualMileageKeyboard());
 });
 
@@ -4534,7 +4579,8 @@ async function handleMileagePhoto(ctx, state, fileId) {
     awaitingMileagePhoto: false,
     awaitingManualMileage: false,
     photoReceived: true,
-    fileId
+    fileId,
+    mileageProcessing: true
   };
   setState(telegramId, photoState);
 
@@ -4542,6 +4588,7 @@ async function handleMileagePhoto(ctx, state, fileId) {
   if (!ocrAvailable) {
     setState(telegramId, {
       ...photoState,
+      mileageProcessing: false,
       awaitingMileagePhoto: true,
       awaitingManualMileage: true,
       recognizedMileage: null,
@@ -4555,41 +4602,109 @@ async function handleMileagePhoto(ctx, state, fileId) {
   }
 
   await ctx.replyWithHTML('📸 Фото принято. Считываю пробег...');
-  await ctx.sendChatAction('typing');
 
-  const [, recognitionOptions] = await Promise.all([
-    sendPhotoToWorkChat(ctx, fileId, buildPhotoCaption(state)).catch((error) => {
-      console.error('telegram send photo error', error);
-    }),
-    buildMileageRecognitionOptions(state)
-  ]);
+  const chatId = ctx.chat.id;
+  const telegram = ctx.telegram;
 
-  const mileageValue = await recognizeMileage(ctx, fileId, {
-    ...recognitionOptions,
-    onStatus: async (msg) => {
-      try {
-        await ctx.replyWithHTML(msg);
-      } catch (e) { /* ignore */ }
+  processMileagePhotoInBackground(telegram, chatId, telegramId, state, fileId, photoState);
+}
+
+async function processMileagePhotoInBackground(telegram, chatId, telegramId, originalState, fileId, photoState) {
+  const sendMsg = async (html, extra) => {
+    try {
+      await telegram.sendMessage(chatId, html, { parse_mode: 'HTML', ...(extra || {}) });
+    } catch (e) {
+      console.error('background sendMsg error', e.message);
     }
-  });
+  };
 
-  if (!mileageValue) {
-    setState(telegramId, {
-      ...photoState,
-      awaitingMileagePhoto: true,
-      awaitingManualMileage: true,
-      recognizedMileage: null,
-      ocrValue: null
+  try {
+    const [recognitionOptions] = await Promise.all([
+      buildMileageRecognitionOptions(originalState),
+      forwardPhoto({ telegram }, fileId, buildPhotoCaption(originalState), 'work').catch((error) => {
+        console.error('telegram send photo error', error);
+      })
+    ]);
+
+    const currentState = getState(telegramId);
+    if (!currentState?.mileageProcessing || currentState.fileId !== fileId) {
+      console.log('mileage processing cancelled by user (before OCR)');
+      return;
+    }
+
+    const sourceBuffer = await downloadTelegramFile({ telegram }, fileId);
+
+    const currentState2 = getState(telegramId);
+    if (!currentState2?.mileageProcessing || currentState2.fileId !== fileId) {
+      console.log('mileage processing cancelled by user (after download)');
+      return;
+    }
+
+    const mileageValue = await recognizeMileage({ telegram, chat: { id: chatId } }, fileId, {
+      ...recognitionOptions,
+      onStatus: async (msg) => {
+        try { await sendMsg(msg); } catch (e) { /* ignore */ }
+      }
     });
-    await ctx.replyWithHTML(
-      '⚠️ <b>Не удалось распознать пробег</b>\n\nОтправьте фото повторно крупным планом, введите вручную или нажмите «⏭️ Пропустить».',
-      mileageConfirmKeyboard()
-    );
-    return;
-  }
 
-  setState(telegramId, { ...photoState, recognizedMileage: mileageValue, ocrValue: mileageValue });
-  await saveMileageFromState(ctx, mileageValue);
+    const currentState3 = getState(telegramId);
+    if (!currentState3?.mileageProcessing || currentState3.fileId !== fileId) {
+      console.log('mileage processing cancelled by user (after OCR)');
+      return;
+    }
+
+    if (!mileageValue) {
+      if (sourceBuffer) {
+        saveOcrDebugImage(sourceBuffer, {
+          status: 'ocr_fail',
+          ocrResult: null,
+          userCorrectedValue: null,
+          telegramId,
+          stage: originalState.stage,
+          workplace: originalState.workplace,
+          fio: originalState.fio,
+          fileId
+        });
+      }
+
+      setState(telegramId, {
+        ...photoState,
+        mileageProcessing: false,
+        awaitingMileagePhoto: true,
+        awaitingManualMileage: true,
+        recognizedMileage: null,
+        ocrValue: null
+      });
+      await sendMsg(
+        '⚠️ <b>Не удалось распознать пробег</b>\n\nОтправьте фото повторно крупным планом, введите вручную или нажмите «⏭️ Пропустить».',
+        mileageConfirmKeyboard()
+      );
+      return;
+    }
+
+    setState(telegramId, { ...photoState, recognizedMileage: mileageValue, ocrValue: mileageValue });
+    await saveMileageFromState(
+      { from: { id: telegramId }, telegram, replyWithHTML: sendMsg },
+      mileageValue,
+      { sourceBuffer, telegram, chatId }
+    );
+  } catch (error) {
+    console.error('background mileage processing error', error);
+    try {
+      const cs = getState(telegramId);
+      if (cs?.mileageProcessing) {
+        setState(telegramId, {
+          ...cs,
+          mileageProcessing: false,
+          awaitingMileagePhoto: true,
+          awaitingManualMileage: true
+        });
+        await sendMsg('⚠️ <b>Ошибка обработки фото</b>\nПопробуйте ещё раз.', mileageConfirmKeyboard());
+      }
+    } catch (e2) {
+      console.error('background error notification failed', e2.message);
+    }
+  }
 }
 
 bot.on('photo', async (ctx) => {
