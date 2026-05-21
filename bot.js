@@ -492,7 +492,7 @@ async function showCashHistoryForDate(ctx, dateStr) {
   const workplace = getUserField(telegramId, 'workplace');
   const rows = getCashHistory(dateStr, workplace);
 
-  const approvedRows = rows.filter(r => r.action === 'approved' || r.action === 'self_cleared');
+  const approvedRows = rows.filter(r => r.action === 'approved' || r.action === 'self_cleared' || r.action === 'logist_approved');
 
   if (approvedRows.length === 0) {
     await ctx.answerCbQuery();
@@ -505,8 +505,17 @@ async function showCashHistoryForDate(ctx, dateStr) {
     `Всего собрано: <code>${formatMoneyRu(total)}</code> ₽\n\n`;
 
   for (const row of approvedRows) {
-    const icon = row.action === 'self_cleared' ? '💵' : '✅';
-    const logistLabel = row.logistFio ? ` (логист: ${esc(row.logistFio)})` : ' (самостоятельно)';
+    let icon = '✅';
+    if (row.action === 'self_cleared') icon = '💵';
+    else if (row.action === 'logist_approved') icon = '👍';
+    let logistLabel;
+    if (row.action === 'self_cleared') {
+      logistLabel = ' (самостоятельно)';
+    } else if (row.action === 'logist_approved') {
+      logistLabel = row.logistFio ? ` (логист: ${esc(row.logistFio)})` : ' (логист)';
+    } else {
+      logistLabel = row.logistFio ? ` (логист: ${esc(row.logistFio)})` : '';
+    }
     msg += `${icon} ${esc(row.courierFio)} — <code>${formatMoneyRu(row.amount)}</code> ₽${logistLabel}\n`;
   }
 
@@ -545,16 +554,10 @@ async function openShopNotify(ctx) {
 
 async function notifyLogistsAboutSelfClearance(courierId, courierFio, amount, formatted, workplace) {
   const logists = findLogistsForWorkplace(workplace);
-  const adminIds = getAdminIds();
 
   const allRecipientIds = new Set();
   for (const logist of logists) {
     allRecipientIds.add(String(logist.telegramId));
-  }
-  for (const adminId of adminIds) {
-    if (!allRecipientIds.has(String(adminId))) {
-      allRecipientIds.add(String(adminId));
-    }
   }
 
   const keyboard = Markup.inlineKeyboard([
@@ -1370,19 +1373,6 @@ function extractCashFromOcrText(text) {
     };
   }
 
-  const amountPattern = /([0-9]{1,3})\s*\/\s*([0-9\s.,]{1,20})\s*[P₽]/i;
-  const amountMatch = normalized.match(amountPattern);
-  if (amountMatch) {
-    const orders = Number(String(amountMatch[1] || '').replace(/\D/g, ''));
-    const amount = parseMoneyRu(amountMatch[2]);
-    const hasOrders = Number.isFinite(orders) && orders > 0;
-    const hasAmount = Number.isFinite(amount) && amount >= 1;
-
-    if (hasOrders && hasAmount) {
-      return { orders, amount, valid: true, reason: 'ok' };
-    }
-  }
-
   const hasCashWord = new RegExp(`(?:${cashWordSource})`, 'i').test(normalized);
   if (hasCashWord) {
     return { orders: 0, amount: null, valid: false, reason: 'cash_line_empty' };
@@ -1394,6 +1384,12 @@ function extractCashFromOcrText(text) {
 function getReconciliationOcrTimeoutMs() {
   const value = Number(process.env.RECONCILIATION_OCR_TIMEOUT_MS || 30000);
   return Number.isFinite(value) && value >= 5000 ? value : 30000;
+}
+
+const MAX_REASONABLE_CASH_AMOUNT = 500000;
+
+function roundMoney(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
 }
 
 
@@ -1450,14 +1446,8 @@ async function recognizeReconciliationCash(ctx, fileId) {
       }
     }
 
-    const localResult = await recognizeReconciliationCashLocal(imageBuffer);
-    const totalOrders = totalOrdersFromRapid !== null ? totalOrdersFromRapid : (localResult.totalOrders || null);
-
-    if (localResult.valid || localResult.reason === 'cash_line_empty' || localResult.reason === 'insufficient') {
-      return { ...localResult, totalOrders };
-    }
-
-    return { ...localResult, totalOrders, reason: localResult.reason || 'local_only' };
+    console.log('сверка OCR: RapidOCR не дал результата, fallback-OCR не подключён');
+    return { orders: null, amount: null, totalOrders: totalOrdersFromRapid, valid: false, reason: 'no_ocr_result', source: 'none' };
   } catch (error) {
     console.error('reconciliation cash recognition error', error.message || error);
     return { orders: null, amount: null, totalOrders: null, valid: false, reason: 'error', source: 'none' };
@@ -3981,14 +3971,34 @@ bot.action(/^sc_appr_(\d+)$/, async (ctx) => {
     return;
   }
 
+  const approverId = String(ctx.from.id);
+
+  if (approverId === courierId) {
+    await ctx.answerCbQuery('⛔ Вы не можете подтвердить свою сдачу.');
+    return;
+  }
+  if (getUserRole(approverId) !== 'logist') {
+    await ctx.answerCbQuery('⛔ Только логист может подтверждать сдачу.');
+    return;
+  }
+  const approverWorkplace = getUserField(approverId, 'workplace');
+  const cashWorkplace = pendingCash.workplace || getUserField(courierId, 'workplace') || '';
+  if (approverWorkplace !== cashWorkplace) {
+    await ctx.answerCbQuery('⛔ Вы не привязаны к этому магазину.');
+    return;
+  }
+
   const courierFio = getUserField(courierId, 'fio') || 'Неизвестный';
   const amount = Number(pendingCash.amount || 0);
   const formatted = pendingCash.formatted || formatMoneyRu(amount);
   const workplace = pendingCash.workplace || getUserField(courierId, 'workplace') || 'не указано';
-  const logistId = String(ctx.from.id);
+  const logistId = approverId;
   const logistFio = getUserField(logistId, 'fio') || 'Логист';
 
   clearPendingCashAndReminders(courierId);
+
+  addXp(courierId, getXpForAction('cashSubmit'), 'Сдача наличных (self-clearance)');
+  updateChallengeProgress(courierId, 'cashSubmits');
 
   logCashAction({
     logistId: logistId,
@@ -3997,7 +4007,7 @@ bot.action(/^sc_appr_(\d+)$/, async (ctx) => {
     courierFio: courierFio,
     workplace: workplace,
     amount: amount,
-    action: 'self_cleared'
+    action: 'logist_approved'
   });
 
   try {
@@ -4024,10 +4034,26 @@ bot.action(/^sc_decl_(\d+)$/, async (ctx) => {
     return;
   }
 
+  const declinerId = String(ctx.from.id);
+
+  if (declinerId === courierId) {
+    await ctx.answerCbQuery('⛔ Вы не можете отклонить свою сдачу.');
+    return;
+  }
+  if (getUserRole(declinerId) !== 'logist') {
+    await ctx.answerCbQuery('⛔ Только логист может отклонять сдачу.');
+    return;
+  }
+  const declinerWorkplace = getUserField(declinerId, 'workplace');
+  if (declinerWorkplace !== (pendingCash.workplace || '')) {
+    await ctx.answerCbQuery('⛔ Вы не привязаны к этому магазину.');
+    return;
+  }
+
   setCashConfirmationStatus(courierId, null);
 
   const courierFio = getUserField(courierId, 'fio') || 'Неизвестный';
-  const logistId = String(ctx.from.id);
+  const logistId = declinerId;
   const logistFio = getUserField(logistId, 'fio') || 'Логист';
 
   logCashAction({
@@ -4310,25 +4336,32 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     ];
 
     if (shouldAttachCash && cashFormatted) {
-      const previousPending = getPendingCash(telegramId);
-      const previousAmount = Number(previousPending?.amount || 0);
-      const totalAmount = Number.isFinite(previousAmount) && previousAmount >= 1
-        ? previousAmount + cashInfo.amount
-        : cashInfo.amount;
-      const totalFormatted = formatMoneyRu(totalAmount);
-      const currentNumberOnly = formatMoneyRuNumber(cashInfo.amount) || String(cashFormatted).replace(/\s*₽$/, '');
+      const rawAmount = Number(cashInfo.amount);
+      if (!Number.isFinite(rawAmount) || rawAmount < 1 || rawAmount > MAX_REASONABLE_CASH_AMOUNT) {
+        console.log('сверка OCR: сумма наличных вне допустимого диапазона', rawAmount);
+      } else {
+        const previousPending = getPendingCash(telegramId);
+        const previousAmount = Number(previousPending?.amount || 0);
+        const totalAmount = roundMoney(
+          Number.isFinite(previousAmount) && previousAmount >= 1
+            ? previousAmount + rawAmount
+            : rawAmount
+        );
+        const totalFormatted = formatMoneyRu(totalAmount);
+        const currentNumberOnly = formatMoneyRuNumber(rawAmount) || String(cashFormatted).replace(/\s*₽$/, '');
 
-      captionLines.push(`💵 К сдаче в следующую смену: <code>${esc(currentNumberOnly)}</code> ₽`);
+        captionLines.push(`💵 К сдаче в следующую смену: <code>${esc(currentNumberOnly)}</code> ₽`);
 
-      setPendingCash(telegramId, {
-        amount: totalAmount,
-        formatted: totalFormatted,
-        orders: cashInfo.orders,
-        workplace: state.workplace || null,
-        sourceLabel: 'Терминал',
-        updatedAt: new Date().toISOString(),
-        fileId
-      });
+        setPendingCash(telegramId, {
+          amount: totalAmount,
+          formatted: totalFormatted,
+          orders: cashInfo.orders,
+          workplace: state.workplace || null,
+          sourceLabel: 'Терминал',
+          updatedAt: new Date().toISOString(),
+          fileId
+        });
+      }
     }
 
     const caption = truncateCaption(captionLines.join('\n'));
@@ -4423,25 +4456,32 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
   ];
 
   if (shouldAttachCash && cashFormatted) {
-    const previousPending = getPendingCash(telegramId);
-    const previousAmount = Number(previousPending?.amount || 0);
-    const totalAmount = Number.isFinite(previousAmount) && previousAmount >= 1
-      ? previousAmount + cashInfo.amount
-      : cashInfo.amount;
-    const totalFormatted = formatMoneyRu(totalAmount);
-    const currentNumberOnly = formatMoneyRuNumber(cashInfo.amount) || String(cashFormatted).replace(/\s*₽$/, '');
+    const rawAmount = Number(cashInfo.amount);
+    if (!Number.isFinite(rawAmount) || rawAmount < 1 || rawAmount > MAX_REASONABLE_CASH_AMOUNT) {
+      console.log('сверка OCR: сумма наличных вне допустимого диапазона', rawAmount);
+    } else {
+      const previousPending = getPendingCash(telegramId);
+      const previousAmount = Number(previousPending?.amount || 0);
+      const totalAmount = roundMoney(
+        Number.isFinite(previousAmount) && previousAmount >= 1
+          ? previousAmount + rawAmount
+          : rawAmount
+      );
+      const totalFormatted = formatMoneyRu(totalAmount);
+      const currentNumberOnly = formatMoneyRuNumber(rawAmount) || String(cashFormatted).replace(/\s*₽$/, '');
 
-    captionLines.push(`💵 К сдаче в следующую смену: <code>${esc(currentNumberOnly)}</code> ₽`);
+      captionLines.push(`💵 К сдаче в следующую смену: <code>${esc(currentNumberOnly)}</code> ₽`);
 
-    setPendingCash(telegramId, {
-      amount: totalAmount,
-      formatted: totalFormatted,
-      orders: cashInfo.orders,
-      workplace: state.workplace || null,
-      sourceLabel: label,
-      updatedAt: new Date().toISOString(),
-      fileId
-    });
+      setPendingCash(telegramId, {
+        amount: totalAmount,
+        formatted: totalFormatted,
+        orders: cashInfo.orders,
+        workplace: state.workplace || null,
+        sourceLabel: label,
+        updatedAt: new Date().toISOString(),
+        fileId
+      });
+    }
   }
 
   const caption = truncateCaption(captionLines.join('\n'));
