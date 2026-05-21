@@ -58,7 +58,7 @@ const {
   getSelfClearanceRequest,
   cleanupStaleReminders
 } = require('./services/storage');
-const { recognizeMileage, downloadTelegramFile, isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold } = require('./services/mileageOcr');
+const { recognizeMileage, downloadTelegramFile, isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold, checkRapidOcrHealth } = require('./services/mileageOcr');
 const { saveOcrDebugImage, updateOcrDebugStatus } = require('./services/ocrDebug');
 const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, flushNow: flushLeaderboardNow, getDayOrders: getLbDayOrders, getWorkplaceRecord, setWorkplaceRecord, getDailyTop3, findOvertakenCouriers, getTodayKey: getLbTodayKey } = require('./services/leaderboard');
 const { addXp, getTotalXp, getRank, getRankProgress, formatRankInfo, getXpForAction } = require('./services/xp');
@@ -95,6 +95,7 @@ const {
 } = require('./menus/keyboards');
 
 const db = require('./db');
+const { checkpoint } = require('./db');
 
 function getState(telegramId) {
   const row = db.prepare('SELECT data FROM states WHERE telegramId = ?').get(String(telegramId));
@@ -764,7 +765,9 @@ async function makeBackup(reason = 'auto') {
   await ensureBackupDir();
   const now = new Date();
   const ts = now.toISOString().replace(/[.:]/g, '-');
-
+  try {
+    checkpoint();
+  } catch (_) {}
   for (const filename of BACKUP_FILES) {
     const src = path.join(__dirname, filename);
     try {
@@ -795,6 +798,9 @@ async function cleanOldBackups() {
 }
 
 async function runBackupCycle() {
+  try {
+    checkpoint();
+  } catch (_) {}
   await makeBackup('auto');
   await cleanOldBackups();
 }
@@ -4626,6 +4632,24 @@ async function handleMileagePhoto(ctx, state, fileId) {
     return;
   }
 
+  const ocrHealthy = await checkRapidOcrHealth();
+  if (!ocrHealthy) {
+    console.warn('RapidOCR health check failed, falling back to manual input');
+    setState(telegramId, {
+      ...photoState,
+      mileageProcessing: false,
+      awaitingMileagePhoto: true,
+      awaitingManualMileage: true,
+      recognizedMileage: null,
+      ocrValue: null
+    });
+    sendPhotoToWorkChat(ctx, fileId, buildPhotoCaption(state)).catch((error) => {
+      console.error('telegram send photo error', error);
+    });
+    await ctx.replyWithHTML('⚠️ Сервер распознавания недоступен.\nВведите пробег вручную или нажмите «⏭️ Пропустить».', mileageConfirmKeyboard());
+    return;
+  }
+
   await ctx.replyWithHTML('📸 Фото принято. Считываю пробег...');
 
   const chatId = ctx.chat.id;
@@ -4653,18 +4677,21 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
 
     const sourceBuffer = await downloadTelegramFile({ telegram }, fileId);
 
-    const mileageValue = await recognizeMileage({ telegram, chat: { id: chatId } }, fileId, {
+    const ocrResult = await recognizeMileage({ telegram, chat: { id: chatId } }, fileId, {
       ...recognitionOptions,
       onStatus: async (msg) => {
         try { await sendMsg(msg); } catch (e) { /* ignore */ }
       }
     });
 
+    const mileageValue = ocrResult?.mileage || null;
+    const ocrCandidates = ocrResult?.candidates || [];
+
     if (!mileageValue) {
       if (sourceBuffer) {
         saveOcrDebugImage(sourceBuffer, {
-          status: 'ocr_fail',
-          ocrResult: null,
+          status: ocrCandidates.length > 0 ? 'ocr_weak' : 'ocr_fail',
+          ocrResult: ocrCandidates.length > 0 ? ocrCandidates[0].mileage : null,
           userCorrectedValue: null,
           telegramId,
           stage: originalState.stage,
@@ -4685,10 +4712,14 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
           ocrValue: null
         });
       }
-      await sendMsg(
-        '⚠️ <b>Не удалось распознать пробег</b>\n\nОтправьте фото повторно крупным планом, введите вручную или нажмите «⏭️ Пропустить».',
-        mileageConfirmKeyboard()
-      );
+
+      let failMsg = '⚠️ <b>Не удалось распознать пробег</b>\n\n';
+      if (ocrCandidates.length > 0) {
+        const candidateList = ocrCandidates.slice(0, 3).map((c) => `<code>${c.mileage}</code> км`).join(', ');
+        failMsg += `Возможные значения: ${candidateList}\n\n`;
+      }
+      failMsg += 'Отправьте фото повторно крупным планом, введите вручную или нажмите «⏭️ Пропустить».';
+      await sendMsg(failMsg, mileageConfirmKeyboard());
       return;
     }
 
@@ -5126,11 +5157,13 @@ function flushAllSync() {
 }
 
 function shutdown(signal) {
-  // Защита от повторного входа: pm2 / systemd иногда шлют сигнал дважды.
   if (_shutdownInProgress) return;
   _shutdownInProgress = true;
 
   console.log(`shutdown initiated by ${signal}`);
+  try {
+    checkpoint();
+  } catch (_) {}
   flushAllSync();
 
   try {
@@ -5152,6 +5185,9 @@ function makeBackupSync(reason = 'auto') {
   if (!fs.existsSync(BACKUP_DIR)) {
     fs.mkdirSync(BACKUP_DIR, { recursive: true });
   }
+  try {
+    checkpoint();
+  } catch (_) {}
   for (const filename of BACKUP_FILES) {
     const src = path.join(__dirname, filename);
     const dst = path.join(BACKUP_DIR, `${filename.replace('.json', '')}-${reason}-${ts}.json`);

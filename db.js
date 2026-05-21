@@ -3,10 +3,123 @@ const path = require('path');
 const fs = require('fs');
 
 const dbPath = path.join(__dirname, 'database.sqlite');
-const db = new Database(dbPath);
+const dbDir = __dirname;
+const backupsDir = path.join(dbDir, 'backups');
+
+function findLatestBackup() {
+  if (!fs.existsSync(backupsDir)) return null;
+  const files = fs.readdirSync(backupsDir)
+    .filter(f => f.startsWith('database.sqlite-') && !f.endsWith('.shm') && !f.endsWith('.wal'))
+    .sort()
+    .reverse();
+  if (files.length === 0) return null;
+  return path.join(backupsDir, files[0]);
+}
+
+function tryRestoreFromBackup() {
+  const backup = findLatestBackup();
+  if (!backup) {
+    console.error('No valid backup found, creating fresh database');
+    return false;
+  }
+  console.log(`Attempting to restore from backup: ${path.basename(backup)}`);
+  try {
+    const tmpDb = new Database(backup);
+    const result = tmpDb.pragma('integrity_check', { simple: true });
+    tmpDb.close();
+    if (result !== 'ok') {
+      console.error(`Backup ${path.basename(backup)} is also corrupt, trying older backup`);
+      const allFiles = fs.readdirSync(backupsDir)
+        .filter(f => f.startsWith('database.sqlite-') && !f.endsWith('.shm') && !f.endsWith('.wal'))
+        .sort()
+        .reverse();
+      for (const file of allFiles) {
+        if (file === path.basename(backup)) continue;
+        const filePath = path.join(backupsDir, file);
+        try {
+          const testDb = new Database(filePath);
+          const r = testDb.pragma('integrity_check', { simple: true });
+          testDb.close();
+          if (r === 'ok') {
+            console.log(`Found valid backup: ${file}`);
+            fs.copyFileSync(filePath, dbPath);
+            return true;
+          }
+        } catch (_) {}
+      }
+      return false;
+    }
+    fs.copyFileSync(backup, dbPath);
+    console.log('Database restored from backup');
+    return true;
+  } catch (e) {
+    console.error('Backup restore failed:', e.message);
+    return false;
+  }
+}
+
+function checkpointAndClose(db) {
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+  } catch (_) {}
+  try {
+    db.close();
+  } catch (_) {}
+  const shmPath = dbPath + '-shm';
+  const walPath = dbPath + '-wal';
+  if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
+  if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
+}
+
+let db;
+try {
+  db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+  const integrity = db.pragma('integrity_check', { simple: true });
+  if (integrity !== 'ok') {
+    console.error(`Database integrity check failed: ${integrity}. Attempting recovery...`);
+    checkpointAndClose(db);
+    if (tryRestoreFromBackup()) {
+      db = new Database(dbPath);
+      db.pragma('journal_mode = WAL');
+      db.pragma('wal_autocheckpoint = 1000');
+      db.pragma('synchronous = FULL');
+    } else {
+      console.error('All backups corrupt, creating fresh database');
+      db = new Database(dbPath);
+      db.pragma('journal_mode = WAL');
+      db.pragma('wal_autocheckpoint = 1000');
+      db.pragma('synchronous = FULL');
+    }
+  }
+} catch (e) {
+  if (e.message.includes('corrupt') || e.message.includes('malformed')) {
+    console.error(`Database corrupt on open: ${e.message}. Attempting recovery...`);
+    const shmPath = dbPath + '-shm';
+    const walPath = dbPath + '-wal';
+    if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
+    if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
+    if (tryRestoreFromBackup()) {
+      db = new Database(dbPath);
+      db.pragma('journal_mode = WAL');
+      db.pragma('wal_autocheckpoint = 1000');
+      db.pragma('synchronous = FULL');
+    } else {
+      console.error('All backups corrupt, creating fresh database');
+      db = new Database(dbPath);
+      db.pragma('journal_mode = WAL');
+      db.pragma('wal_autocheckpoint = 1000');
+      db.pragma('synchronous = FULL');
+    }
+  } else {
+    throw e;
+  }
+}
 
 // Initialize tables
 db.pragma('journal_mode = WAL');
+db.pragma('wal_autocheckpoint = 1000');
+db.pragma('synchronous = FULL');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
@@ -198,4 +311,22 @@ function migratePendingCashToTable() {
 
 migratePendingCashToTable();
 
-module.exports = db;
+function checkpoint() {
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+  } catch (e) {
+    console.error('WAL checkpoint failed:', e.message);
+  }
+}
+
+// Proxy object that behaves like the original db instance
+const dbProxy = new Proxy(db, {
+  get(target, prop) {
+    if (prop === 'checkpoint') return checkpoint;
+    return target[prop];
+  }
+});
+
+module.exports = dbProxy;
+module.exports.checkpoint = checkpoint;
+module.exports.db = db;

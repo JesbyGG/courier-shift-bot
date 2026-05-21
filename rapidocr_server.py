@@ -30,8 +30,8 @@ except Exception as e:
 
 MIN_MILEAGE = int(os.getenv('OCR_MIN_MILEAGE', '1000') or 1000)
 MIN_COUNT = int(os.getenv('RAPIDOCR_MIN_COUNT', '1') or 1)
-MIN_AVG_CONF = float(os.getenv('RAPIDOCR_MIN_AVG_CONF', '0.55') or 0.55)
-MIN_MAX_CONF = float(os.getenv('RAPIDOCR_MIN_MAX_CONF', '0.68') or 0.68)
+MIN_AVG_CONF = float(os.getenv('RAPIDOCR_MIN_AVG_CONF', '0.40') or 0.40)
+MIN_MAX_CONF = float(os.getenv('RAPIDOCR_MIN_MAX_CONF', '0.50') or 0.50)
 
 
 def normalize_text(text):
@@ -143,8 +143,17 @@ def _is_noise(text):
         return True
     if re.search(r'-?\d{1,2}\s*[°º]', text):
         return True
-    noise = ('km/h', 'mph', 'rpm', 'x1000', '/100', 'l/100', '1/100', 'trip', 'avg', 'temp', 'r/m', 'kmh')
-    return any(t in low for t in noise)
+    noise = ('km/h', 'mph', 'rpm', 'x1000', '/100', 'l/100', '1/100', 'temp', 'r/m', 'kmh')
+    if any(t in low for t in noise):
+        return True
+    if 'trip' in low and 'avg' in low:
+        return True
+    if 'avg' in low:
+        avg_match = re.search(r'(\d{2,6})', text)
+        if avg_match:
+            return False
+        return True
+    return False
 
 
 def recognize(image_bytes):
@@ -201,11 +210,9 @@ def recognize(image_bytes):
         if non_noise_groups:
             best = max(non_noise_groups, key=lambda g: (g['has_km'], g['count'], g['max_confidence']))
             best_conf = sum(it['confidence'] for it in best['items']) / max(best['count'], 1)
-            if best['has_km'] and best_conf >= 0.80:
+            if best['has_km'] and best_conf >= 0.90 and best['count'] >= 2:
                 break
-            if best['count'] >= 3 and best_conf >= 0.80:
-                break
-            if best['count'] >= 2 and best_conf >= 0.90:
+            if best['count'] >= 3 and best_conf >= 0.90:
                 break
 
     for g in grouped.values():
@@ -220,9 +227,11 @@ def recognize(image_bytes):
         g['avg_confidence'],
     ), reverse=True)
 
-    valid_groups = [g for g in groups if g['mileage'] >= MIN_MILEAGE and g['count'] >= MIN_COUNT and g['avg_confidence'] >= MIN_AVG_CONF and g['max_confidence'] >= MIN_MAX_CONF and not g['is_noise']]
+    valid_groups = [g for g in groups if g['mileage'] >= MIN_MILEAGE and g['avg_confidence'] >= MIN_AVG_CONF and g['max_confidence'] >= MIN_MAX_CONF]
     if not valid_groups:
-        valid_groups = [g for g in groups if g['mileage'] >= MIN_MILEAGE and g['count'] >= MIN_COUNT and g['avg_confidence'] >= MIN_AVG_CONF and g['max_confidence'] >= MIN_MAX_CONF]
+        valid_groups = [g for g in groups if g['mileage'] >= MIN_MILEAGE and g['max_confidence'] >= MIN_MAX_CONF]
+    if not valid_groups:
+        valid_groups = [g for g in groups if g['mileage'] >= MIN_MILEAGE and g['count'] >= 1]
     best = valid_groups[0] if valid_groups else None
     mileage = best['mileage'] if best else None
 

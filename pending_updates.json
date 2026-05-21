@@ -1,1 +1,39 @@
-{}
+{
+  "2.4.1": {
+    "changedFiles": [
+      "bot.js",
+      "check_tables.js",
+      "config.js",
+      "db.js",
+      "fix_db.js",
+      "utils.js"
+    ],
+    "updates": [
+      "🔧 Исправлено: Background OCR does not stop on back_to_menu",
+      "🔧 Исправлено: Background OCR сохраняет результат даже при нажатии кнопок",
+      "✨ Добавлено: Background OCR processing + ocr_debug photo saving",
+      "🔧 Исправлено: Защита подтверждения наличных + доработки OCR сверки",
+      "✨ Добавлено: Notifications v2 - fix first record/overtake bugs, add workplace record, daily leader, top3 change, notification settings",
+      "✨ Добавлено: Add weekly challenges button to leaderboard menu",
+      "🔧 Исправлено: Add missing imports for achievements and streak getters",
+      "✨ Добавлено: Add pedestrian couriers, XP ranks, achievements, streaks, challenges, leaderboard 2.0",
+      "✨ Добавлено: Add pedestrian couriers, XP ranks, achievements, streaks, challenges, leaderboard 2.0",
+      "✨ Добавлено: Подтверждение перед пропуском пробега, удалён dead code OCR",
+      "🔧 Исправлено: Добавлен isSheetAccessUser импорт в menus/keyboards.js",
+      "🔧 Исправлено: Перенос BUTTONS в config.js, исправлен settingsMenu",
+      "🔧 Исправлено: Добавлен WORKPLACE_KEY_MAP в импорт bot.js",
+      "✨ Добавлено: Отдельная таблица pending_cash с индексом по workplace, миграция из users.data",
+      "✨ Добавлено: Динамические магазины через WORKPLACE_FEATURES, убран хардкод Восток/Центр",
+      "♻️ Переработано: Вынос клавиатур в menus/keyboards.js, auth в services/auth.js, тихие ошибки сверки",
+      "🔧 Исправлено: Pending updates persistence across restarts",
+      "🔧 Исправлено: Cash_submit_no undefined telegramId",
+      "✨ Добавлено: Меню логистов по магазину, ФИО в любом порядке, центр-логистика, помощь по ролям",
+      "✨ Добавлено: BOT_DISABLED env flag for local dev",
+      "✨ Добавлено: Русские префиксы в уведомлениях об обновлениях",
+      "🔧 Техническое: Revert test comment",
+      "🔧 Техническое: Add version header comment",
+      "✨ Добавлено: Auto-generate update notes from git commit history"
+    ],
+    "message": "🆕 <b><i>Обновление бота v2.4.1</i></b>\n\n<b>Коротко, что изменили:</b>\n• 🔧 Исправлено: Background OCR does not stop on back_to_menu\n• 🔧 Исправлено: Background OCR сохраняет результат даже при нажатии кнопок\n• ✨ Добавлено: Background OCR processing + ocr_debug photo saving\n• 🔧 Исправлено: Защита подтверждения наличных + доработки OCR сверки\n• ✨ Добавлено: Notifications v2 - fix first record/overtake bugs, add workplace record, daily leader, top3 change, notification settings\n• ✨ Добавлено: Add weekly challenges button to leaderboard menu\n• 🔧 Исправлено: Add missing imports for achievements and streak getters\n• ✨ Добавлено: Add pedestrian couriers, XP ranks, achievements, streaks, challenges, leaderboard 2.0\n• ✨ Добавлено: Add pedestrian couriers, XP ranks, achievements, streaks, challenges, leaderboard 2.0\n• ✨ Добавлено: Подтверждение перед пропуском пробега, удалён dead code OCR\n• 🔧 Исправлено: Добавлен isSheetAccessUser импорт в menus/keyboards.js\n• 🔧 Исправлено: Перенос BUTTONS в config.js, исправлен settingsMenu\n• 🔧 Исправлено: Добавлен WORKPLACE_KEY_MAP в импорт bot.js\n• ✨ Добавлено: Отдельная таблица pending_cash с индексом по workplace, миграция из users.data\n• ✨ Добавлено: Динамические магазины через WORKPLACE_FEATURES, убран хардкод Восток/Центр\n• ♻️ Переработано: Вынос клавиатур в menus/keyboards.js, auth в services/auth.js, тихие ошибки сверки\n• 🔧 Исправлено: Pending updates persistence across restarts\n• 🔧 Исправлено: Cash_submit_no undefined telegramId\n• ✨ Добавлено: Меню логистов по магазину, ФИО в любом порядке, центр-логистика, помощь по ролям\n• ✨ Добавлено: BOT_DISABLED env flag for local dev\n• ✨ Добавлено: Русские префиксы в уведомлениях об обновлениях\n• 🔧 Техническое: Revert test comment\n• 🔧 Техническое: Add version header comment\n• ✨ Добавлено: Auto-generate update notes from git commit history\n\n💙 Хорошей смены!"
+  }
+}

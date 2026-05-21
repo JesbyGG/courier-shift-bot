@@ -131,8 +131,8 @@ function smartPickFromGroups(groups, options = {}) {
 
     const aLen = String(a.mileage).length;
     const bLen = String(b.mileage).length;
-    const aOdo = aLen >= 5 && aLen <= 7 ? 1 : 0;
-    const bOdo = bLen >= 5 && bLen <= 7 ? 1 : 0;
+    const aOdo = aLen >= 4 && aLen <= 7 ? 1 : 0;
+    const bOdo = bLen >= 4 && bLen <= 7 ? 1 : 0;
     if (aOdo !== bOdo) return bOdo - aOdo;
 
     const aNoise = a.is_noise ? 0 : 1;
@@ -148,11 +148,15 @@ function smartPickFromGroups(groups, options = {}) {
   });
 
   const best = ranked[0];
-  if (best && best.count >= 1 && best.avgConfidence >= 0.40) {
+  if (best && best.avgConfidence >= 0.30) {
     return { mileage: best.mileage, candidates: ranked.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence })) };
   }
 
-  return { mileage: null, candidates: valid };
+  if (best && best.count >= 1 && isMileageInBounds(best.mileage, options)) {
+    return { mileage: best.mileage, candidates: ranked.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence })) };
+  }
+
+  return { mileage: null, candidates: ranked.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence })) };
 }
 
 // AI vision logic completely removed
@@ -167,7 +171,7 @@ async function recognizeMileageWithRapidOcr(imageBuffer, options = {}) {
 
   try {
     const response = await enqueueOcrRequest(() => axios.post(rapidOcrUrl, imageBuffer, {
-      timeout: 60000,
+      timeout: 120000,
       headers: { 'Content-Type': 'application/octet-stream' }
     }));
     const parsed = response.data;
@@ -261,6 +265,7 @@ async function recognizeMileage(ctx, fileId, options = {}) {
 
     const ocrMileage = rapidResult.mileage;
     const groups = rapidResult.groups || [];
+    const ocrCandidates = rapidResult.candidates || [];
 
     if (ocrMileage) {
       console.log('OCR accepted', {
@@ -271,7 +276,7 @@ async function recognizeMileage(ctx, fileId, options = {}) {
         maxMileage: options.maxMileage
       });
       console.log('OCR timing: total', Date.now() - startTime, 'ms');
-      return ocrMileage;
+      return { mileage: ocrMileage, candidates: ocrCandidates };
     }
 
     console.log('OCR rejected', {
@@ -280,7 +285,7 @@ async function recognizeMileage(ctx, fileId, options = {}) {
       best: rapidResult.best ? `${rapidResult.best.mileage}(×${rapidResult.best.count})` : null
     });
     console.log('OCR timing: total', Date.now() - startTime, 'ms');
-    return null;
+    return { mileage: null, candidates: ocrCandidates };
   } catch (error) {
     console.error('OCR error', error.message || error);
     return null;
@@ -297,7 +302,7 @@ async function recognizeTextWithRapidOcr(imageBuffer) {
   try {
     const url = rapidOcrUrl.replace(/\/+$/, '') + '/text';
     const response = await enqueueOcrRequest(() => axios.post(url, imageBuffer, {
-      timeout: 60000,
+      timeout: 120000,
       headers: { 'Content-Type': 'application/octet-stream' }
     }));
     const items = response.data?.text_items;
@@ -314,10 +319,24 @@ async function recognizeTextWithRapidOcr(imageBuffer) {
   }
 }
 
+async function checkRapidOcrHealth() {
+  const rapidOcrUrl = process.env.RAPIDOCR_URL || '';
+  if (!rapidOcrUrl) return false;
+
+  try {
+    const response = await axios.get(`${rapidOcrUrl.replace(/\/+$/, '')}/health`, { timeout: 5000 });
+    return response.status === 200 && response.data?.status === 'ok';
+  } catch (error) {
+    console.error('RapidOCR health check failed:', error.message);
+    return false;
+  }
+}
+
 module.exports = {
   recognizeMileage,
   downloadTelegramFile,
   recognizeTextWithRapidOcr,
   isRapidOcrEnabled,
-  getMinMileageThreshold
+  getMinMileageThreshold,
+  checkRapidOcrHealth
 };
