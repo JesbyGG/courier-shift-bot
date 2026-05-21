@@ -48,18 +48,22 @@ function getTodayKey() {
   return _formatLocalDate(new Date(), timezone);
 }
 
-function recordOrders(telegramId, fio, workplace, ordersCount) {
+function recordOrders(telegramId, fio, workplace, ordersCount, courierType) {
   let record = _getRecord(telegramId);
   if (!record) {
     record = {
       fio,
       workplace,
+      courierType,
       dailyOrders: {}
     };
   }
 
   record.fio = fio || record.fio;
   record.workplace = workplace || record.workplace;
+  if (courierType) {
+    record.courierType = courierType;
+  }
 
   const dayKey = getTodayKey();
   record.dailyOrders[dayKey] = ordersCount;
@@ -80,7 +84,7 @@ const WORKPLACE_SHORT = {
   'ИМ Центр': 'Центр'
 };
 
-function calculateLeaderboard(type, periodDays, workplace) {
+function calculateLeaderboard(type, periodDays, workplace, courierTypeFilter) {
   const records = _getAllRecords();
   const cutoff = periodDays ? getDaysAgo(periodDays) : null;
   
@@ -91,10 +95,11 @@ function calculateLeaderboard(type, periodDays, workplace) {
   for (const [telegramId, record] of Object.entries(records)) {
     if (!record.dailyOrders) continue;
     if (filterWorkplace && record.workplace !== filterWorkplace) continue;
+    if (courierTypeFilter && courierTypeFilter !== 'all' && record.courierType !== courierTypeFilter) continue;
 
     let value = 0;
     for (const [dayKey, orders] of Object.entries(record.dailyOrders)) {
-      if (cutoff && dayKey < cutoff) continue;
+      if (cutoff && dayKey < cutoff) continue;   // string comparison on "YYYY-MM-DD"
       if (type === 'max') {
         if (orders > value) value = orders;
       } else {
@@ -107,6 +112,7 @@ function calculateLeaderboard(type, periodDays, workplace) {
         telegramId,
         fio: record.fio || 'Неизвестный',
         workplace: record.workplace || '',
+        courierType: record.courierType || 'auto',
         value
       });
     }

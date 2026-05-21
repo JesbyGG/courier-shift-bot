@@ -376,12 +376,12 @@ async function getTodayStatus(fio, workplace) {
 function makePunchState({ courier, mileage, dateText, day, stage, timeValue }) {
   return {
     fio: courier.fio,
-    auto: courier.auto || mileage.auto,
+    auto: courier.auto || (mileage ? mileage.auto : ''),
     date: dateText,
     day,
     stage,
     courierRow: courier.row,
-    mileageRow: mileage.row,
+    mileageRow: mileage ? mileage.row : null,
     timeValue
   };
 }
@@ -409,7 +409,8 @@ function getMileageColumns(workplace, day) {
   };
 }
 
-async function resolveCourierContext(fio, workplace) {
+async function resolveCourierContext(fio, workplace, options = {}) {
+  const { requireMileage = true } = options;
   const sheetContext = resolveSheetContext(workplace);
   const spreadsheetId = sheetContext.sheetId;
   if (!spreadsheetId) {
@@ -427,13 +428,20 @@ async function resolveCourierContext(fio, workplace) {
   }
 
   const config = getSheetConfig(workplace);
-  const [courier, mileage] = await Promise.all([
-    findCourierByFio(fio, workplace, sheetContext),
-    findMileageByFio(fio, workplace, sheetContext)
-  ]);
+  const courier = await findCourierByFio(fio, workplace, sheetContext);
 
-  if (!courier || !mileage) {
-    return { sheetContext, spreadsheetId, config, courier, mileage, notFound: true };
+  if (!courier) {
+    return { sheetContext, spreadsheetId, config, courier: null, mileage: null, notFound: true };
+  }
+
+  if (!requireMileage) {
+    return { sheetContext, spreadsheetId, config, courier, mileage: null, notFound: false };
+  }
+
+  const mileage = await findMileageByFio(fio, workplace, sheetContext);
+
+  if (!mileage) {
+    return { sheetContext, spreadsheetId, config, courier, mileage: null, notFound: true };
   }
 
   return { sheetContext, spreadsheetId, config, courier, mileage, notFound: false };
@@ -486,8 +494,8 @@ async function prepareMileage(fio, workplace, stage = null) {
   };
 }
 
-async function punchTime(fio, workplace) {
-  const ctx = await resolveCourierContext(fio, workplace);
+async function punchTime(fio, workplace, isPedestrian = false) {
+  const ctx = await resolveCourierContext(fio, workplace, { requireMileage: !isPedestrian });
   if (ctx.notFound) {
     if (ctx.noSheet) {
       return { notFound: true, noSheet: true, noSheetForMonth: ctx.noSheetForMonth, monthKey: ctx.monthKey };
@@ -504,18 +512,12 @@ async function punchTime(fio, workplace) {
   const startCell = `${getColumnLetter(columns.startColumn)}${courier.row}`;
   const endCell = `${getColumnLetter(columns.endColumn)}${courier.row}`;
 
-  // Mutex по ключу spreadsheetId:row защищает от race-condition при
-  // двойном тапе. Без него оба параллельных вызова прочитали бы пустую
-  // ячейку и оба написали бы — последний выиграл бы непредсказуемо.
   return withRowLock(`${spreadsheetId}:courier:${courier.row}`, async () => {
     const [from, to] = await Promise.all([
       readCell(config.courierSheet, startCell, spreadsheetId),
       readCell(config.courierSheet, endCell, spreadsheetId)
     ]);
 
-    // Перезаписываем ячейку, если она пустая ИЛИ содержит schedule-маркер "1".
-    // Маркер "1" означает «запланирована смена, но время ещё не внесено».
-    // Реальные времена около 1:00 теперь пишутся как "1,0" — они НЕ затрутся.
     if (isEmptyCell(from) || isScheduleMarker(from)) {
       await updateCell(config.courierSheet, startCell, timeValue, spreadsheetId);
       return makePunchState({ courier, mileage, dateText, day, stage: 'start', timeValue });
@@ -529,11 +531,11 @@ async function punchTime(fio, workplace) {
     return {
       needsReplaceChoice: true,
       fio: courier.fio,
-      auto: courier.auto || mileage.auto,
+      auto: courier.auto || (mileage ? mileage.auto : ''),
       date: dateText,
       day,
       courierRow: courier.row,
-      mileageRow: mileage.row,
+      mileageRow: mileage ? mileage.row : null,
       timeValue,
       from,
       to
@@ -541,8 +543,8 @@ async function punchTime(fio, workplace) {
   });
 }
 
-async function replaceTime(fio, workplace, stage) {
-  const ctx = await resolveCourierContext(fio, workplace);
+async function replaceTime(fio, workplace, stage, isPedestrian = false) {
+  const ctx = await resolveCourierContext(fio, workplace, { requireMileage: !isPedestrian });
   if (ctx.notFound) {
     if (ctx.noSheet) {
       return { notFound: true, noSheet: true, noSheetForMonth: ctx.noSheetForMonth, monthKey: ctx.monthKey };

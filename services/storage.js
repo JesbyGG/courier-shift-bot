@@ -40,7 +40,8 @@ function getFullProfile(telegramId) {
     carNumber: profile.carNumber || null,
     workplace: profile.workplace || null,
     device: profile.device || null,
-    role: profile.role || null
+    role: profile.role || null,
+    courierType: profile.courierType || 'auto'
   };
 }
 

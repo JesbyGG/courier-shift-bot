@@ -60,6 +60,10 @@ const {
 } = require('./services/storage');
 const { recognizeMileage, isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold } = require('./services/mileageOcr');
 const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, flushNow: flushLeaderboardNow, getDayOrders: getLbDayOrders, findOvertakenCouriers, getTodayKey: getLbTodayKey } = require('./services/leaderboard');
+const { addXp, getTotalXp, getRank, getRankProgress, formatRankInfo, getXpForAction } = require('./services/xp');
+const { checkMilestoneAchievements, unlockAchievement, getUnlockedAchievements } = require('./services/achievements');
+const { updateStreak, getStreakBonus } = require('./services/streak');
+const { updateChallengeProgress, generateWeeklyChallenges } = require('./services/challenges');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, roundMinutesToHalfHour } = require('./utils');
 const { registerSheetCommand } = require('./sheetCommand');
 const { WORKPLACES, DEVICES, ROLES, LIMITS, WORKPLACE_FEATURES, WORKPLACE_KEY_MAP, BUTTONS } = require('./config');
@@ -1575,7 +1579,7 @@ async function askForCarNumber(ctx, fio = getUserField(ctx.from.id, 'fio')) {
   setState(ctx.from.id, { awaitingCarNumber: true, fio });
   await ctx.replyWithHTML(
     `🚗 <b>Номер машины</b>\n\nВведите гос. номер автомобиля.\nНапример: <code>А123ВС777</code>`,
-    mainMenu()
+    getMenuForRole(ctx.from.id)
   );
 }
 
@@ -1624,7 +1628,7 @@ async function saveCarNumber(ctx, value) {
   }
 
   clearState(ctx.from.id);
-  await ctx.replyWithHTML(`✅ Номер машины сохранён: <code>${esc(carNumber)}</code>`, mainMenu());
+  await ctx.replyWithHTML(`✅ Номер машины сохранён: <code>${esc(carNumber)}</code>`, getMenuForRole(ctx.from.id));
 }
 
 async function saveWorkplace(ctx, value) {
@@ -1652,7 +1656,7 @@ async function saveWorkplace(ctx, value) {
   }
 
   clearState(ctx.from.id);
-  await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`, mainMenu());
+  await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`, getMenuForRole(ctx.from.id));
 }
 
 async function saveDevice(ctx, value) {
@@ -1666,7 +1670,7 @@ async function saveDevice(ctx, value) {
   setUserField(ctx.from.id, 'device', device);
   clearState(ctx.from.id);
   console.log('устройство сохранено');
-  await ctx.replyWithHTML(`✅ Устройство сохранено: <b>${esc(device)}</b>`, mainMenu());
+  await ctx.replyWithHTML(`✅ Устройство сохранено: <b>${esc(device)}</b>`, getMenuForRole(ctx.from.id));
 }
 
 async function ensureProfile(ctx) {
@@ -1679,7 +1683,7 @@ async function ensureProfile(ctx) {
   }
 
   if (role !== 'logist') {
-    if (!profile.carNumber) {
+    if (profile.courierType !== 'pedestrian' && !profile.carNumber) {
       await askForCarNumber(ctx, profile.fio);
       return null;
     }
@@ -1734,7 +1738,49 @@ async function authorizeFio(ctx, fio) {
     console.log('сотрудник найден');
     await ctx.replyWithHTML(`✅ Сотрудник найден: <b>${esc(employee.fio)}</b>`);
 
-    setState(telegramId, { awaitingRoleChoice: true, fio: employee.fio });
+    const auto = String(employee.auto || '').trim().toLowerCase();
+    const workplace = employee.workplace;
+
+    if (workplace === 'ИМ Центр') {
+      if (auto === 'пеший') {
+        setUserField(telegramId, 'courierType', 'pedestrian');
+        setUserField(telegramId, 'role', 'courier');
+        setUserField(telegramId, 'workplace', 'ИМ Центр');
+        await ctx.replyWithHTML('🚶 <b>Пеший курьер</b>, магазин <b>ИМ Центр</b>.');
+        await askForDevice(ctx, employee.fio);
+        return;
+      }
+      if (auto === 'логист') {
+        setUserField(telegramId, 'role', 'logist');
+        await ctx.replyWithHTML('📦 <b>Логист</b>.\n\nТеперь выберите ваш магазин.', logistMainMenu(telegramId));
+        await askForWorkplace(ctx, employee.fio);
+        return;
+      }
+      setUserField(telegramId, 'courierType', 'auto');
+      setUserField(telegramId, 'role', 'courier');
+      await ctx.replyWithHTML('🚗 <b>Авто-курьер</b>.\n\nТеперь введите номер машины.');
+      await askForCarNumber(ctx, employee.fio);
+      return;
+    }
+
+    if (workplace === 'ИМ Восток') {
+      if (auto === 'логист') {
+        setUserField(telegramId, 'role', 'logist');
+        await ctx.replyWithHTML('📦 <b>Логист</b>.\n\nТеперь выберите ваш магазин.', logistMainMenu(telegramId));
+        await askForWorkplace(ctx, employee.fio);
+        return;
+      }
+      setState(telegramId, { awaitingRoleChoice: true, fio: employee.fio, workplace: employee.workplace });
+      await ctx.replyWithHTML(
+        '👤 <b>Выберите вашу роль:</b>\n\n' +
+        '▫️ <b>Курьер</b> — доставка заказов, пробег, маршрутник, сверка, наличные\n' +
+        '▫️ <b>Логист</b> — учёт времени, сбор наличных с курьеров, таблицы',
+        roleChoiceKeyboard()
+      );
+      return;
+    }
+
+    setState(telegramId, { awaitingRoleChoice: true, fio: employee.fio, workplace: employee.workplace });
     await ctx.replyWithHTML(
       '👤 <b>Выберите вашу роль:</b>\n\n' +
       '▫️ <b>Курьер</b> — доставка заказов, пробег, маршрутник, сверка, наличные\n' +
@@ -1756,9 +1802,10 @@ async function punchTimeFlow(ctx, explicitStage = null) {
   }
 
   try {
+    const isPedestrian = profile.courierType === 'pedestrian';
     const result = explicitStage
-      ? await replaceTime(profile.fio, profile.workplace, explicitStage)
-      : await punchTime(profile.fio, profile.workplace);
+      ? await replaceTime(profile.fio, profile.workplace, explicitStage, isPedestrian)
+      : await punchTime(profile.fio, profile.workplace, isPedestrian);
 
     if (result.notFound) {
       const msg = formatNoSheetMessage(result, profile.workplace);
@@ -1780,6 +1827,16 @@ async function punchTimeFlow(ctx, explicitStage = null) {
     }
 
     console.log('время записано', result.stage);
+
+    const xpKey = result.stage === 'start' ? 'punchStart' : 'punchEnd';
+    const xpLabel = result.stage === 'start' ? 'Старт' : 'Конец';
+    addXp(telegramId, getXpForAction(xpKey), `${xpLabel} смены`);
+    const todayIso = new Date().toISOString().split('T')[0];
+    const streak = updateStreak(telegramId, todayIso);
+    const streakBonus = getStreakBonus(streak.currentStreak);
+    if (streakBonus > 0) {
+      addXp(telegramId, streakBonus, `Бонус за стрик ${streak.currentStreak} смен`);
+    }
 
     const icon = result.stage === 'start' ? '🟢' : '🔴';
     const label = result.stage === 'start' ? 'Старт' : 'Конец';
@@ -1830,6 +1887,11 @@ async function mileageFlow(ctx, explicitStage = null) {
   const profile = await ensureProfile(ctx);
 
   if (!profile) {
+    return;
+  }
+
+  if (profile.courierType === 'pedestrian') {
+    await ctx.replyWithHTML('🚶 Пешим курьерам пробег не требуется.', getMenuForRole(telegramId));
     return;
   }
 
@@ -2376,6 +2438,8 @@ async function saveMileageFromState(ctx, mileage) {
 
     await updateMileage(state.mileageRow, state.day, state.stage, mileageValue, state.workplace);
     console.log('пробег записан');
+    addXp(telegramId, getXpForAction('mileage'), 'Запись пробега');
+    updateChallengeProgress(telegramId, 'mileages');
     logOcrFeedback(telegramId, state.ocrValue || null, mileageValue);
     setState(telegramId, {
       ...state,
@@ -2540,87 +2604,170 @@ async function showLeaderboardMenu(ctx) {
     await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
     return;
   }
-  const wpButtons = WORKPLACES.map((wp) => {
-    const key = WORKPLACE_KEY_MAP[wp] || wp;
-    return [Markup.button.callback(`🏬 ${wp}`, `lb_wp_${key}`)];
-  });
+  setState(ctx.from.id, { lb_step: 'menu' });
   await ctx.replyWithHTML(
-    '🏆 <b>Лидерборд</b>\n\nВыберите магазин:',
+    '🏆 <b>Рейтинг и достижения</b>\n\nВыберите раздел:',
     Markup.inlineKeyboard([
-      ...wpButtons,
-      [Markup.button.callback('🌐 Общий', 'lb_wp_all')],
+      [Markup.button.callback('📊 Таблица рейтинга', 'lb_table')],
+      [Markup.button.callback('🏆 Мои достижения', 'lb_achievements')],
+      [Markup.button.callback('📈 Мой прогресс', 'lb_progress')],
+      [Markup.button.callback('❓ Как работает XP', 'lb_xp_info')],
       [Markup.button.callback('🏠 В меню', 'back_to_menu')]
     ])
   );
 }
 
-async function showLeaderboardTypeMenu(ctx, workplace) {
-  const reverseMap = Object.fromEntries(Object.entries(WORKPLACE_KEY_MAP).map(([k, v]) => [v, k]));
-  const wpLabel = reverseMap[workplace] || (workplace === 'all' ? 'Общий' : workplace);
+async function showLeaderboardFilter(ctx) {
+  setState(ctx.from.id, { lb_step: 'filter' });
   await ctx.replyWithHTML(
-    `🏆 <b>Лидерборд — ${esc(wpLabel)}</b>\n\nВыберите тип рейтинга:`,
+    '🏆 <b>Лидерборд 2.0</b>\n\nВыберите тип курьеров:',
     Markup.inlineKeyboard([
-      [Markup.button.callback('🏅 Топ за день', `lb_day_${workplace}`)],
-      [Markup.button.callback('🌟 Топ за всё время', `lb_total_${workplace}`)],
-      [Markup.button.callback('⬅️ Назад', 'lb_back')]
+      [Markup.button.callback('🚗 Авто', 'lb_filter_auto'), Markup.button.callback('🚶 Пешие', 'lb_filter_pedestrian')],
+      [Markup.button.callback('🏁 Все', 'lb_filter_all')],
+      [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
     ])
   );
 }
 
-async function showLeaderboardPeriods(ctx, workplace) {
-  await ctx.replyWithHTML(
-    '🏅 <b>Топ за день</b> — максимальное кол-во заказов за один день\n\nВыберите период:',
-    Markup.inlineKeyboard([
-      [
-        Markup.button.callback('7 дней', `lb_p_7_${workplace}`),
-        Markup.button.callback('30 дней', `lb_p_30_${workplace}`)
-      ],
-      [
-        Markup.button.callback('365 дней', `lb_p_365_${workplace}`),
-        Markup.button.callback('Всё время', `lb_p_0_${workplace}`)
-      ],
-      [Markup.button.callback('⬅️ Назад', `lb_wp_${workplace}`)]
-    ])
-  );
-}
-
-async function showLeaderboardResult(ctx, type, periodDays, workplace) {
+async function showMyAchievements(ctx) {
   const telegramId = ctx.from.id;
-  const showWorkplace = workplace === 'all';
-  const entries = calculateLeaderboard(type, periodDays, workplace);
+  const profile = getFullProfile(telegramId);
+  const unlocked = getUnlockedAchievements(telegramId);
+  const allAchievements = getAllAchievements();
 
-  const wpLabels = { east: 'ИМ Восток', center: 'ИМ Центр', all: 'Общий' };
-  const wpLabel = wpLabels[workplace] || workplace;
-
-  if (entries.length === 0) {
-    await ctx.replyWithHTML(
-      `🏆 <b>Лидерборд пуст</b>\n\nПока нет данных. Отправьте сверку, чтобы появиться в рейтинге!`,
-      Markup.inlineKeyboard([
-        [Markup.button.callback('⬅️ Назад', type === 'max' ? `lb_day_${workplace}` : `lb_wp_${workplace}`)]
-      ])
-    );
-    return;
+  let text = '🏆 <b>Мои достижения</b>\n\n';
+  if (unlocked.length === 0) {
+    text += 'Пока нет разблокированных достижений.\nПродолжайте работать — они появятся!\n\n';
+  } else {
+    text += `<b>Разблокировано: ${unlocked.length} / ${allAchievements.length}</b>\n\n`;
+    for (const ach of unlocked.slice(0, 15)) {
+      text += `✅ ${ach.name} — ${ach.desc} (+${ach.reward} XP)\n`;
+    }
+    if (unlocked.length > 15) {
+      text += `\n... и ещё ${unlocked.length - 15} достижений.`;
+    }
+    text += '\n';
   }
 
-  const periodLabels = {
-    7: '7 дней',
-    30: '30 дней',
-    365: '365 дней',
-    0: 'Всё время'
-  };
+  text += '\n<i>Достижения разблокируются автоматически при выполнении условий.</i>';
 
-  const typeLabel = type === 'max' ? '🏅 Топ за день' : '🌟 Топ за всё время';
-  const periodLabel = type === 'max' ? ` (${periodLabels[periodDays] || periodDays + ' дней'})` : '';
+  await ctx.replyWithHTML(text, Markup.inlineKeyboard([
+    [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
+  ]));
+}
 
-  const text = formatLeaderboard(entries, telegramId, showWorkplace);
-  const header = `${typeLabel} — ${esc(wpLabel)}${periodLabel}\n━━━━━━━━━━━━━━━\n`;
+async function showMyProgress(ctx) {
+  const telegramId = ctx.from.id;
+  const profile = getFullProfile(telegramId);
+  const xp = getTotalXp(telegramId);
+  const rankInfo = formatRankInfo(telegramId, profile.courierType);
+  const streak = getStreak(telegramId);
 
+  let text = '📈 <b>Мой прогресс</b>\n\n';
+  text += `👤 <b>${esc(profile.fio || 'Курьер')}</b>\n`;
+  text += `🚗 Тип: ${profile.courierType === 'pedestrian' ? '🚶 Пеший' : '🚗 Авто'}\n\n`;
+  text += `⭐ ${rankInfo}\n\n`;
+  text += `🔥 Стрик: ${streak.currentStreak} смен (рекорд: ${streak.maxStreak})\n`;
+  text += `💰 Всего XP: ${xp.toLocaleString('ru-RU')}\n`;
+
+  await ctx.replyWithHTML(text, Markup.inlineKeyboard([
+    [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
+  ]));
+}
+
+async function showXpInfo(ctx) {
+  const text =
+    '❓ <b>Как работает XP</b>\n\n' +
+    'За каждое действие вы получаете очки опыта (XP):\n\n' +
+    '⏱ Начало/конец смены — <b>15 XP</b>\n' +
+    '📄 Маршрутник — <b>30 XP</b>\n' +
+    '📊 Сверка — <b>50 XP</b>\n' +
+    '💵 Сдача наличных — <b>80 XP</b>\n' +
+    '🚗 Пробег — <b>30 XP</b>\n\n' +
+    '🏆 <b>Бонусы:</b>\n' +
+    'Топ-10 дня — <b>150 XP</b>\n' +
+    'Топ-3 дня — <b>300 XP</b>\n' +
+    '🥇 1-е место — <b>800 XP</b>\n\n' +
+    '🔥 <b>Стрик:</b> каждые 5 смен подряд — <b>+50 XP</b>\n\n' +
+    'С накоплением XP растёт ваш ранг — от Новичка до Короля рейтинга! 👑';
+
+  await ctx.replyWithHTML(text, Markup.inlineKeyboard([
+    [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
+  ]));
+}
+
+async function showLeaderboardWorkplace(ctx, filter) {
+  setState(ctx.from.id, { lb_step: 'workplace', lb_filter: filter });
+  const wpButtons = WORKPLACES.map((wp) => {
+    const key = WORKPLACE_KEY_MAP[wp] || wp;
+    return Markup.button.callback(`🏬 ${wp}`, `lb_wp_${key}`);
+  });
   await ctx.replyWithHTML(
-    header + text,
+    '🏆 <b>Лидерборд</b>\n\nВыберите магазин:',
     Markup.inlineKeyboard([
-      [Markup.button.callback('⬅️ Назад', type === 'max' ? `lb_day_${workplace}` : `lb_wp_${workplace}`)]
+      wpButtons,
+      [Markup.button.callback('🏁 Все магазины', 'lb_wp_all')],
+      [Markup.button.callback('⬅️ Назад', 'lb_back_filter')]
     ])
   );
+}
+
+async function showLeaderboardPeriod(ctx, filter, workplace) {
+  setState(ctx.from.id, { lb_step: 'period', lb_filter: filter, lb_workplace: workplace });
+  await ctx.replyWithHTML(
+    '🏆 <b>Лидерборд</b>\n\nВыберите период:',
+    Markup.inlineKeyboard([
+      [
+        Markup.button.callback('📅 Неделя', `lb_p_7`),
+        Markup.button.callback('📅 Месяц', `lb_p_30`)
+      ],
+      [
+        Markup.button.callback('📅 Год', `lb_p_365`),
+        Markup.button.callback('📅 Всё время', `lb_p_0`)
+      ],
+      [Markup.button.callback('⬅️ Назад', 'lb_back_workplace')]
+    ])
+  );
+}
+
+async function showLeaderboardMode(ctx, filter, workplace, periodDays) {
+  setState(ctx.from.id, { lb_step: 'mode', lb_filter: filter, lb_workplace: workplace, lb_period: periodDays });
+  const periodLabel = periodDays === 0 ? 'за всё время' : periodDays === 7 ? 'за неделю' : periodDays === 30 ? 'за месяц' : periodDays === 365 ? 'за год' : `за ${periodDays} дней`;
+  await ctx.replyWithHTML(
+    `🏆 <b>Лидерборд</b>\n${esc(periodLabel)}\n\nВыберите режим:`,
+    Markup.inlineKeyboard([
+      [Markup.button.callback('📊 По сумме заказов', 'lb_mode_sum')],
+      [Markup.button.callback('🔥 Лучший день', 'lb_mode_max')],
+      [Markup.button.callback('⬅️ Назад', 'lb_back_period')]
+    ])
+  );
+}
+
+async function showLeaderboardResultV2(ctx) {
+  const telegramId = ctx.from.id;
+  const state = getState(telegramId);
+  const filter = state?.lb_filter || 'all';
+  const workplace = state?.lb_workplace || 'all';
+  const periodDays = state?.lb_period ?? 0;
+  const mode = state?.lb_mode || 'sum';
+
+  const showWorkplace = workplace === 'all';
+  const entries = calculateLeaderboard(mode, periodDays, workplace, filter);
+
+  const wpLabels = { east: 'ИМ Восток', center: 'ИМ Центр', all: 'Все магазины' };
+  const wpLabel = wpLabels[workplace] || workplace;
+  const filterLabel = filter === 'auto' ? '🚗 Авто' : filter === 'pedestrian' ? '🚶 Пешие' : '🏁 Все';
+  const periodLabel = periodDays === 0 ? 'всё время' : periodDays === 7 ? 'неделя' : periodDays === 30 ? 'месяц' : periodDays === 365 ? 'год' : `${periodDays} дней`;
+  const modeLabel = mode === 'max' ? '🔥 Лучший день' : '📊 По сумме';
+
+  const lines = [`🏆 <b>Рейтинг</b>\n${filterLabel} | ${esc(wpLabel)} | ${esc(periodLabel)} | ${modeLabel}\n`];
+  lines.push(formatLeaderboard(entries, telegramId, showWorkplace));
+  lines.push(`\n⬅️ <i>Нажмите «Назад» или «В меню».</i>`);
+
+  await ctx.replyWithHTML(lines.join('\n'), Markup.inlineKeyboard([
+    [Markup.button.callback('⬅️ Назад', 'lb_back_mode')],
+    [Markup.button.callback('🏠 В меню', 'back_to_menu')]
+  ]));
 }
 
 async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, ordersCount, oldOrders = 0) {
@@ -2691,7 +2838,7 @@ async function showIssuesMenu(ctx) {
   }
 
   if (buttons.length === 0) {
-    await ctx.replyWithHTML('⚠️ Раздел «Проблема с заказом» временно недоступен.', mainMenu());
+    await ctx.replyWithHTML('⚠️ Раздел «Проблема с заказом» временно недоступен.', getMenuForRole(ctx.from.id));
     return;
   }
 
@@ -2762,7 +2909,7 @@ bot.start(async (ctx) => {
       `⚠️ <b>Проблема с заказом</b> — сообщить о проблеме, бот предлагает варианты ссылками на нужный чат/бота поддержки.\n` +
       `🏆 <b>Рейтинг</b> — посмотреть рейтинг курьеров.\n` +
       `⚙️ <b>Настройки</b> — профиль, машина, магазин, также смена сотрудника и тд.`,
-      mainMenu()
+      getMenuForRole(ctx.from.id)
     );
   }
 });
@@ -3113,39 +3260,126 @@ bot.action('issues_back', async (ctx) => {
 
 const _workplaceKeys = Object.values(WORKPLACE_KEY_MAP).concat(['all']).join('|');
 
-bot.action(new RegExp(`^lb_wp_(${_workplaceKeys})$`), async (ctx) => {
+bot.action('lb_table', async (ctx) => {
   await ctx.answerCbQuery();
-  const workplace = ctx.match[1];
   try { await ctx.deleteMessage(); } catch {}
-  await showLeaderboardTypeMenu(ctx, workplace);
+  await showLeaderboardFilter(ctx);
 });
 
-bot.action(new RegExp(`^lb_day_(${_workplaceKeys})$`), async (ctx) => {
+bot.action('lb_achievements', async (ctx) => {
   await ctx.answerCbQuery();
-  const workplace = ctx.match[1];
   try { await ctx.deleteMessage(); } catch {}
-  await showLeaderboardPeriods(ctx, workplace);
+  await showMyAchievements(ctx);
 });
 
-bot.action(new RegExp(`^lb_total_(${_workplaceKeys})$`), async (ctx) => {
+bot.action('lb_progress', async (ctx) => {
   await ctx.answerCbQuery();
-  const workplace = ctx.match[1];
   try { await ctx.deleteMessage(); } catch {}
-  await showLeaderboardResult(ctx, 'total', null, workplace);
+  await showMyProgress(ctx);
 });
 
-bot.action(/^lb_p_(\d+)_(east|center|all)$/, async (ctx) => {
+bot.action('lb_xp_info', async (ctx) => {
   await ctx.answerCbQuery();
-  const days = Number(ctx.match[1]);
-  const workplace = ctx.match[2];
   try { await ctx.deleteMessage(); } catch {}
-  await showLeaderboardResult(ctx, 'max', days, workplace);
+  await showXpInfo(ctx);
 });
 
-bot.action('lb_back', async (ctx) => {
+bot.action('lb_back_menu', async (ctx) => {
   await ctx.answerCbQuery();
   try { await ctx.deleteMessage(); } catch {}
   await showLeaderboardMenu(ctx);
+});
+
+bot.action('lb_filter_auto', async (ctx) => {
+  await ctx.answerCbQuery();
+  try { await ctx.deleteMessage(); } catch {}
+  await showLeaderboardWorkplace(ctx, 'auto');
+});
+
+bot.action('lb_filter_pedestrian', async (ctx) => {
+  await ctx.answerCbQuery();
+  try { await ctx.deleteMessage(); } catch {}
+  await showLeaderboardWorkplace(ctx, 'pedestrian');
+});
+
+bot.action('lb_filter_all', async (ctx) => {
+  await ctx.answerCbQuery();
+  try { await ctx.deleteMessage(); } catch {}
+  await showLeaderboardWorkplace(ctx, 'all');
+});
+
+bot.action(new RegExp(`^lb_wp_(${_workplaceKeys})$`), async (ctx) => {
+  await ctx.answerCbQuery();
+  const workplace = ctx.match[1];
+  const state = getState(ctx.from.id);
+  const filter = state?.lb_filter || 'all';
+  try { await ctx.deleteMessage(); } catch {}
+  await showLeaderboardPeriod(ctx, filter, workplace);
+});
+
+bot.action('lb_wp_all', async (ctx) => {
+  await ctx.answerCbQuery();
+  const state = getState(ctx.from.id);
+  const filter = state?.lb_filter || 'all';
+  try { await ctx.deleteMessage(); } catch {}
+  await showLeaderboardPeriod(ctx, filter, 'all');
+});
+
+bot.action(/^lb_p_(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const days = Number(ctx.match[1]);
+  const state = getState(ctx.from.id);
+  const filter = state?.lb_filter || 'all';
+  const workplace = state?.lb_workplace || 'all';
+  try { await ctx.deleteMessage(); } catch {}
+  await showLeaderboardMode(ctx, filter, workplace, days);
+});
+
+bot.action('lb_mode_sum', async (ctx) => {
+  await ctx.answerCbQuery();
+  setState(ctx.from.id, { ...getState(ctx.from.id), lb_mode: 'sum' });
+  try { await ctx.deleteMessage(); } catch {}
+  await showLeaderboardResultV2(ctx);
+});
+
+bot.action('lb_mode_max', async (ctx) => {
+  await ctx.answerCbQuery();
+  setState(ctx.from.id, { ...getState(ctx.from.id), lb_mode: 'max' });
+  try { await ctx.deleteMessage(); } catch {}
+  await showLeaderboardResultV2(ctx);
+});
+
+bot.action('lb_back_filter', async (ctx) => {
+  await ctx.answerCbQuery();
+  try { await ctx.deleteMessage(); } catch {}
+  await showLeaderboardMenu(ctx);
+});
+
+bot.action('lb_back_workplace', async (ctx) => {
+  await ctx.answerCbQuery();
+  const state = getState(ctx.from.id);
+  const filter = state?.lb_filter || 'all';
+  try { await ctx.deleteMessage(); } catch {}
+  await showLeaderboardWorkplace(ctx, filter);
+});
+
+bot.action('lb_back_period', async (ctx) => {
+  await ctx.answerCbQuery();
+  const state = getState(ctx.from.id);
+  const filter = state?.lb_filter || 'all';
+  const workplace = state?.lb_workplace || 'all';
+  try { await ctx.deleteMessage(); } catch {}
+  await showLeaderboardPeriod(ctx, filter, workplace);
+});
+
+bot.action('lb_back_mode', async (ctx) => {
+  await ctx.answerCbQuery();
+  const state = getState(ctx.from.id);
+  const filter = state?.lb_filter || 'all';
+  const workplace = state?.lb_workplace || 'all';
+  const periodDays = state?.lb_period ?? 0;
+  try { await ctx.deleteMessage(); } catch {}
+  await showLeaderboardMode(ctx, filter, workplace, periodDays);
 });
 
 bot.action('route_sheet_done', async (ctx) => {
@@ -3161,11 +3395,14 @@ bot.action('route_sheet_done', async (ctx) => {
       sent > 0
         ? `✅ Завершено. Отправлено фото: <b>${sent}</b>.`
         : '✅ Завершено. Фото не отправлены.',
-      mainMenu()
+      courierMainMenu(ctx.from.id)
     );
     return;
   }
-  await ctx.replyWithHTML('✅ Завершено. Спасибо.', mainMenu());
+  // Маршрутник завершён — начисляем XP
+  addXp(ctx.from.id, getXpForAction('routeSheet'), 'Маршрутник');
+  updateChallengeProgress(ctx.from.id, 'routeSheets');
+  await ctx.replyWithHTML('✅ Завершено. Спасибо.', courierMainMenu(ctx.from.id));
 });
 
 bot.action('help_commands', async (ctx) => {
@@ -3189,8 +3426,12 @@ bot.action('role_courier', async (ctx) => {
     return;
   }
   setUserField(telegramId, 'role', 'courier');
+  setUserField(telegramId, 'courierType', 'auto');
+  if (state?.workplace) {
+    setUserField(telegramId, 'workplace', state.workplace);
+  }
   clearState(telegramId);
-  await ctx.replyWithHTML('✅ Роль: <b>Курьер</b>\n\nТеперь введите номер машины.');
+  await ctx.replyWithHTML('✅ Роль: <b>Курьер</b> (авто).\n\nТеперь введите номер машины.');
   await askForCarNumber(ctx, state.fio);
 });
 
@@ -3235,6 +3476,8 @@ bot.action('cash_submit_yes', async (ctx) => {
       amount: amount,
       action: 'self_cleared'
     });
+    addXp(telegramId, getXpForAction('cashSubmit'), 'Сдача наличных');
+    updateChallengeProgress(telegramId, 'cashSubmits');
     try {
       await ctx.editMessageText(`✅ <b>${esc(courierFio)}</b>, сдача <code>${esc(formatted)}</code> ₽ подтверждена.`);
     } catch (e) { /* ignore */ }
@@ -3414,6 +3657,9 @@ bot.action(/^appr_([0-9a-f]+)$/, async (ctx) => {
     amount: reminder.amount,
     action: 'approved'
   });
+
+  addXp(reminder.courierId, getXpForAction('cashSubmit'), 'Сдача наличных (подтверждено)');
+  updateChallengeProgress(reminder.courierId, 'cashSubmits');
 
   deleteReminder(shortId);
 
@@ -3597,7 +3843,7 @@ bot.action('retry_mileage_photo', async (ctx) => {
   const state = getState(ctx.from.id);
 
   if (!state?.mileageRow || !state?.day || !state?.stage) {
-    await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.mileage}».`, mainMenu());
+    await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.mileage}».`, getMenuForRole(ctx.from.id));
     return;
   }
 
@@ -3718,7 +3964,7 @@ bot.action('edit_mileage', async (ctx) => {
   const state = getState(ctx.from.id);
 
   if (!state?.mileageRow || !state?.day || !state?.stage) {
-    await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.mileage}».`, mainMenu());
+    await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.mileage}».`, getMenuForRole(ctx.from.id));
     return;
   }
 
@@ -3771,8 +4017,11 @@ async function finalizeReconciliationPostSend(ctx, state, telegramId, totalOrder
     try {
       const dayKey = getLbTodayKey();
       const oldOrders = getLbDayOrders(String(telegramId), dayKey);
-      recordLeaderboardOrders(String(telegramId), state.fio, state.workplace, totalOrders);
+      const profileLb = getFullProfile(telegramId);
+      recordLeaderboardOrders(String(telegramId), state.fio, state.workplace, totalOrders, profileLb.courierType);
       await handleLeaderboardNotifications(ctx, String(telegramId), state.fio, state.workplace, totalOrders, oldOrders);
+      addXp(telegramId, getXpForAction('reconciliation'), 'Сверка');
+      updateChallengeProgress(telegramId, 'reconciliations');
     } catch (lbErr) {
       console.error('leaderboard record error', lbErr.message || lbErr);
       errors.push('рейтинг');
@@ -3902,7 +4151,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       const ocrWarning = !state.reconciliationPhoto1TotalOrders && state.reconciliationPhoto1OcrReason
         ? `\n\n⚠️ OCR не распознал заказы/наличные. Фото отправлены, но данные не записаны автоматически.`
         : '';
-      await ctx.replyWithHTML(`✅ <b>Все фото (2 шт.) отправлены.</b>${ocrWarning}`, mainMenu());
+      await ctx.replyWithHTML(`✅ <b>Все фото (2 шт.) отправлены.</b>${ocrWarning}`, getMenuForRole(ctx.from.id));
 
       const totalOrders = state.reconciliationPhoto1TotalOrders;
       await finalizeReconciliationPostSend(ctx, state, telegramId, totalOrders);
@@ -3976,7 +4225,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     const ocrWarning = shouldWarnAboutReconciliationOcr(cashInfo)
       ? `\n\n⚠️ OCR не распознал заказы/наличные. Фото отправлено, но данные не записаны автоматически.`
       : '';
-    await ctx.replyWithHTML(`✅ <b>Все фото (${total} шт.) отправлены.</b>${ocrWarning}`, mainMenu());
+    await ctx.replyWithHTML(`✅ <b>Все фото (${total} шт.) отправлены.</b>${ocrWarning}`, getMenuForRole(ctx.from.id));
 
     const totalOrders = cashInfo.totalOrders;
     await finalizeReconciliationPostSend(ctx, state, telegramId, totalOrders);
@@ -4075,7 +4324,7 @@ bot.on('photo', async (ctx) => {
   }
 
   if (!state?.awaitingMileagePhoto) {
-    await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.mileage}».`, mainMenu());
+    await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.mileage}».`, getMenuForRole(ctx.from.id));
     return;
   }
 
@@ -4381,6 +4630,25 @@ async function startBot(retry = 0) {
     const removedMonths = cleanupOldMonths();
     if (removedMonths > 0) {
       console.log(`cleaned up ${removedMonths} old month(s) from storage`);
+    }
+
+    // Автоматическая генерация челленджей для всех курьеров
+    try {
+      const allIds = getAllUserIds();
+      let generated = 0;
+      for (const id of allIds) {
+        const role = getUserRole(id);
+        if (role !== 'courier') continue;
+        const profile = getFullProfile(id);
+        if (!profile.courierType) continue;
+        generateWeeklyChallenges(id, profile.courierType);
+        generated++;
+      }
+      if (generated > 0) {
+        console.log(`weekly challenges generated for ${generated} couriers`);
+      }
+    } catch (e) {
+      console.error('weekly challenges generation error', e.message);
     }
 
     // ВАЖНО: в Telegraf 4 у bot.launch() нет коллбэка после старта — он

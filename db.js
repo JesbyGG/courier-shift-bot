@@ -49,6 +49,39 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_pending_cash_workplace ON pending_cash(workplace);
+
+  CREATE TABLE IF NOT EXISTS xp_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegramId TEXT,
+    amount INTEGER,
+    reason TEXT,
+    createdAt TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS user_achievements (
+    telegramId TEXT,
+    achievementId TEXT,
+    unlockedAt TEXT,
+    PRIMARY KEY (telegramId, achievementId)
+  );
+
+  CREATE TABLE IF NOT EXISTS challenges (
+    weekId TEXT,
+    telegramId TEXT,
+    type TEXT,
+    target INTEGER,
+    current INTEGER DEFAULT 0,
+    completed INTEGER DEFAULT 0,
+    reward INTEGER,
+    PRIMARY KEY (weekId, telegramId, type)
+  );
+
+  CREATE TABLE IF NOT EXISTS streaks (
+    telegramId TEXT PRIMARY KEY,
+    currentStreak INTEGER,
+    maxStreak INTEGER,
+    lastShiftDate TEXT
+  );
 `);
 
 // Migration logic

@@ -18,12 +18,31 @@ function mainMenu() {
   ]).resize();
 }
 
-function profileMenu() {
-  return Markup.keyboard([
-    [BUTTONS.changeCar, BUTTONS.changeWorkplace],
-    [BUTTONS.changeDevice, BUTTONS.switchUser],
-    [BUTTONS.backToSettings]
-  ]).resize();
+function courierMainMenu(telegramId) {
+  const courierType = getUserField(telegramId, 'courierType') || 'auto';
+  const rows = [
+    [BUTTONS.punchTime]
+  ];
+  if (courierType !== 'pedestrian') {
+    rows.push([BUTTONS.mileage]);
+  }
+  rows.push([BUTTONS.routeSheet, BUTTONS.reconciliation]);
+  rows.push([BUTTONS.cashCheck, BUTTONS.issues]);
+  rows.push([BUTTONS.leaderBoard, BUTTONS.settings]);
+  return Markup.keyboard(rows).resize();
+}
+
+function profileMenu(telegramId) {
+  const courierType = getUserField(telegramId, 'courierType') || 'auto';
+  const rows = [];
+  if (courierType !== 'pedestrian') {
+    rows.push([BUTTONS.changeCar, BUTTONS.changeWorkplace]);
+  } else {
+    rows.push([BUTTONS.changeWorkplace]);
+  }
+  rows.push([BUTTONS.changeDevice, BUTTONS.switchUser]);
+  rows.push([BUTTONS.backToSettings]);
+  return Markup.keyboard(rows).resize();
 }
 
 function workplaceMenu() {
@@ -71,7 +90,10 @@ function logistProfileMenu() {
 
 function getMenuForRole(telegramId) {
   const role = getUserRole(telegramId);
-  return role === 'logist' ? logistMainMenu(telegramId) : mainMenu();
+  if (role === 'logist') {
+    return logistMainMenu(telegramId);
+  }
+  return courierMainMenu(telegramId);
 }
 
 function getSettingsMenuForRole(telegramId) {
@@ -98,7 +120,7 @@ function getProfileMenuForRole(telegramId) {
   if (role === 'logist') {
     return logistProfileMenu();
   }
-  return profileMenu();
+  return profileMenu(telegramId);
 }
 
 function roleChoiceKeyboard() {
@@ -215,6 +237,7 @@ function debtorListKeyboard(debtors, logistWorkplace) {
 
 module.exports = {
   mainMenu,
+  courierMainMenu,
   profileMenu,
   workplaceMenu,
   deviceMenu,
