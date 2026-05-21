@@ -181,9 +181,7 @@ function checkNotifications(telegramId, fio, workplace, currentDayOrders) {
       record.personalRecord = currentDayOrders;
       _setRecord(telegramId, record);
     }
-    if (previousRecord && previousRecord > 0) {
-      return [{ type: 'personal_record', value: currentDayOrders, previous: previousRecord }];
-    }
+    return [{ type: 'personal_record', value: currentDayOrders, previous: previousRecord || 0 }];
   }
   return [];
 }
@@ -194,8 +192,37 @@ function getDayOrders(telegramId, dayKey) {
   return record.dailyOrders[dayKey] || 0;
 }
 
+function getWorkplaceRecord(workplace, dayKey) {
+  const root = _getRecord('__workplaceRecords__') || {};
+  return root[workplace]?.[dayKey] || null;
+}
+
+function setWorkplaceRecord(workplace, dayKey, orders, fio) {
+  const root = _getRecord('__workplaceRecords__') || {};
+  if (!root[workplace]) root[workplace] = {};
+  root[workplace][dayKey] = { orders, fio, at: new Date().toISOString() };
+  _setRecord('__workplaceRecords__', root);
+  return root[workplace][dayKey];
+}
+
+function getDailyTop3(workplace, dayKey) {
+  const records = _getAllRecords();
+  const entries = [];
+  for (const [tid, record] of Object.entries(records)) {
+    if (record.workplace !== workplace) continue;
+    if (!record.dailyOrders || !record.dailyOrders[dayKey]) continue;
+    entries.push({
+      telegramId: tid,
+      fio: record.fio || 'Неизвестный',
+      orders: record.dailyOrders[dayKey]
+    });
+  }
+  entries.sort((a, b) => b.orders - a.orders);
+  return entries.slice(0, 3);
+}
+
 function findOvertakenCouriers(telegramId, workplace, oldOrders, newOrders, dayKey) {
-  if (oldOrders <= 0 || newOrders <= oldOrders) return [];
+  if (newOrders <= oldOrders) return [];
   const records = _getAllRecords();
   const overtaken = [];
   for (const [tid, record] of Object.entries(records)) {
@@ -222,6 +249,9 @@ module.exports = {
   checkNotifications,
   flushNow,
   getDayOrders,
+  getWorkplaceRecord,
+  setWorkplaceRecord,
+  getDailyTop3,
   findOvertakenCouriers,
   getTodayKey
 };

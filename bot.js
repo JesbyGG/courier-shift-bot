@@ -59,7 +59,7 @@ const {
   cleanupStaleReminders
 } = require('./services/storage');
 const { recognizeMileage, isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold } = require('./services/mileageOcr');
-const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, flushNow: flushLeaderboardNow, getDayOrders: getLbDayOrders, findOvertakenCouriers, getTodayKey: getLbTodayKey } = require('./services/leaderboard');
+const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, flushNow: flushLeaderboardNow, getDayOrders: getLbDayOrders, getWorkplaceRecord, setWorkplaceRecord, getDailyTop3, findOvertakenCouriers, getTodayKey: getLbTodayKey } = require('./services/leaderboard');
 const { addXp, getTotalXp, getRank, getRankProgress, formatRankInfo, getXpForAction } = require('./services/xp');
 const { checkMilestoneAchievements, unlockAchievement, getUnlockedAchievements, getAllAchievements } = require('./services/achievements');
 const { updateStreak, getStreak, getStreakBonus } = require('./services/streak');
@@ -2605,6 +2605,8 @@ async function showLeaderboardMenu(ctx) {
     return;
   }
   setState(ctx.from.id, { lb_step: 'menu' });
+  const settings = getNotificationSettings(ctx.from.id);
+  const notifStatus = Object.values(settings).some(v => v) ? 'ВКЛ ✅' : 'ВЫКЛ ❌';
   await ctx.replyWithHTML(
     '🏆 <b>Рейтинг и достижения</b>\n\nВыберите раздел:',
     Markup.inlineKeyboard([
@@ -2613,6 +2615,7 @@ async function showLeaderboardMenu(ctx) {
       [Markup.button.callback('🏆 Мои достижения', 'lb_achievements')],
       [Markup.button.callback('📈 Мой прогресс', 'lb_progress')],
       [Markup.button.callback('❓ Как работает XP', 'lb_xp_info')],
+      [Markup.button.callback(`🔔 Уведомления рейтинга: ${notifStatus}`, 'lb_notifications')],
       [Markup.button.callback('🏠 В меню', 'back_to_menu')]
     ])
   );
@@ -2695,6 +2698,31 @@ async function showXpInfo(ctx) {
   await ctx.replyWithHTML(text, Markup.inlineKeyboard([
     [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
   ]));
+}
+
+async function showNotificationSettings(ctx) {
+  const telegramId = ctx.from.id;
+  const settings = getNotificationSettings(telegramId);
+
+  const toggle = (key, label, emoji) => {
+    const isOn = settings[key];
+    return Markup.button.callback(`${isOn ? '✅' : '❌'} ${label}`, `notif_${key}`);
+  };
+
+  await ctx.replyWithHTML(
+    '🔔 <b>Настройки уведомлений рейтинга</b>\n\n' +
+    'Нажмите, чтобы включить или выключить:\n\n' +
+    '✅ — включено\n' +
+    '❌ — выключено',
+    Markup.inlineKeyboard([
+      [toggle('personalRecord', 'Личный рекорд')],
+      [toggle('overtake', 'Обгоны в рейтинге')],
+      [toggle('workplaceRecord', 'Рекорд точки')],
+      [toggle('dailyLeader', 'Лидер дня / сброс')],
+      [toggle('top3Change', 'Изменение топ-3')],
+      [Markup.button.callback('⬅️ Назад к рейтингу', 'lb_back_menu')]
+    ])
+  );
 }
 
 async function showWeeklyChallenges(ctx) {
@@ -2795,21 +2823,33 @@ async function showLeaderboardResultV2(ctx) {
 
 async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, ordersCount, oldOrders = 0) {
   try {
-    const notifications = checkLeaderboardNotifications(telegramId, fio, workplace, ordersCount);
-    for (const notif of notifications) {
-      if (notif.type === 'personal_record') {
-        await ctx.replyWithHTML(
-          `🎉 <b>Новый личный рекорд!</b>\n\nВы доставили <b>${notif.value}</b> заказов за день!\nПредыдущий рекорд: ${notif.previous} заказов.`
-        );
+    // Защита от спама: уведомления только при увеличении счёта
+    if (ordersCount <= oldOrders) return;
+
+    const settings = getNotificationSettings(telegramId);
+    const dayKey = getLbTodayKey();
+
+    // 1. Личный рекорд
+    if (settings.personalRecord) {
+      const notifications = checkLeaderboardNotifications(telegramId, fio, workplace, ordersCount);
+      for (const notif of notifications) {
+        if (notif.type === 'personal_record') {
+          await ctx.replyWithHTML(
+            `🎉 <b>Новый личный рекорд!</b>\n\nВы доставили <b>${notif.value}</b> заказов за день!` +
+            (notif.previous > 0 ? `\nПредыдущий рекорд: ${notif.previous} заказов.` : '')
+          );
+        }
       }
     }
 
-    if (oldOrders > 0 && ordersCount > oldOrders && workplace) {
-      const dayKey = getLbTodayKey();
+    // 2. Обгоны в рейтинге
+    if (settings.overtake && workplace) {
       const overtaken = findOvertakenCouriers(telegramId, workplace, oldOrders, ordersCount, dayKey)
         .filter(v => getUserRole(v.telegramId) !== 'logist');
 
       for (const victim of overtaken) {
+        const victimSettings = getNotificationSettings(victim.telegramId);
+        if (!victimSettings.overtake) continue;
         try {
           await bot.telegram.sendMessage(victim.telegramId,
             `⚠️ <b>Вас обогнали в рейтинге!</b>\n\n` +
@@ -2834,8 +2874,169 @@ async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, o
         }
       }
     }
+
+    // 3. Рекорд точки + лидер дня + топ-3
+    if (workplace) {
+      const currentTop3 = getDailyTop3(workplace, dayKey);
+      const previousTop3 = [];
+
+      // Получаем предыдущий рекорд точки для проверки
+      const previousRecord = getWorkplaceRecord(workplace, dayKey);
+      const wasRecord = !previousRecord || ordersCount > previousRecord.orders;
+
+      if (wasRecord && settings.workplaceRecord) {
+        setWorkplaceRecord(workplace, dayKey, ordersCount, fio);
+        await sendWorkplaceRecordNotifications(workplace, dayKey, { fio, orders: ordersCount }, telegramId);
+      }
+
+      // Лидер дня
+      if (currentTop3[0] && currentTop3[0].telegramId === String(telegramId)) {
+        await sendDailyLeaderNotification(workplace, dayKey, currentTop3[0]);
+      }
+
+      // Проверка сброса с 1-го места
+      const prevLeader = previousRecord ? { telegramId: previousRecord.fio } : null;
+      if (previousRecord && previousRecord.fio !== fio && currentTop3[0] && currentTop3[0].telegramId === String(telegramId)) {
+        // Найти бывшего лидера по workplace records
+        const allIds = getAllUserIds();
+        for (const id of allIds) {
+          if (id === String(telegramId)) continue;
+          const userFio = getUserField(id, 'fio');
+          if (userFio === previousRecord.fio) {
+            const victimSettings = getNotificationSettings(id);
+            if (victimSettings.dailyLeader) {
+              try {
+                await bot.telegram.sendMessage(id,
+                  `📉 <b>Вас сбросили с 1-го места!</b>\n\n` +
+                  `${esc(fio)} обогнал вас с <b>${ordersCount}</b> заказами.\n` +
+                  `У вас сейчас — посмотрите свою сверку.`,
+                  { parse_mode: 'HTML' }
+                );
+              } catch (e) {
+                console.error('leader dethroned notify error', id, e.message || e);
+              }
+            }
+            break;
+          }
+        }
+      }
+
+      // Топ-3 изменился
+      if (settings.top3Change) {
+        await sendTop3ChangeNotifications(workplace, dayKey, previousTop3, currentTop3, telegramId);
+      }
+    }
   } catch (err) {
     console.error('leaderboard notification error', err.message || err);
+  }
+}
+
+function getNotificationSettings(telegramId) {
+  const defaults = {
+    personalRecord: true,
+    overtake: true,
+    workplaceRecord: true,
+    dailyLeader: true,
+    top3Change: true
+  };
+  const record = getUserField(telegramId, 'notificationSettings');
+  if (!record) return defaults;
+  try {
+    const parsed = typeof record === 'string' ? JSON.parse(record) : record;
+    return { ...defaults, ...parsed };
+  } catch (e) {
+    return defaults;
+  }
+}
+
+async function sendWorkplaceRecordNotifications(workplace, dayKey, recordInfo, senderId) {
+  const settings = getNotificationSettings(senderId);
+  if (!settings.workplaceRecord) return;
+
+  const records = getDailyTop3(workplace, dayKey);
+  if (records.length === 0) return;
+
+  const record = getWorkplaceRecord(workplace, dayKey);
+  if (!record) return;
+
+  let text = `🏆 <b>Новый рекорд точки ${esc(workplace)}!</b>\n\n`;
+  text += `🥇 <b>${esc(record.fio)}</b> — <b>${record.orders}</b> заказов (новый рекорд!)\n`;
+  if (records[1]) text += `🥈 ${esc(records[1].fio)} — ${records[1].orders} заказов\n`;
+  if (records[2]) text += `🥉 ${esc(records[2].fio)} — ${records[2].orders} заказов\n`;
+  text += `\n🔥 Рекорд растёт! Продолжайте в том же духе!`;
+
+  const all = getAllUserIds();
+  for (const id of all) {
+    if (id === String(senderId)) continue;
+    const role = getUserRole(id);
+    if (role === 'logist') continue;
+    const wp = getUserField(id, 'workplace');
+    if (wp !== workplace) continue;
+    const userSettings = getNotificationSettings(id);
+    if (!userSettings.workplaceRecord) continue;
+    try {
+      await bot.telegram.sendMessage(id, text, { parse_mode: 'HTML' });
+    } catch (e) {
+      console.error('workplace record notify error', id, e.message || e);
+    }
+  }
+}
+
+async function sendDailyLeaderNotification(workplace, dayKey, leader) {
+  const settings = getNotificationSettings(leader.telegramId);
+  if (!settings.dailyLeader) return;
+
+  try {
+    await bot.telegram.sendMessage(leader.telegramId,
+      `🥇 <b>Вы лидер дня в ${esc(workplace)}!</b>\n\n` +
+      `<b>${leader.orders}</b> заказов. Так держать!`,
+      { parse_mode: 'HTML' }
+    );
+  } catch (e) {
+    console.error('daily leader notify error', leader.telegramId, e.message || e);
+  }
+}
+
+async function sendTop3ChangeNotifications(workplace, dayKey, previousTop3, currentTop3, senderId) {
+  const changed = JSON.stringify(previousTop3.map(x => x.telegramId).sort()) !== JSON.stringify(currentTop3.map(x => x.telegramId).sort());
+  if (!changed) return;
+
+  let text = `🔔 <b>Топ-3 ${esc(workplace)} изменился!</b>\n\n`;
+  if (currentTop3[0]) text += `🥇 ${esc(currentTop3[0].fio)} — ${currentTop3[0].orders}\n`;
+  if (currentTop3[1]) text += `🥈 ${esc(currentTop3[1].fio)} — ${currentTop3[1].orders}\n`;
+  if (currentTop3[2]) text += `🥉 ${esc(currentTop3[2].fio)} — ${currentTop3[2].orders}\n`;
+
+  const all = getAllUserIds();
+  for (const id of all) {
+    if (id === String(senderId)) continue;
+    const role = getUserRole(id);
+    if (role === 'logist') continue;
+    const wp = getUserField(id, 'workplace');
+    if (wp !== workplace) continue;
+    const settings = getNotificationSettings(id);
+    if (!settings.top3Change) continue;
+
+    // Найти позицию получателя
+    const recipientEntry = currentTop3.find(x => x.telegramId === id);
+    if (recipientEntry) {
+      text += `\n🏅 Вы на ${recipientEntry.rank || '?'} месте!`;
+    } else {
+      const allRecords = [];
+      for (const [tid, r] of Object.entries(_getAllRecords())) {
+        if (r.workplace === workplace && r.dailyOrders && r.dailyOrders[dayKey]) {
+          allRecords.push({ telegramId: tid, orders: r.dailyOrders[dayKey] });
+        }
+      }
+      allRecords.sort((a, b) => b.orders - a.orders);
+      const idx = allRecords.findIndex(x => x.telegramId === id);
+      if (idx >= 0) text += `\n📊 Вы на ${idx + 1} месте (${allRecords[idx].orders} заказов).`;
+    }
+
+    try {
+      await bot.telegram.sendMessage(id, text, { parse_mode: 'HTML' });
+    } catch (e) {
+      console.error('top3 change notify error', id, e.message || e);
+    }
   }
 }
 
@@ -3318,6 +3519,25 @@ bot.action('lb_back_menu', async (ctx) => {
   try { await ctx.deleteMessage(); } catch {}
   await showLeaderboardMenu(ctx);
 });
+
+bot.action('lb_notifications', async (ctx) => {
+  await ctx.answerCbQuery();
+  try { await ctx.deleteMessage(); } catch {}
+  await showNotificationSettings(ctx);
+});
+
+const NOTIFICATION_KEYS = ['personalRecord', 'overtake', 'workplaceRecord', 'dailyLeader', 'top3Change'];
+for (const key of NOTIFICATION_KEYS) {
+  bot.action(`notif_${key}`, async (ctx) => {
+    await ctx.answerCbQuery();
+    const telegramId = ctx.from.id;
+    const current = getNotificationSettings(telegramId);
+    current[key] = !current[key];
+    setUserField(telegramId, 'notificationSettings', JSON.stringify(current));
+    try { await ctx.deleteMessage(); } catch {}
+    await showNotificationSettings(ctx);
+  });
+}
 
 bot.action('lb_filter_auto', async (ctx) => {
   await ctx.answerCbQuery();
