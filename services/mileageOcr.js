@@ -171,7 +171,7 @@ async function recognizeMileageWithRapidOcr(imageBuffer, options = {}) {
 
   try {
     const response = await enqueueOcrRequest(() => axios.post(rapidOcrUrl, imageBuffer, {
-      timeout: 120000,
+      timeout: 30000,
       headers: { 'Content-Type': 'application/octet-stream' }
     }));
     const parsed = response.data;
@@ -244,13 +244,15 @@ async function recognizeMileage(ctx, fileId, options = {}) {
   const startTime = Date.now();
   const onStatus = options.onStatus || null;
 
-  let sourceBuffer;
-  try {
-    sourceBuffer = await downloadTelegramFile(ctx, fileId);
-    console.log('OCR timing: download', Date.now() - startTime, 'ms');
-  } catch (error) {
-    console.error('OCR download error', error.message);
-    return null;
+  let sourceBuffer = options.sourceBuffer || null;
+  if (!sourceBuffer) {
+    try {
+      sourceBuffer = await downloadTelegramFile(ctx, fileId);
+      console.log('OCR timing: download', Date.now() - startTime, 'ms');
+    } catch (error) {
+      console.error('OCR download error', error.message);
+      return null;
+    }
   }
 
   if (!isValidImageBuffer(sourceBuffer)) {

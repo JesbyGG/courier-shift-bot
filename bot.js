@@ -4655,7 +4655,9 @@ async function handleMileagePhoto(ctx, state, fileId) {
   const chatId = ctx.chat.id;
   const telegram = ctx.telegram;
 
-  processMileagePhotoInBackground(telegram, chatId, telegramId, state, fileId, photoState);
+  processMileagePhotoInBackground(telegram, chatId, telegramId, state, fileId, photoState).catch((err) => {
+    console.error('processMileagePhotoInBackground unhandled error:', err);
+  });
 }
 
 async function processMileagePhotoInBackground(telegram, chatId, telegramId, originalState, fileId, photoState) {
@@ -4668,17 +4670,22 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
   };
 
   try {
+    console.log('mileage bg: start processing', { telegramId, fileId });
+
     const [recognitionOptions] = await Promise.all([
       buildMileageRecognitionOptions(originalState),
       forwardPhoto({ telegram }, fileId, buildPhotoCaption(originalState), 'work').catch((error) => {
         console.error('telegram send photo error', error);
       })
     ]);
+    console.log('mileage bg: recognition options built', recognitionOptions);
 
     const sourceBuffer = await downloadTelegramFile({ telegram }, fileId);
+    console.log('mileage bg: file downloaded', { size: sourceBuffer?.length });
 
     const ocrResult = await recognizeMileage({ telegram, chat: { id: chatId } }, fileId, {
       ...recognitionOptions,
+      sourceBuffer,
       onStatus: async (msg) => {
         try { await sendMsg(msg); } catch (e) { /* ignore */ }
       }
@@ -4686,6 +4693,7 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
 
     const mileageValue = ocrResult?.mileage || null;
     const ocrCandidates = ocrResult?.candidates || [];
+    console.log('mileage bg: OCR result', { mileageValue, candidateCount: ocrCandidates.length });
 
     if (!mileageValue) {
       if (sourceBuffer) {
