@@ -63,7 +63,7 @@ const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeade
 const { addXp, getTotalXp, getRank, getRankProgress, formatRankInfo, getXpForAction } = require('./services/xp');
 const { checkMilestoneAchievements, unlockAchievement, getUnlockedAchievements, getAllAchievements } = require('./services/achievements');
 const { updateStreak, getStreak, getStreakBonus } = require('./services/streak');
-const { updateChallengeProgress, generateWeeklyChallenges } = require('./services/challenges');
+const { updateChallengeProgress, generateWeeklyChallenges, getChallenges } = require('./services/challenges');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, roundMinutesToHalfHour } = require('./utils');
 const { registerSheetCommand } = require('./sheetCommand');
 const { WORKPLACES, DEVICES, ROLES, LIMITS, WORKPLACE_FEATURES, WORKPLACE_KEY_MAP, BUTTONS } = require('./config');
@@ -2609,6 +2609,7 @@ async function showLeaderboardMenu(ctx) {
     '🏆 <b>Рейтинг и достижения</b>\n\nВыберите раздел:',
     Markup.inlineKeyboard([
       [Markup.button.callback('📊 Таблица рейтинга', 'lb_table')],
+      [Markup.button.callback('🔥 Челленджи недели', 'lb_challenges')],
       [Markup.button.callback('🏆 Мои достижения', 'lb_achievements')],
       [Markup.button.callback('📈 Мой прогресс', 'lb_progress')],
       [Markup.button.callback('❓ Как работает XP', 'lb_xp_info')],
@@ -2690,6 +2691,28 @@ async function showXpInfo(ctx) {
     '🥇 1-е место — <b>800 XP</b>\n\n' +
     '🔥 <b>Стрик:</b> каждые 5 смен подряд — <b>+50 XP</b>\n\n' +
     'С накоплением XP растёт ваш ранг — от Новичка до Короля рейтинга! 👑';
+
+  await ctx.replyWithHTML(text, Markup.inlineKeyboard([
+    [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
+  ]));
+}
+
+async function showWeeklyChallenges(ctx) {
+  const telegramId = ctx.from.id;
+  const profile = getFullProfile(telegramId);
+  generateWeeklyChallenges(telegramId, profile.courierType);
+  const challenges = getChallenges(telegramId);
+
+  let text = '🔥 <b>Челленджи недели</b>\n\n';
+  if (challenges.length === 0) {
+    text += 'Пока нет активных челленджей. Приходите в понедельник!\n';
+  } else {
+    for (const ch of challenges) {
+      const status = ch.completed ? '✅ Выполнено' : `⏳ ${ch.current} / ${ch.target}`;
+      text += `• <b>${ch.name}</b>\n  ${ch.desc}\n  Награда: <b>${ch.reward} XP</b> — ${status}\n\n`;
+    }
+  }
+  text += '<i>Челленджи обновляются каждый понедельник.</i>';
 
   await ctx.replyWithHTML(text, Markup.inlineKeyboard([
     [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
@@ -3264,6 +3287,12 @@ bot.action('lb_table', async (ctx) => {
   await ctx.answerCbQuery();
   try { await ctx.deleteMessage(); } catch {}
   await showLeaderboardFilter(ctx);
+});
+
+bot.action('lb_challenges', async (ctx) => {
+  await ctx.answerCbQuery();
+  try { await ctx.deleteMessage(); } catch {}
+  await showWeeklyChallenges(ctx);
 });
 
 bot.action('lb_achievements', async (ctx) => {
