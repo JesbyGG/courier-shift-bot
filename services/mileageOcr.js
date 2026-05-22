@@ -195,7 +195,7 @@ async function recognizeMileageWithRapidOcr(imageBuffer, options = {}) {
 
   try {
     const response = await enqueueOcrRequest(() => axios.post(rapidOcrUrl, imageBuffer, {
-      timeout: 30000,
+      timeout: 120000,
       headers: { 'Content-Type': 'application/octet-stream' }
     }));
     const parsed = response.data;

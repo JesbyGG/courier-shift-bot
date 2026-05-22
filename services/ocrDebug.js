@@ -49,7 +49,7 @@ function saveOcrDebugImage(imageBuffer, meta) {
     const sizeMb = getFileSizeMb(filePath);
 
     const stmt = db.prepare(
-      'INSERT INTO ocr_debug (fileName, filePath, timestamp, telegramId, stage, workplace, fio, fileId, ocrResult, userCorrectedValue, status, sizeMb) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT OR REPLACE INTO ocr_debug (fileName, filePath, timestamp, telegramId, stage, workplace, fio, fileId, ocrResult, userCorrectedValue, status, sizeMb) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     stmt.run(
       fileName,

@@ -14,6 +14,7 @@ module.exports = function setupCourier(bot, services) {
     backToMainMenu,
     replaceTimeAction,
     WORKPLACE_FEATURES, sendCommandsList,
+    manualMileageKeyboard,
     Markup, BUTTONS, esc
   } = services;
 
