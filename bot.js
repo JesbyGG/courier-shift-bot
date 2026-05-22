@@ -3750,7 +3750,7 @@ async function handleMileagePhoto(ctx, state, fileId) {
   const chatId = ctx.chat.id;
   const telegram = ctx.telegram;
 
-  const MILEAGE_TIMEOUT_MS = 45000;
+  const MILEAGE_TIMEOUT_MS = 120000;
 
   const bgPromise = processMileagePhotoInBackground(telegram, chatId, telegramId, photoState, fileId, photoState);
 
