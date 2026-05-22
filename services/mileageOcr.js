@@ -183,7 +183,7 @@ function smartPickFromGroups(groups, options = {}) {
   return { mileage: null, candidates: ranked.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence })) };
 }
 
-// AI vision logic completely removed
+// OCR-only mode
 
 async function recognizeMileageWithRapidOcr(imageBuffer, options = {}) {
   const rapidOcrUrl = process.env.RAPIDOCR_URL || '';

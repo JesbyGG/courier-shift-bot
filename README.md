@@ -404,7 +404,7 @@ FUN_SUCCESS_STICKERS=CAACAgIAAxkBAAIBQ3example3
 | `googleSheets.js` | Работа с Google Sheets API, lookup курьеров, запись времени/пробега |
 | `storage.js` | Локальный JSON-стор: `users.json` (профили) и `states.json` (in-flight состояние) |
 | `utils.js` | Чистые функции: округление времени, формат колонок, нормализация ФИО |
-| `mileageOcr.js` | Распознавание пробега через RapidOCR + AI vision |
+| `mileageOcr.js` | Распознавание пробега через RapidOCR |
 | `sheetCommand.js` | Команда `/sheet` для админов — привязка Google-таблиц |
 | `config.js` | Константы: WORKPLACES, DEVICES, лимиты, шаблон таблицы |
 | `rapidocr_server.py` | Локальный HTTP-сервер RapidOCR на Python |
