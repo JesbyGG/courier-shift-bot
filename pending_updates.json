@@ -84,5 +84,23 @@
     ],
     "updates": [],
     "message": "🆕 <b><i>Обновление бота v2.4.7</i></b>\n\n<b>Коротко, что изменили:</b>\n• 🤖 Подправили сценарии работы и стабильность.\n\n💙 Хорошей смены!"
+  },
+  "2.4.8": {
+    "changedFiles": [
+      "bot.js"
+    ],
+    "updates": [
+      "🔧 Исправлено: Increase MILEAGE_TIMEOUT_MS from 45s to 120s to match OCR server processing time",
+      "🔧 Исправлено: ManualMileageKeyboard import, OCR timeout 120s, ocrDebug UNIQUE constraint",
+      "🔧 Исправлено: Critical crashes and logic bugs (courier imports, leaderboard, OCR race, bot.catch, dead code)"
+    ],
+    "message": "🆕 <b><i>Обновление бота v2.4.8</i></b>\n\n<b>Коротко, что изменили:</b>\n• 🔧 Исправлено: Increase MILEAGE_TIMEOUT_MS from 45s to 120s to match OCR server processing time\n• 🔧 Исправлено: ManualMileageKeyboard import, OCR timeout 120s, ocrDebug UNIQUE constraint\n• 🔧 Исправлено: Critical crashes and logic bugs (courier imports, leaderboard, OCR race, bot.catch, dead code)\n\n💙 Хорошей смены!"
+  },
+  "2.4.9": {
+    "changedFiles": [
+      "bot.js"
+    ],
+    "updates": [],
+    "message": "🆕 <b><i>Обновление бота v2.4.9</i></b>\n\n<b>Коротко, что изменили:</b>\n• 🤖 Подправили сценарии работы и стабильность.\n\n💙 Хорошей смены!"
   }
 }

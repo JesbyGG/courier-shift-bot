@@ -4161,7 +4161,7 @@ const services = {
   checkRapidOcrHealth, recognizeMileage, downloadTelegramFile,
   isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold,
   logOcrFeedback, isEmptyCell, isScheduleMarker, getMileageColumns: getMileageColumnsByDay,
-  roundTimeToHalfHour, getColumnLetter, getCourierColumnsByDay,
+  roundTimeToHalfHour, getColumnLetter, getCourierColumnsByDay, manualMileageKeyboard,
   prepareMileage, replaceTime, punchTime,
   updateCourierTime, updateMileage,
   // misc
