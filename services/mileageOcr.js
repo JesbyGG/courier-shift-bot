@@ -63,12 +63,21 @@ function isOdometerNoiseText(text) {
     '/100',
     'l/100',
     '1/100',
-    'trip',
-    'avg',
     'temp'
   ];
 
-  return noiseTokens.some((token) => compact.includes(token));
+  if (noiseTokens.some((token) => compact.includes(token))) return true;
+
+  if (compact.includes('trip') && compact.includes('avg')) return true;
+  if (compact.includes('avg')) {
+    if (/\d{3,6}/.test(compact)) return false;
+    return true;
+  }
+
+  const speedScalePattern = /\b(2[0-9]{2}|1[4-9]{2}|1[0-3]{2}|60|80|100|120)\b/;
+  if (speedScalePattern.test(raw) && !compact.includes('km') && !compact.includes('/km') && !compact.includes('ikm')) return true;
+
+  return false;
 }
 
 function extractMileage(text, options = {}) {
@@ -126,13 +135,28 @@ function smartPickFromGroups(groups, options = {}) {
   const valid = groups.filter((g) => Number.isFinite(g.mileage) && g.mileage > 0);
   if (valid.length === 0) return { mileage: null, candidates: [] };
 
-  const ranked = [...valid].sort((a, b) => {
-    if (a.has_km !== b.has_km) return (b.has_km ? 1 : 0) - (a.has_km ? 1 : 0);
+  // km groups ALWAYS win — if a number has "km" next to it, it's the odometer
+  const kmGroups = valid.filter((g) => g.has_km && !g.is_noise && g.mileage >= 100);
+  if (kmGroups.length > 0) {
+    const bestKm = kmGroups.sort((a, b) => {
+      const aLen = String(a.mileage).length;
+      const bLen = String(b.mileage).length;
+      if (aLen >= 5 && bLen < 5) return -1;
+      if (bLen >= 5 && aLen < 5) return 1;
+      return b.avgConfidence - a.avgConfidence;
+    })[0];
+    if (bestKm) {
+      const candidates = kmGroups.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence }));
+      return { mileage: bestKm.mileage, candidates };
+    }
+  }
 
+  // No km groups — pick best non-noise long number
+  const ranked = [...valid].sort((a, b) => {
     const aLen = String(a.mileage).length;
     const bLen = String(b.mileage).length;
-    const aOdo = aLen >= 4 && aLen <= 7 ? 1 : 0;
-    const bOdo = bLen >= 4 && bLen <= 7 ? 1 : 0;
+    const aOdo = aLen >= 5 && aLen <= 6 ? 1 : 0;
+    const bOdo = bLen >= 5 && bLen <= 6 ? 1 : 0;
     if (aOdo !== bOdo) return bOdo - aOdo;
 
     const aNoise = a.is_noise ? 0 : 1;
@@ -152,7 +176,7 @@ function smartPickFromGroups(groups, options = {}) {
     return { mileage: best.mileage, candidates: ranked.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence })) };
   }
 
-  if (best && best.count >= 1 && isMileageInBounds(best.mileage, options)) {
+  if (best && isMileageInBounds(best.mileage, options)) {
     return { mileage: best.mileage, candidates: ranked.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence })) };
   }
 

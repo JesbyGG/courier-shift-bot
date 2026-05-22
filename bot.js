@@ -2404,6 +2404,7 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
   } else if (state.fileId && fallbackState && state.fileId !== fallbackState.fileId) {
     // Живое состояние есть, но fileId разный — пользователь начал новый пробег
     console.log('mileage: live state has different fileId, skipping old save');
+    await replyFn('⚠️ <b>Пробег распознан, но вы начали новое действие.</b>\nЕсли нужно, отправьте фото повторно.', mileageConfirmKeyboard());
     return;
   }
 
@@ -4655,8 +4656,19 @@ async function handleMileagePhoto(ctx, state, fileId) {
   const chatId = ctx.chat.id;
   const telegram = ctx.telegram;
 
-  processMileagePhotoInBackground(telegram, chatId, telegramId, state, fileId, photoState).catch((err) => {
-    console.error('processMileagePhotoInBackground unhandled error:', err);
+  const MILEAGE_TIMEOUT_MS = 45000;
+
+  const bgPromise = processMileagePhotoInBackground(telegram, chatId, telegramId, photoState, fileId, photoState);
+
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error(' mileage processing timeout')), MILEAGE_TIMEOUT_MS)
+  );
+
+  Promise.race([bgPromise, timeoutPromise]).catch((err) => {
+    console.error('mileage bg error:', err.message);
+    if (err.message && err.message.includes('timeout')) {
+      telegram.sendMessage(chatId, '⚠️ Превышено время распознавания. Введите пробег вручную или нажмите «⏭️ Пропустить».', { parse_mode: 'HTML' }).catch(() => {});
+    }
   });
 }
 
