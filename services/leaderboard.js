@@ -1,9 +1,5 @@
 const db = require('../db');
 
-function flushNow() {
-  // SQLite WAL is persistent.
-}
-
 function _getRecord(telegramId) {
   const row = db.prepare('SELECT data FROM leaderboard WHERE telegramId = ?').get(String(telegramId));
   if (!row) return null;
@@ -69,6 +65,14 @@ function recordOrders(telegramId, fio, workplace, ordersCount, courierType) {
   record.dailyOrders[dayKey] = ordersCount;
 
   _setRecord(telegramId, record);
+
+  const stmt = db.prepare(`
+    INSERT INTO daily_orders (telegramId, date, orders)
+    VALUES (?, ?, ?)
+    ON CONFLICT(telegramId, date) DO UPDATE SET orders = ?
+  `);
+  stmt.run(String(telegramId), dayKey, ordersCount, ordersCount);
+
   return record;
 }
 
@@ -85,37 +89,43 @@ const WORKPLACE_SHORT = {
 };
 
 function calculateLeaderboard(type, periodDays, workplace, courierTypeFilter) {
-  const records = _getAllRecords();
   const cutoff = periodDays ? getDaysAgo(periodDays) : null;
-  
+
   const wpMapping = { east: 'ИМ Восток', center: 'ИМ Центр' };
   const filterWorkplace = workplace && workplace !== 'all' ? (wpMapping[workplace] || workplace) : null;
 
+  let sql = '';
+  const params = [];
+  if (type === 'max') {
+    sql = 'SELECT telegramId, MAX(orders) as value FROM daily_orders';
+  } else {
+    sql = 'SELECT telegramId, SUM(orders) as value FROM daily_orders';
+  }
+
+  if (cutoff) {
+    sql += ' WHERE date >= ?';
+    params.push(cutoff);
+  }
+
+  sql += ' GROUP BY telegramId HAVING value > 0';
+
+  const rows = db.prepare(sql).all(...params);
+  const records = _getAllRecords();
+
   const entries = [];
-  for (const [telegramId, record] of Object.entries(records)) {
-    if (!record.dailyOrders) continue;
+  for (const row of rows) {
+    const record = records[row.telegramId];
+    if (!record) continue;
     if (filterWorkplace && record.workplace !== filterWorkplace) continue;
     if (courierTypeFilter && courierTypeFilter !== 'all' && record.courierType !== courierTypeFilter) continue;
 
-    let value = 0;
-    for (const [dayKey, orders] of Object.entries(record.dailyOrders)) {
-      if (cutoff && dayKey < cutoff) continue;   // string comparison on "YYYY-MM-DD"
-      if (type === 'max') {
-        if (orders > value) value = orders;
-      } else {
-        value += orders;
-      }
-    }
-
-    if (value > 0) {
-      entries.push({
-        telegramId,
-        fio: record.fio || 'Неизвестный',
-        workplace: record.workplace || '',
-        courierType: record.courierType || 'auto',
-        value
-      });
-    }
+    entries.push({
+      telegramId: row.telegramId,
+      fio: record.fio || 'Неизвестный',
+      workplace: record.workplace || '',
+      courierType: record.courierType || 'auto',
+      value: row.value
+    });
   }
 
   entries.sort((a, b) => b.value - a.value || a.fio.localeCompare(b.fio, 'ru'));
@@ -173,23 +183,23 @@ function formatLeaderboard(entries, myTelegramId, showWorkplace = false) {
 }
 
 function checkNotifications(telegramId, fio, workplace, currentDayOrders) {
-  const record = _getRecord(telegramId);
+  let record = _getRecord(telegramId);
   const previousRecord = record ? record.personalRecord : 0;
   
   if (currentDayOrders > (previousRecord || 0)) {
-    if (record) {
-      record.personalRecord = currentDayOrders;
-      _setRecord(telegramId, record);
+    if (!record) {
+      record = { fio, workplace, dailyOrders: {} };
     }
+    record.personalRecord = currentDayOrders;
+    _setRecord(telegramId, record);
     return [{ type: 'personal_record', value: currentDayOrders, previous: previousRecord || 0 }];
   }
   return [];
 }
 
 function getDayOrders(telegramId, dayKey) {
-  const record = _getRecord(telegramId);
-  if (!record || !record.dailyOrders) return 0;
-  return record.dailyOrders[dayKey] || 0;
+  const row = db.prepare('SELECT orders FROM daily_orders WHERE telegramId = ? AND date = ?').get(String(telegramId), dayKey);
+  return row && row.orders ? row.orders : 0;
 }
 
 function getWorkplaceRecord(workplace, dayKey) {
@@ -206,15 +216,16 @@ function setWorkplaceRecord(workplace, dayKey, orders, fio) {
 }
 
 function getDailyTop3(workplace, dayKey) {
+  const rows = db.prepare('SELECT telegramId, orders FROM daily_orders WHERE date = ?').all(dayKey);
   const records = _getAllRecords();
   const entries = [];
-  for (const [tid, record] of Object.entries(records)) {
-    if (record.workplace !== workplace) continue;
-    if (!record.dailyOrders || !record.dailyOrders[dayKey]) continue;
+  for (const row of rows) {
+    const record = records[row.telegramId];
+    if (!record || record.workplace !== workplace) continue;
     entries.push({
-      telegramId: tid,
+      telegramId: row.telegramId,
       fio: record.fio || 'Неизвестный',
-      orders: record.dailyOrders[dayKey]
+      orders: row.orders
     });
   }
   entries.sort((a, b) => b.orders - a.orders);
@@ -223,18 +234,17 @@ function getDailyTop3(workplace, dayKey) {
 
 function findOvertakenCouriers(telegramId, workplace, oldOrders, newOrders, dayKey) {
   if (newOrders <= oldOrders) return [];
+  const rows = db.prepare('SELECT telegramId, orders FROM daily_orders WHERE date = ? AND telegramId != ?').all(dayKey, String(telegramId));
   const records = _getAllRecords();
   const overtaken = [];
-  for (const [tid, record] of Object.entries(records)) {
-    if (tid === String(telegramId)) continue;
-    if (record.workplace !== workplace) continue;
-    if (!record.dailyOrders) continue;
-    const theirOrders = record.dailyOrders[dayKey] || 0;
-    if (theirOrders > oldOrders && theirOrders < newOrders) {
+  for (const row of rows) {
+    const record = records[row.telegramId];
+    if (!record || record.workplace !== workplace) continue;
+    if (row.orders > oldOrders && row.orders < newOrders) {
       overtaken.push({
-        telegramId: tid,
+        telegramId: row.telegramId,
         fio: record.fio || 'Неизвестный',
-        orders: theirOrders
+        orders: row.orders
       });
     }
   }
@@ -247,7 +257,6 @@ module.exports = {
   calculateLeaderboard,
   formatLeaderboard,
   checkNotifications,
-  flushNow,
   getDayOrders,
   getWorkplaceRecord,
   setWorkplaceRecord,

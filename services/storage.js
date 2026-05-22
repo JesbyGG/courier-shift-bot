@@ -3,10 +3,6 @@ const path = require('path');
 const { WORKPLACE_KEY_MAP } = require('../config');
 const db = require('../db');
 
-function flushNow() {
-  // SQLite with WAL mode is already persistent, no manual flush needed.
-}
-
 function _getRecord(key) {
   const row = db.prepare('SELECT data FROM users WHERE telegramId = ?').get(String(key));
   if (!row) return null;
@@ -448,7 +444,6 @@ function markUserSeen(telegramId) {
 }
 
 module.exports = {
-  flushNow,
   getUserField,
   setUserField,
   getFullProfile,

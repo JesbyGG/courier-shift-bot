@@ -21,7 +21,9 @@ const {
   updateMileage,
   readCell,
   getSheetConfig,
-  updateEfficiencyOrders
+  updateEfficiencyOrders,
+  loadPendingUpdatesFromDb,
+  setNotifyAdminCallback
 } = require('./services/googleSheets');
 const {
   getUserField,
@@ -36,7 +38,6 @@ const {
   clearPendingCashAndReminders,
   getAllUserIds,
   resolveSheetInfo,
-  flushNow: flushStorageNow,
   getSheetAccessUsers,
   addSheetAccessUser,
   removeSheetAccessUser,
@@ -60,7 +61,7 @@ const {
 } = require('./services/storage');
 const { recognizeMileage, downloadTelegramFile, isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold, checkRapidOcrHealth } = require('./services/mileageOcr');
 const { saveOcrDebugImage, updateOcrDebugStatus } = require('./services/ocrDebug');
-const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, flushNow: flushLeaderboardNow, getDayOrders: getLbDayOrders, getWorkplaceRecord, setWorkplaceRecord, getDailyTop3, findOvertakenCouriers, getTodayKey: getLbTodayKey } = require('./services/leaderboard');
+const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, getDayOrders: getLbDayOrders, getWorkplaceRecord, setWorkplaceRecord, getDailyTop3, findOvertakenCouriers, getTodayKey: getLbTodayKey } = require('./services/leaderboard');
 const { addXp, getTotalXp, getRank, getRankProgress, formatRankInfo, getXpForAction } = require('./services/xp');
 const { checkMilestoneAchievements, unlockAchievement, getUnlockedAchievements, getAllAchievements } = require('./services/achievements');
 const { updateStreak, getStreak, getStreakBonus } = require('./services/streak');
@@ -69,14 +70,15 @@ const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, roundMinute
 const { registerSheetCommand } = require('./sheetCommand');
 const { WORKPLACES, DEVICES, ROLES, LIMITS, WORKPLACE_FEATURES, WORKPLACE_KEY_MAP, BUTTONS } = require('./config');
 const { isAdminUser, getAdminIds } = require('./services/auth');
+const setupCommands = require('./handlers/commands');
+const setupAdmin = require('./handlers/admin');
+const setupTextRouter = require('./handlers/textRouter');
+const setupCourier = require('./handlers/courier');
+const setupLogist = require('./handlers/logist');
 const {
-  mainMenu,
-  profileMenu,
   workplaceMenu,
   deviceMenu,
   logistMainMenu,
-  logistSettingsMenu,
-  logistProfileMenu,
   getMenuForRole,
   getSettingsMenuForRole,
   getProfileMenuForRole,
@@ -299,37 +301,21 @@ function isLogist(telegramId) {
   return getUserRole(telegramId) === 'logist';
 }
 
-function requireRole(ctx, requiredRole) {
-  const role = getUserRole(ctx.from.id);
-  if (requiredRole === 'courier' && role === 'logist') {
-    ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
-    return false;
-  }
-  if (requiredRole === 'logist' && role !== 'logist') {
-    ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(ctx.from.id));
-    return false;
-  }
-  return true;
-}
-
 async function showDebtorsList(ctx) {
   const telegramId = ctx.from.id;
   const role = getUserRole(telegramId);
   if (role !== 'logist') {
-    await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(telegramId));
-    return;
+    return { status: 'access_denied' };
   }
 
   const workplace = getUserField(telegramId, 'workplace');
   if (!workplace) {
-    await ctx.replyWithHTML('⚠️ Сначала выберите магазин в настройках.', getSettingsMenuForRole(telegramId));
-    return;
+    return { status: 'no_workplace' };
   }
 
   const features = WORKPLACE_FEATURES[workplace];
   if (!features || !features.cashCollection) {
-    await ctx.replyWithHTML('❌ В этом магазине приём наличных не предусмотрен.', getMenuForRole(telegramId));
-    return;
+    return { status: 'no_cash_collection' };
   }
 
   cleanupStaleReminders();
@@ -337,8 +323,7 @@ async function showDebtorsList(ctx) {
   const debtors = getDebtors(workplace);
 
   if (debtors.length === 0) {
-    await ctx.replyWithHTML('✅ Все деньги сданы, долгов нет.', getMenuForRole(telegramId));
-    return;
+    return { status: 'no_debt' };
   }
 
   const totalAmount = debtors.reduce((sum, d) => sum + d.amount, 0);
@@ -347,9 +332,10 @@ async function showDebtorsList(ctx) {
   await ctx.replyWithHTML(
     `💳 <b>Курьеры с долгами</b> (${esc(workplace)})\n` +
     `Всего к сдаче: <code>${formattedTotal}</code> ₽\n\n` +
-    `Нажмите на курьера, чтобы отправить напоминание:`,
+    debtors.map((d) => `• ${esc(d.fio)} — <code>${formatMoneyRu(d.amount)}</code> ₽`).join('\n'),
     debtorListKeyboard(debtors, workplace)
   );
+  return { status: 'showing_debtors' };
 }
 
 async function pokeCourier(ctx, courierId) {
@@ -463,15 +449,13 @@ async function showCashHistory(ctx) {
   const telegramId = ctx.from.id;
   const role = getUserRole(telegramId);
   if (role !== 'logist') {
-    await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(telegramId));
-    return;
+    return { status: 'access_denied' };
   }
 
   const workplace = getUserField(telegramId, 'workplace');
   const features = WORKPLACE_FEATURES[workplace];
   if (!features || !features.cashCollection) {
-    await ctx.replyWithHTML('❌ В этом магазине приём наличных не предусмотрен.', getMenuForRole(telegramId));
-    return;
+    return { status: 'no_cash_collection' };
   }
 
   const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
@@ -487,6 +471,7 @@ async function showCashHistory(ctx) {
   buttons.push([Markup.button.callback('🏠 В меню', 'back_to_menu')]);
 
   await ctx.replyWithHTML('📋 <b>История сборов</b>\n\nВыберите дату:', Markup.inlineKeyboard(buttons));
+  return { status: 'showing_history' };
 }
 
 async function showCashHistoryForDate(ctx, dateStr) {
@@ -528,14 +513,12 @@ async function openShopNotify(ctx) {
   const telegramId = ctx.from.id;
   const role = getUserRole(telegramId);
   if (role !== 'logist') {
-    await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(telegramId));
-    return;
+    return { status: 'access_denied' };
   }
 
   const workplace = getUserField(telegramId, 'workplace');
   if (!workplace) {
-    await ctx.replyWithHTML('⚠️ Сначала выберите магазин в настройках.', getMenuForRole(telegramId));
-    return;
+    return { status: 'no_workplace' };
   }
 
   const fio = getUserField(telegramId, 'fio') || 'Логист';
@@ -551,7 +534,7 @@ async function openShopNotify(ctx) {
     }
   }
 
-  await ctx.replyWithHTML(`✅ Уведомление отправлено: <b>${esc(workplace)} — ОТКРЫТ</b> ✅`, getMenuForRole(telegramId));
+  return { status: 'ok', workplace };
 }
 
 async function notifyLogistsAboutSelfClearance(courierId, courierFio, amount, formatted, workplace) {
@@ -627,6 +610,19 @@ const telegramAgent = createTelegramAgent();
 const bot = new Telegraf(process.env.BOT_TOKEN, telegramAgent ? {
   telegram: { agent: telegramAgent }
 } : undefined);
+
+// Middleware: замер времени обработки запросов
+bot.use(async (ctx, next) => {
+  const start = Date.now();
+  await next();
+  const ms = Date.now() - start;
+  if (ms > 500) {
+    const updateType = ctx.updateType || 'unknown';
+    const text = ctx.message?.text || ctx.callbackQuery?.data || '';
+    console.log(`⚠️ Медленный запрос: ${ms}мс, тип: ${updateType}, от: ${ctx.from?.id}, текст/данные: ${text}`);
+  }
+});
+
 const photoLogPath = path.join(__dirname, 'photo-log.jsonl');
 const routeSheetLogPath = path.join(__dirname, 'route-sheet-log.jsonl');
 const reconciliationLogPath = path.join(__dirname, 'reconciliation-log.jsonl');
@@ -1576,7 +1572,7 @@ async function askForCarNumber(ctx, fio = getUserField(ctx.from.id, 'fio')) {
   setState(ctx.from.id, { awaitingCarNumber: true, fio });
   await ctx.replyWithHTML(
     `🚗 <b>Номер машины</b>\n\nВведите гос. номер автомобиля.\nНапример: <code>А123ВС777</code>`,
-    getMenuForRole(ctx.from.id)
+    Markup.removeKeyboard()
   );
 }
 
@@ -1601,12 +1597,12 @@ async function saveCarNumber(ctx, value) {
 
   if (!carNumber || isMenuText(value)) {
     await ctx.replyWithHTML('❌ Введите номер машины текстом.\nНапример: <code>А123ВС777</code>');
-    return;
+    return 'error';
   }
 
   if (!isValidCarNumber(carNumber)) {
     await ctx.replyWithHTML('❌ Неверный формат номера.\nНомер должен содержать буквы и цифры.\nНапример: <code>А123ВС777</code>');
-    return;
+    return 'error';
   }
 
   setUserField(ctx.from.id, 'carNumber', carNumber);
@@ -1615,17 +1611,18 @@ async function saveCarNumber(ctx, value) {
   if (!getUserField(ctx.from.id, 'workplace')) {
     await ctx.replyWithHTML(`✅ Номер машины сохранён: <code>${esc(carNumber)}</code>`);
     await askForWorkplace(ctx);
-    return;
+    return 'askWorkplace';
   }
 
   if (!getUserField(ctx.from.id, 'device')) {
     await ctx.replyWithHTML(`✅ Номер машины сохранён: <code>${esc(carNumber)}</code>`);
     await askForDevice(ctx);
-    return;
+    return 'askDevice';
   }
 
   clearState(ctx.from.id);
-  await ctx.replyWithHTML(`✅ Номер машины сохранён: <code>${esc(carNumber)}</code>`, getMenuForRole(ctx.from.id));
+  await ctx.replyWithHTML(`✅ Номер машины сохранён: <code>${esc(carNumber)}</code>`);
+  return 'done';
 }
 
 async function saveWorkplace(ctx, value) {
@@ -1633,7 +1630,7 @@ async function saveWorkplace(ctx, value) {
 
   if (!workplace) {
     await ctx.replyWithHTML('❌ Выберите магазин кнопкой ниже.', workplaceMenu());
-    return;
+    return 'error';
   }
 
   setUserField(ctx.from.id, 'workplace', workplace);
@@ -1642,18 +1639,19 @@ async function saveWorkplace(ctx, value) {
 
   if (role === 'logist') {
     clearState(ctx.from.id);
-    await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`, logistMainMenu(ctx.from.id));
-    return;
+    await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`);
+    return 'done';
   }
 
   if (!getUserField(ctx.from.id, 'device')) {
     await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`);
     await askForDevice(ctx);
-    return;
+    return 'askDevice';
   }
 
   clearState(ctx.from.id);
-  await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`, getMenuForRole(ctx.from.id));
+  await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`);
+  return 'done';
 }
 
 async function saveDevice(ctx, value) {
@@ -1661,13 +1659,14 @@ async function saveDevice(ctx, value) {
 
   if (!device) {
     await ctx.replyWithHTML('❌ Выберите устройство кнопкой ниже.', deviceMenu());
-    return;
+    return 'error';
   }
 
   setUserField(ctx.from.id, 'device', device);
   clearState(ctx.from.id);
   console.log('устройство сохранено');
-  await ctx.replyWithHTML(`✅ Устройство сохранено: <b>${esc(device)}</b>`, getMenuForRole(ctx.from.id));
+  await ctx.replyWithHTML(`✅ Устройство сохранено: <b>${esc(device)}</b>`);
+  return 'done';
 }
 
 async function ensureProfile(ctx) {
@@ -1877,28 +1876,24 @@ async function punchTimeFlow(ctx, explicitStage = null) {
 
 async function mileageFlow(ctx, explicitStage = null) {
   if (isLogist(ctx.from.id)) {
-    await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
-    return;
+    return { status: 'access_denied' };
   }
   const telegramId = ctx.from.id;
   const profile = await ensureProfile(ctx);
 
   if (!profile) {
-    return;
+    return { status: 'no_profile' };
   }
 
   if (profile.courierType === 'pedestrian') {
-    await ctx.replyWithHTML('🚶 Пешим курьерам пробег не требуется.', getMenuForRole(telegramId));
-    return;
+    return { status: 'pedestrian_no_mileage' };
   }
 
   try {
     const result = await prepareMileage(profile.fio, profile.workplace, explicitStage);
 
     if (result.notFound) {
-      const msg = formatNoSheetMessage(result, profile.workplace);
-      await ctx.replyWithHTML(msg);
-      return;
+      return { status: 'not_found', result, workplace: profile.workplace };
     }
 
     if (result.needsReplaceChoice) {
@@ -1911,7 +1906,7 @@ async function mileageFlow(ctx, explicitStage = null) {
         `Выберите, что заменить:`,
         mileageReplaceKeyboard()
       );
-      return;
+      return { status: 'needs_replace_choice' };
     }
 
     setState(telegramId, makeMileageState(telegramId, applyProfile(result, profile), { source: 'mileage' }));
@@ -1922,22 +1917,22 @@ async function mileageFlow(ctx, explicitStage = null) {
       `📎 <i>Нажмите на скрепку → Камера или Галерея</i>`,
       skipMileageKeyboard()
     );
+    return { status: 'awaiting_photo' };
   } catch (error) {
     console.error('ошибка Google Sheets', error);
-    await ctx.replyWithHTML('⚠️ Не удалось подготовить запись пробега.\nПопробуйте ещё раз или обратитесь к администратору.');
+    return { status: 'error' };
   }
 }
 
 async function routeSheetFlow(ctx) {
   if (isLogist(ctx.from.id)) {
-    await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
-    return;
+    return { status: 'access_denied' };
   }
   const telegramId = ctx.from.id;
   const profile = await ensureProfile(ctx);
 
   if (!profile) {
-    return;
+    return { status: 'no_profile' };
   }
 
   setState(telegramId, {
@@ -1953,18 +1948,18 @@ async function routeSheetFlow(ctx) {
     `📎 <i>Нажмите на скрепку → Камера или Галерея</i>`,
     routeSheetKeyboard()
   );
+  return { status: 'awaiting_photo' };
 }
 
 async function reconciliationFlow(ctx) {
   if (isLogist(ctx.from.id)) {
-    await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
-    return;
+    return { status: 'access_denied' };
   }
   const telegramId = ctx.from.id;
   const profile = await ensureProfile(ctx);
 
   if (!profile) {
-    return;
+    return { status: 'no_profile' };
   }
 
   const isTerminal = profile.device === 'Терминал';
@@ -1998,27 +1993,25 @@ async function reconciliationFlow(ctx) {
   lines.push('📎 <i>Нажмите на скрепку → Камера или Галерея</i>');
 
   await ctx.replyWithHTML(lines.join('\n'), routeSheetKeyboard());
+  return { status: 'awaiting_photo' };
 }
 
 async function showPendingCashStatus(ctx) {
   if (isLogist(ctx.from.id)) {
-    await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
-    return;
+    return { status: 'access_denied' };
   }
   const profile = await ensureProfile(ctx);
-  if (!profile) return;
+  if (!profile) return { status: 'no_profile' };
 
   const pendingCash = getPendingCash(ctx.from.id);
   const amount = Number(pendingCash?.amount || 0);
 
   if (!Number.isFinite(amount) || amount < 1) {
-    await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы.', getMenuForRole(ctx.from.id));
-    return;
+    return { status: 'no_debt' };
   }
 
   if (pendingCash?.confirmationStatus === 'awaiting') {
-    await ctx.replyWithHTML('⏳ Вы уже отметили сдачу. Ожидайте подтверждения логиста.', getMenuForRole(ctx.from.id));
-    return;
+    return { status: 'already_submitted' };
   }
 
   const formatted = pendingCash?.formatted || formatMoneyRu(amount);
@@ -2033,6 +2026,7 @@ async function showPendingCashStatus(ctx) {
   if (fun) lines.push('😼 Ай-ай, денюжки надо сдать!', '');
   lines.push('Сдали деньги в кассу?');
   await ctx.replyWithHTML(lines.join('\n'), cashSubmitConfirmKeyboard());
+  return { status: 'showing_pending' };
 }
 
 async function sendHelp(ctx) {
@@ -2328,56 +2322,6 @@ async function askAdminsAboutUpdate(version, changedFiles = [], updates = []) {
   }
 }
 
-bot.action(/^upd_send:(.+)$/, async (ctx) => {
-  if (!isAdminUser(ctx.from.id)) {
-    await ctx.answerCbQuery();
-    return;
-  }
-  const version = ctx.match[1];
-  const pending = _pendingUpdates[version];
-  if (!pending) {
-    await ctx.answerCbQuery('⚠️ Обновление уже обработано');
-    return;
-  }
-  delete _pendingUpdates[version];
-  savePendingUpdates();
-  await ctx.editMessageText('✅ Уведомление отправляется...', { parse_mode: 'HTML' });
-  await notifyUsersAboutUpdate(version, pending.changedFiles, pending.updates || []);
-  try {
-    await ctx.editMessageText(`✅ Уведомление v${esc(version)} отправлено всем пользователям.`, { parse_mode: 'HTML' });
-  } catch {}
-});
-
-bot.action(/^upd_edit:(.+)$/, async (ctx) => {
-  if (!isAdminUser(ctx.from.id)) {
-    await ctx.answerCbQuery();
-    return;
-  }
-  const version = ctx.match[1];
-  const pending = _pendingUpdates[version];
-  if (!pending) {
-    await ctx.answerCbQuery('⚠️ Обновление уже обработано');
-    return;
-  }
-  setState(ctx.from.id, { awaitingUpdateEdit: true, editVersion: version });
-  await ctx.replyWithHTML('✏️ <b>Редактирование уведомления</b>\n\nОтправьте новый текст сообщения (без заголовка «Обновление бота v...» и «Хорошей смены» — они добавятся автоматически):');
-  await ctx.answerCbQuery();
-});
-
-bot.action(/^upd_skip:(.+)$/, async (ctx) => {
-  if (!isAdminUser(ctx.from.id)) {
-    await ctx.answerCbQuery();
-    return;
-  }
-  const version = ctx.match[1];
-  delete _pendingUpdates[version];
-  savePendingUpdates();
-  try {
-    await ctx.editMessageText(`⏭️ Уведомление v${esc(version)} пропущено.`, { parse_mode: 'HTML' });
-  } catch {}
-  await ctx.answerCbQuery('Пропущено');
-});
-
 async function saveMileageFromState(ctx, mileage, options = {}) {
   const { sourceBuffer, telegram, chatId, fallbackState } = options;
   const replyFn = telegram
@@ -2625,8 +2569,7 @@ async function backToMainMenu(ctx) {
   const state = getState(ctx.from.id);
 
   if (state?.mileageProcessing) {
-    await ctx.replyWithHTML('📸 Обработка фото пробега продолжается... результат придёт в новый чат.', getMenuForRole(ctx.from.id));
-    return;
+    return { status: 'mileage_processing' };
   }
 
   clearState(ctx.from.id);
@@ -2637,13 +2580,12 @@ async function backToMainMenu(ctx) {
       ? '⬅️ Возвращаю в меню. Пробег не сохранён.'
       : '⬅️ Возвращаю в меню.';
 
-  await ctx.replyWithHTML(message, getMenuForRole(ctx.from.id));
+  return { status: 'back_to_menu', message };
 }
 
 async function showLeaderboardMenu(ctx) {
   if (isLogist(ctx.from.id)) {
-    await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
-    return;
+    return { status: 'access_denied' };
   }
   setState(ctx.from.id, { lb_step: 'menu' });
   const settings = getNotificationSettings(ctx.from.id);
@@ -2660,6 +2602,7 @@ async function showLeaderboardMenu(ctx) {
       [Markup.button.callback('🏠 В меню', 'back_to_menu')]
     ])
   );
+  return { status: 'showing_leaderboard' };
 }
 
 async function showLeaderboardFilter(ctx) {
@@ -3083,8 +3026,7 @@ async function sendTop3ChangeNotifications(workplace, dayKey, previousTop3, curr
 
 async function showIssuesMenu(ctx) {
   if (isLogist(ctx.from.id)) {
-    await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
-    return;
+    return { status: 'access_denied' };
   }
   const deliveryUrl = process.env.ISSUE_DELIVERY_URL;
   const flowwowUrl = process.env.ISSUE_FLOWWOW_URL;
@@ -3103,8 +3045,7 @@ async function showIssuesMenu(ctx) {
   }
 
   if (buttons.length === 0) {
-    await ctx.replyWithHTML('⚠️ Раздел «Проблема с заказом» временно недоступен.', getMenuForRole(ctx.from.id));
-    return;
+    return { status: 'unavailable' };
   }
 
   buttons.push([Markup.button.callback('⬅️ Назад', 'issues_back')]);
@@ -3113,99 +3054,8 @@ async function showIssuesMenu(ctx) {
     '⚠️ <b>Проблема с заказом</b>\n\nВыберите чат для обращения:',
     Markup.inlineKeyboard(buttons)
   );
+  return { status: 'showing_issues' };
 }
-
-bot.start(async (ctx) => {
-  console.log('/start');
-
-  if (!getUserField(ctx.from.id, 'fio')) {
-    setUserField(ctx.from.id, 'version', getVersion());
-    const isNew = markUserSeen(ctx.from.id);
-    if (isNew) {
-      const firstName = ctx.from.first_name || '';
-      const lastName = ctx.from.last_name || '';
-      const username = ctx.from.username ? `@${ctx.from.username}` : '';
-      const displayName = [firstName, lastName].filter(Boolean).join(' ') || 'Без имени';
-      const adminIds = getAdminIds();
-      for (const adminId of adminIds) {
-        try {
-          await ctx.telegram.sendMessage(adminId,
-            `🆕 <b>Новый пользователь</b>\n\n` +
-            `👤 ${esc(displayName)} ${esc(username)}\n` +
-            `🆔 <code>${ctx.from.id}</code>`,
-            { parse_mode: 'HTML' }
-          );
-        } catch (e) { /* ignore */ }
-      }
-    }
-    await ctx.replyWithHTML(`${getTimeGreeting()}! 👋 <b>Привет!</b>\n\nЭто бот для учёта смены, времени и пробега автомобиля.`);
-    await askForFio(ctx);
-    return;
-  }
-
-  setUserField(ctx.from.id, 'version', getVersion());
-
-  const profile = await ensureProfile(ctx);
-
-  if (!profile) {
-    return;
-  }
-
-  const role = getUserRole(ctx.from.id);
-
-  if (role === 'logist') {
-    await ctx.replyWithHTML(
-      `${getTimeGreeting()}, <b>${esc(getEmployeeDisplayName(profile.fio))}</b>! 👋\n\n` +
-      `⏱ <b>Записать время</b> — отметить начало или конец смены.\n` +
-      `🔓 <b>Открыть ИМ</b> — отправить уведомление об открытии магазина в группу.\n` +
-      `💳 <b>Принять наличные</b> — посмотреть курьеров с долгами и отправить напоминание.\n` +
-      `📋 <b>Таблицы</b> — информация о привязке таблиц.\n` +
-      `⚙️ <b>Настройки</b> — профиль, магазин, смена сотрудника.`,
-      logistMainMenu(ctx.from.id)
-    );
-  } else {
-    await ctx.replyWithHTML(
-      `${getTimeGreeting()}, <b>${esc(getEmployeeDisplayName(profile.fio))}</b>! 👋\n\n` +
-      `⏱ <b>Записать время</b> — отметить начало или конец смены, автоматически выбирается время старта и вносится в таблицу ботом.\n` +
-      `🚗 <b>Фото пробега</b> — отправить фото одометра и бот автоматически скинет фото в нужный чат и запишет пробег в таблицу.\n` +
-      `📄 <b>Отправить маршрутник</b> — прикрепить маршрутный лист, бот отправит фото в нужный чат.\n` +
-      `📊 <b>Отправить сверку</b> — отправить фото сверки, бот отправит фото в нужный чат.\n` +
-      `💵 <b>Сдать наличные</b> — отметить сдачу наличных, также укажет сумму нужную сдать и подтверждение сдал/не сдал.\n` +
-      `⚠️ <b>Проблема с заказом</b> — сообщить о проблеме, бот предлагает варианты ссылками на нужный чат/бота поддержки.\n` +
-      `🏆 <b>Рейтинг</b> — посмотреть рейтинг курьеров.\n` +
-      `⚙️ <b>Настройки</b> — профиль, машина, магазин, также смена сотрудника и тд.`,
-      getMenuForRole(ctx.from.id)
-    );
-  }
-});
-
-bot.help(sendHelp);
-
-bot.command('car', async (ctx) => {
-  if (isLogist(ctx.from.id)) {
-    await ctx.replyWithHTML('❌ Эта команда доступна только курьерам.', getMenuForRole(ctx.from.id));
-    return;
-  }
-  const fio = getUserField(ctx.from.id, 'fio');
-  if (!fio) { await askForFio(ctx); return; }
-  await askForCarNumber(ctx, fio);
-});
-
-bot.command('workplace', async (ctx) => {
-  const fio = getUserField(ctx.from.id, 'fio');
-  if (!fio) { await askForFio(ctx); return; }
-  await askForWorkplace(ctx, fio);
-});
-
-bot.command('device', async (ctx) => {
-  if (isLogist(ctx.from.id)) {
-    await ctx.replyWithHTML('❌ Эта команда доступна только курьерам.', getMenuForRole(ctx.from.id));
-    return;
-  }
-  const fio = getUserField(ctx.from.id, 'fio');
-  if (!fio) { await askForFio(ctx); return; }
-  await askForDevice(ctx, fio);
-});
 
 // Парсим ADMIN_IDS из .env. Кэшируем результат в _adminIdsCache, чтобы
 // не разбирать строку на каждом сообщении (раньше это происходило в
@@ -3222,122 +3072,6 @@ async function notifyAdmins(html, options = {}) {
     }
   }
 }
-
-bot.command('chatid', async (ctx) => {
-  await ctx.replyWithHTML(
-    `📍 <b>Chat info</b>\n\nchat_id: <code>${ctx.chat.id}</code>\nmessage_thread_id: <code>${ctx.message.message_thread_id || 'нет'}</code>`
-  );
-});
-
-bot.command('sheet_access', async (ctx) => {
-  if (!isAdminUser(ctx.from.id)) {
-    return;
-  }
-
-  const args = (ctx.message.text || '').replace(/^\/sheet_access\s*/, '').trim().split(/\s+/);
-
-  if (args.length === 1 && args[0] === '') {
-    const users = getSheetAccessUsers();
-    const adminIds = getAdminIds();
-    let msg = '📋 <b>Доступ к Таблицам</b>\n\n';
-    msg += '🔑 <b>Администраторы:</b>\n';
-    for (const id of adminIds) {
-      msg += `   • <code>${id}</code>\n`;
-    }
-    msg += '\n👥 <b>Допущенные пользователи:</b>\n';
-    if (users.length === 0) {
-      msg += '   (пусто)\n';
-    } else {
-      for (const id of users) {
-        msg += `   • <code>${id}</code>\n`;
-      }
-    }
-    msg += '\n<b>Команды:</b>\n';
-    msg += '<code>/sheet_access 123456789</code> — дать доступ\n';
-    msg += '<code>/sheet_access - 123456789</code> — убрать доступ';
-    await ctx.replyWithHTML(msg);
-    return;
-  }
-
-  if (args[0] === '-' || args[0] === 'del' || args[0] === 'remove') {
-    const targetId = Number(args[1]);
-    if (!Number.isFinite(targetId) || targetId <= 0) {
-      await ctx.replyWithHTML('❌ Неверный Telegram ID.');
-      return;
-    }
-    const removed = removeSheetAccessUser(targetId);
-    if (removed) {
-      await ctx.replyWithHTML(`✅ Доступ к Таблицам убран для <code>${targetId}</code>`);
-    } else {
-      await ctx.replyWithHTML(`ℹ️ Пользователь <code>${targetId}</code> не имел доступа.`);
-    }
-    return;
-  }
-
-  const targetId = Number(args[0]);
-  if (!Number.isFinite(targetId) || targetId <= 0) {
-    await ctx.replyWithHTML('❌ Неверный Telegram ID. Используйте: <code>/sheet_access 123456789</code>');
-    return;
-  }
-
-  const added = addSheetAccessUser(targetId);
-  if (added) {
-    await ctx.replyWithHTML(`✅ Доступ к Таблицам предоставлен для <code>${targetId}</code>\n\nПользователь увидит кнопку «📋 Таблицы» в Настройках.`);
-  } else {
-    await ctx.replyWithHTML(`ℹ️ Пользователь <code>${targetId}</code> уже имеет доступ.`);
-  }
-});
-
-bot.command('role', async (ctx) => {
-  if (!isAdminUser(ctx.from.id)) {
-    return;
-  }
-
-  const args = (ctx.message.text || '').replace(/^\/role\s*/, '').trim().split(/\s+/);
-
-  if (args.length < 2) {
-    await ctx.replyWithHTML(
-      '🔑 <b>Смена роли</b>\n\n' +
-      'Использование: <code>/role &lt;telegram_id&gt; &lt;courier|logist&gt;</code>\n\n' +
-      'Примеры:\n' +
-      '<code>/role 123456789 courier</code> — сделать курьером\n' +
-      '<code>/role 123456789 logist</code> — сделать логистом'
-    );
-    return;
-  }
-
-  const targetId = args[0];
-  const newRole = args[1].toLowerCase();
-
-  if (newRole !== 'courier' && newRole !== 'logist') {
-    await ctx.replyWithHTML('❌ Роль должна быть <code>courier</code> или <code>logist</code>.');
-    return;
-  }
-
-  const currentFio = getUserField(targetId, 'fio');
-  if (!currentFio) {
-    await ctx.replyWithHTML(`❌ Пользователь <code>${targetId}</code> не найден.`);
-    return;
-  }
-
-  const oldRole = getUserRole(targetId);
-  const displayRole = newRole === 'logist' ? 'Логист' : 'Курьер';
-  const oldDisplayRole = oldRole === 'logist' ? 'Логист' : 'Курьер';
-
-  setUserField(targetId, 'role', newRole);
-
-  if (newRole === 'logist') {
-    const carNumber = getUserField(targetId, 'carNumber');
-    const device = getUserField(targetId, 'device');
-    if (carNumber) setUserField(targetId, 'carNumber', null);
-    if (device) setUserField(targetId, 'device', null);
-  }
-
-  await ctx.replyWithHTML(
-    `✅ Роль изменена: <b>${esc(currentFio)}</b> (<code>${targetId}</code>)\n\n` +
-    `${oldDisplayRole} → ${displayRole}`
-  );
-});
 
 function formatNoSheetMessage(result, workplace) {
   if (result?.noSheetForMonth && result?.monthKey) {
@@ -3497,50 +3231,6 @@ function getMileageStageCell(state, stage = state?.stage) {
 
 registerSheetCommand(bot, { esc, workplaces: WORKPLACES, isAdminUser });
 
-bot.command('cancel', async (ctx) => {
-  await backToMainMenu(ctx);
-});
-
-bot.action('back_to_menu', async (ctx) => {
-  await ctx.answerCbQuery();
-  await backToMainMenu(ctx);
-});
-
-bot.action('show_my_id', async (ctx) => {
-  await ctx.answerCbQuery();
-  const userId = ctx.from.id;
-  const firstName = ctx.from.first_name || '';
-  const lastName = ctx.from.last_name || '';
-  const username = ctx.from.username ? `@${ctx.from.username}` : '';
-  const displayName = [firstName, lastName].filter(Boolean).join(' ') || 'Без имени';
-
-  await ctx.replyWithHTML(
-    `🆔 <b>Ваш Telegram ID:</b> <code>${userId}</code>\n\n` +
-    'Отправьте этот ID администратору для получения доступа.'
-  );
-
-  // Параллельно уведомляем админов
-  for (const adminId of getAdminIds()) {
-    try {
-      await ctx.telegram.sendMessage(adminId,
-        `🆔 <b>Запрос доступа к Таблицам</b>\n\n` +
-        `👤 ${esc(displayName)} ${esc(username)}\n` +
-        `🆔 <code>${userId}</code>\n\n` +
-        `Дать доступ: <code>/sheet_access ${userId}</code>`,
-        { parse_mode: 'HTML' }
-      );
-    } catch (e) { /* админ заблокирован — пропускаем */ }
-  }
-});
-
-bot.action('issues_back', async (ctx) => {
-  await ctx.answerCbQuery();
-  try {
-    await ctx.deleteMessage();
-  } catch (e) { /* сообщение уже удалено */ }
-  await backToMainMenu(ctx);
-});
-
 const _workplaceKeys = Object.values(WORKPLACE_KEY_MAP).concat(['all']).join('|');
 
 bot.action('lb_table', async (ctx) => {
@@ -3690,639 +3380,50 @@ bot.action('lb_back_mode', async (ctx) => {
   await showLeaderboardMode(ctx, filter, workplace, periodDays);
 });
 
-bot.action('route_sheet_done', async (ctx) => {
-  await ctx.answerCbQuery('Готово');
-  const state = getState(ctx.from.id);
-  // Отчётом завершения может быть и «маршрутный лист», и «сверки»
-  // (обе используют routeSheetKeyboard). Сообщение нейтрально — просто
-  // финализируем и возвращаем в меню.
-  clearState(ctx.from.id);
-  if (state?.awaitingReconciliationPhoto) {
-    const sent = state.reconciliationPhotosSent || 0;
-    await ctx.replyWithHTML(
-      sent > 0
-        ? `✅ Завершено. Отправлено фото: <b>${sent}</b>.`
-        : '✅ Завершено. Фото не отправлены.',
-      courierMainMenu(ctx.from.id)
-    );
-    return;
-  }
-  // Маршрутник завершён — начисляем XP
-  addXp(ctx.from.id, getXpForAction('routeSheet'), 'Маршрутник');
-  updateChallengeProgress(ctx.from.id, 'routeSheets');
-  await ctx.replyWithHTML('✅ Завершено. Спасибо.', courierMainMenu(ctx.from.id));
-});
-
-bot.action('help_commands', async (ctx) => {
-  await ctx.answerCbQuery();
-  await sendCommandsList(ctx);
-});
-
-bot.action('confirm_switch_user', async (ctx) => {
-  await ctx.answerCbQuery();
-  deleteUser(ctx.from.id);
-  setState(ctx.from.id, { awaitingFio: true });
-  await ctx.replyWithHTML('👤 <b>Смена сотрудника</b>\n\nПредыдущие данные удалены.\nВведите имя и фамилию как в таблице.');
-});
-
-bot.action('role_courier', async (ctx) => {
-  await ctx.answerCbQuery();
-  const telegramId = ctx.from.id;
-  const state = getState(telegramId);
-  if (!state?.awaitingRoleChoice) {
-    await ctx.replyWithHTML('⚠️ Выбор роли устарел. Нажмите /start.', getMenuForRole(telegramId));
-    return;
-  }
-  setUserField(telegramId, 'role', 'courier');
-  setUserField(telegramId, 'courierType', 'auto');
-  if (state?.workplace) {
-    setUserField(telegramId, 'workplace', state.workplace);
-  }
-  clearState(telegramId);
-  await ctx.replyWithHTML('✅ Роль: <b>Курьер</b> (авто).\n\nТеперь введите номер машины.');
-  await askForCarNumber(ctx, state.fio);
-});
-
-bot.action('role_logist', async (ctx) => {
-  await ctx.answerCbQuery();
-  const telegramId = ctx.from.id;
-  const state = getState(telegramId);
-  if (!state?.awaitingRoleChoice) {
-    await ctx.replyWithHTML('⚠️ Выбор роли устарел. Нажмите /start.', getMenuForRole(telegramId));
-    return;
-  }
-  setUserField(telegramId, 'role', 'logist');
-  clearState(telegramId);
-  await ctx.replyWithHTML('✅ Роль: <b>Логист</b>\n\nТеперь выберите ваш магазин.', logistMainMenu(ctx.from.id));
-  await askForWorkplace(ctx, state.fio);
-});
-
-bot.action('cash_submit_yes', async (ctx) => {
-  await ctx.answerCbQuery();
-  const telegramId = ctx.from.id;
-  const pendingCash = getPendingCash(telegramId);
-  const amount = Number(pendingCash?.amount || 0);
-
-  if (!Number.isFinite(amount) || amount < 1) {
-    await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы.', getMenuForRole(telegramId));
-    return;
-  }
-
-  const formatted = pendingCash?.formatted || formatMoneyRu(amount);
-  const courierFio = getUserField(telegramId, 'fio') || 'Неизвестный';
-  const workplace = pendingCash?.workplace || getUserField(telegramId, 'workplace') || 'не указано';
-
-  const wpFeatures = WORKPLACE_FEATURES[workplace];
-  if (!wpFeatures || !wpFeatures.cashCollection) {
-    clearPendingCashAndReminders(telegramId);
-    logCashAction({
-      logistId: null,
-      logistFio: null,
-      courierId: String(telegramId),
-      courierFio: courierFio,
-      workplace: workplace,
-      amount: amount,
-      action: 'self_cleared'
-    });
-    addXp(telegramId, getXpForAction('cashSubmit'), 'Сдача наличных');
-    updateChallengeProgress(telegramId, 'cashSubmits');
-    try {
-      await ctx.editMessageText(`✅ <b>${esc(courierFio)}</b>, сдача <code>${esc(formatted)}</code> ₽ подтверждена.`);
-    } catch (e) { /* ignore */ }
-    await ctx.replyWithHTML(
-      `✅ <b>Сдача подтверждена</b>\n\n` +
-      `Вы сдали <code>${esc(formatted)}</code> ₽.\n` +
-      `Спасибо!`,
-      getMenuForRole(telegramId)
-    );
-    return;
-  }
-
-  setCashConfirmationStatus(telegramId, 'awaiting');
-
-  logCashAction({
-    logistId: null,
-    logistFio: null,
-    courierId: String(telegramId),
-    courierFio: courierFio,
-    workplace: workplace,
-    amount: amount,
-    action: 'self_cleared_requested'
-  });
-
-  await notifyLogistsAboutSelfClearance(telegramId, courierFio, amount, formatted, workplace);
-
-  try {
-    await ctx.editMessageText('⏳ Запрос отправлен. Ожидайте подтверждения логиста.');
-  } catch (e) { /* ignore */ }
-
-  await ctx.replyWithHTML(
-    `⏳ <b>Запрос отправлен</b>\n\n` +
-    `Вы отметили сдачу <code>${esc(formatted)}</code> ₽.\n` +
-    `Ожидайте подтверждения от логиста.`,
-    getMenuForRole(telegramId)
-  );
-});
-
-bot.action('cash_submit_no', async (ctx) => {
-  await ctx.answerCbQuery('❌ Отложено');
-  const fun = String(process.env.FUN_TONE || '').toLowerCase() === 'true';
-  const message = fun
-    ? '😼 Тогда бегом сдавать деньги! Котоконтроль не дремлет 🐾\n\nКогда сдадите — нажмите «💵 Деньги к сдаче» и подтвердите.'
-    : '⚠️ Не забудьте сдать деньги.\n\nКогда сдадите — нажмите «💵 Деньги к сдаче» и подтвердите.';
-  await ctx.replyWithHTML(message, getMenuForRole(ctx.from.id));
-});
-
-bot.action(/^d_(\d+)$/, async (ctx) => {
-  const courierId = ctx.match[1];
-  await pokeCourier(ctx, courierId);
-});
-
-bot.action(/^ack_([0-9a-f]+)$/, async (ctx) => {
-  const shortId = ctx.match[1];
-  await ctx.answerCbQuery();
-
-  const reminder = getReminder(shortId);
-  if (!reminder) {
-    try { await ctx.editMessageText('⚠️ Напоминание устарело или уже обработано.'); } catch (e) { /* ignore */ }
-    return;
-  }
-
-  if (reminder.status !== 'reminded' && reminder.status !== 'acknowledged') {
-    try { await ctx.editMessageText('⚠️ Напоминание уже обработано.'); } catch (e) { /* ignore */ }
-    return;
-  }
-
-  updateReminder(shortId, { status: 'acknowledged' });
-
-  const courierFio = reminder.courierFio;
-  const formatted = reminder.formatted;
-  const logistId = reminder.logistId;
-
-  logCashAction({
-    logistId: logistId,
-    logistFio: reminder.logistFio,
-    courierId: reminder.courierId,
-    courierFio: courierFio,
-    workplace: reminder.workplace,
-    amount: reminder.amount,
-    action: 'acknowledged'
-  });
-
-  try {
-    await ctx.editMessageText(
-      `✅ Отметка получена. Когда сдадите — нажмите «Сдал».\n\n` +
-      `💶 К сдаче: <code>${esc(formatted)}</code> ₽`,
-      {
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [
-            [Markup.button.callback('✅ Сдал', `c_${shortId}`)]
-          ]
-        }
-      }
-    );
-  } catch (e) { /* ignore */ }
-
-  try {
-    await bot.telegram.sendMessage(logistId,
-      `🏃 <b>${esc(courierFio)}</b> уже бежит сдавать <code>${esc(formatted)}</code> ₽`,
-      { parse_mode: 'HTML' }
-    );
-  } catch (e) {
-    console.error('failed to notify logist about acknowledgement', e.message);
-  }
-});
-
-bot.action(/^c_([0-9a-f]+)$/, async (ctx) => {
-  const shortId = ctx.match[1];
-  await ctx.answerCbQuery();
-
-  const reminder = getReminder(shortId);
-  if (!reminder) {
-    try { await ctx.editMessageText('⚠️ Напоминание устарело или уже обработано.'); } catch (e) { /* ignore */ }
-    return;
-  }
-
-  if (reminder.status === 'approved' || reminder.status === 'declined') {
-    try { await ctx.editMessageText('✅ Наличные уже обработаны.'); } catch (e) { /* ignore */ }
-    return;
-  }
-
-  updateReminder(shortId, { status: 'confirmed' });
-
-  logCashAction({
-    logistId: reminder.logistId,
-    logistFio: reminder.logistFio,
-    courierId: reminder.courierId,
-    courierFio: reminder.courierFio,
-    workplace: reminder.workplace,
-    amount: reminder.amount,
-    action: 'confirmed'
-  });
-
-  try {
-    await ctx.editMessageText('⏳ Логист проверяет...', { parse_mode: 'HTML' });
-  } catch (e) { /* ignore */ }
-
-  try {
-    const sent = await bot.telegram.sendMessage(reminder.logistId,
-      `✅ <b>${esc(reminder.courierFio)}</b> сдал <code>${esc(reminder.formatted)}</code> ₽\n\nПодтвердите сдачу:`,
-      {
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [
-            [Markup.button.callback('✅ Подтвердить', `appr_${shortId}`)],
-            [Markup.button.callback('❌ Отклонить', `decl_${shortId}`)]
-          ]
-        }
-      }
-    );
-    updateReminder(shortId, { logistMsgId: sent.message_id });
-  } catch (e) {
-    console.error('failed to notify logist about confirmation', e.message);
-  }
-});
-
-bot.action(/^appr_([0-9a-f]+)$/, async (ctx) => {
-  const shortId = ctx.match[1];
-  await ctx.answerCbQuery();
-
-  const reminder = getReminder(shortId);
-  if (!reminder) {
-    try { await ctx.editMessageText('⚠️ Напоминание устарело.'); } catch (e) { /* ignore */ }
-    return;
-  }
-
-  clearPendingCashAndReminders(reminder.courierId);
-
-  logCashAction({
-    logistId: reminder.logistId,
-    logistFio: reminder.logistFio,
-    courierId: reminder.courierId,
-    courierFio: reminder.courierFio,
-    workplace: reminder.workplace,
-    amount: reminder.amount,
-    action: 'approved'
-  });
-
-  addXp(reminder.courierId, getXpForAction('cashSubmit'), 'Сдача наличных (подтверждено)');
-  updateChallengeProgress(reminder.courierId, 'cashSubmits');
-
-  deleteReminder(shortId);
-
-  try {
-    await ctx.editMessageText(`✅ Подтверждено: <b>${esc(reminder.courierFio)}</b> сдал <code>${esc(reminder.formatted)}</code> ₽`, { parse_mode: 'HTML' });
-  } catch (e) { /* ignore */ }
-
-  try {
-    await bot.telegram.sendMessage(reminder.courierId,
-      `✅ <b>${esc(reminder.logistFio)}</b> подтвердил сдачу <code>${esc(reminder.formatted)}</code> ₽\n\nСпасибо!`,
-      { parse_mode: 'HTML' }
-    );
-  } catch (e) {
-    console.error('failed to notify courier about approval', e.message);
-  }
-
-  await sendFunReaction(ctx, 'success');
-});
-
-bot.action(/^decl_([0-9a-f]+)$/, async (ctx) => {
-  const shortId = ctx.match[1];
-  await ctx.answerCbQuery();
-
-  const reminder = getReminder(shortId);
-  if (!reminder) {
-    try { await ctx.editMessageText('⚠️ Напоминание устарело.'); } catch (e) { /* ignore */ }
-    return;
-  }
-
-  logCashAction({
-    logistId: reminder.logistId,
-    logistFio: reminder.logistFio,
-    courierId: reminder.courierId,
-    courierFio: reminder.courierFio,
-    workplace: reminder.workplace,
-    amount: reminder.amount,
-    action: 'declined'
-  });
-
-  updateReminder(shortId, { status: 'declined' });
-
-  try {
-    await ctx.editMessageText(`❌ Отклонено: <b>${esc(reminder.courierFio)}</b>`, { parse_mode: 'HTML' });
-  } catch (e) { /* ignore */ }
-
-  try {
-    await bot.telegram.sendMessage(reminder.courierId,
-      `❌ <b>${esc(reminder.logistFio)}</b> отклонил сдачу.\n\nПроверьте сумму и нажмите «Сдал» снова.`,
-      {
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [
-            [Markup.button.callback('✅ Сдал', `c_${shortId}`)]
-          ]
-        }
-      }
-    );
-  } catch (e) {
-    console.error('failed to notify courier about decline', e.message);
-  }
-});
-
-bot.action(/^sc_appr_(\d+)$/, async (ctx) => {
-  const courierId = ctx.match[1];
-  await ctx.answerCbQuery('✅ Сдача подтверждена');
-
-  const pendingCash = getPendingCash(courierId);
-  if (!pendingCash || pendingCash.confirmationStatus !== 'awaiting') {
-    try { await ctx.editMessageText('✅ Уже подтверждено другим логистом.'); } catch (e) { /* ignore */ }
-    return;
-  }
-
-  const approverId = String(ctx.from.id);
-
-  if (approverId === courierId) {
-    await ctx.answerCbQuery('⛔ Вы не можете подтвердить свою сдачу.');
-    return;
-  }
-  if (getUserRole(approverId) !== 'logist') {
-    await ctx.answerCbQuery('⛔ Только логист может подтверждать сдачу.');
-    return;
-  }
-  const approverWorkplace = getUserField(approverId, 'workplace');
-  const cashWorkplace = pendingCash.workplace || getUserField(courierId, 'workplace') || '';
-  if (approverWorkplace !== cashWorkplace) {
-    await ctx.answerCbQuery('⛔ Вы не привязаны к этому магазину.');
-    return;
-  }
-
-  const courierFio = getUserField(courierId, 'fio') || 'Неизвестный';
-  const amount = Number(pendingCash.amount || 0);
-  const formatted = pendingCash.formatted || formatMoneyRu(amount);
-  const workplace = pendingCash.workplace || getUserField(courierId, 'workplace') || 'не указано';
-  const logistId = approverId;
-  const logistFio = getUserField(logistId, 'fio') || 'Логист';
-
-  clearPendingCashAndReminders(courierId);
-
-  addXp(courierId, getXpForAction('cashSubmit'), 'Сдача наличных (self-clearance)');
-  updateChallengeProgress(courierId, 'cashSubmits');
-
-  logCashAction({
-    logistId: logistId,
-    logistFio: logistFio,
-    courierId: courierId,
-    courierFio: courierFio,
-    workplace: workplace,
-    amount: amount,
-    action: 'logist_approved'
-  });
-
-  try {
-    await ctx.editMessageText(`✅ Подтверждено: <b>${esc(courierFio)}</b> сдал <code>${esc(formatted)}</code> ₽`, { parse_mode: 'HTML' });
-  } catch (e) { /* ignore */ }
-
-  try {
-    await bot.telegram.sendMessage(courierId,
-      `✅ <b>${esc(logistFio)}</b> подтвердил сдачу <code>${esc(formatted)}</code> ₽\n\nСпасибо!`,
-      { parse_mode: 'HTML' }
-    );
-  } catch (e) {
-    console.error('failed to notify courier about sc approval', e.message);
-  }
-});
-
-bot.action(/^sc_decl_(\d+)$/, async (ctx) => {
-  const courierId = ctx.match[1];
-  await ctx.answerCbQuery('❌ Сдача отклонена');
-
-  const pendingCash = getPendingCash(courierId);
-  if (!pendingCash || pendingCash.confirmationStatus !== 'awaiting') {
-    try { await ctx.editMessageText('⚠️ Запрос уже обработан.'); } catch (e) { /* ignore */ }
-    return;
-  }
-
-  const declinerId = String(ctx.from.id);
-
-  if (declinerId === courierId) {
-    await ctx.answerCbQuery('⛔ Вы не можете отклонить свою сдачу.');
-    return;
-  }
-  if (getUserRole(declinerId) !== 'logist') {
-    await ctx.answerCbQuery('⛔ Только логист может отклонять сдачу.');
-    return;
-  }
-  const declinerWorkplace = getUserField(declinerId, 'workplace');
-  if (declinerWorkplace !== (pendingCash.workplace || '')) {
-    await ctx.answerCbQuery('⛔ Вы не привязаны к этому магазину.');
-    return;
-  }
-
-  setCashConfirmationStatus(courierId, null);
-
-  const courierFio = getUserField(courierId, 'fio') || 'Неизвестный';
-  const logistId = declinerId;
-  const logistFio = getUserField(logistId, 'fio') || 'Логист';
-
-  logCashAction({
-    logistId: logistId,
-    logistFio: logistFio,
-    courierId: courierId,
-    courierFio: courierFio,
-    workplace: pendingCash.workplace || 'не указано',
-    amount: Number(pendingCash.amount || 0),
-    action: 'declined'
-  });
-
-  try {
-    await ctx.editMessageText(`❌ Отклонено: <b>${esc(courierFio)}</b>`, { parse_mode: 'HTML' });
-  } catch (e) { /* ignore */ }
-
-  try {
-    await bot.telegram.sendMessage(courierId,
-      `❌ <b>${esc(logistFio)}</b> отклонил сдачу.\n\nПроверьте сумму и попробуйте снова.`,
-      { parse_mode: 'HTML' }
-    );
-  } catch (e) {
-    console.error('failed to notify courier about sc decline', e.message);
-  }
-});
-
-bot.action(/^ch_(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
-  const dateStr = ctx.match[1];
-  await ctx.answerCbQuery();
-  await showCashHistoryForDate(ctx, dateStr);
-});
-
-bot.action('edit_time', async (ctx) => {
-  await ctx.answerCbQuery();
-  const state = getState(ctx.from.id);
-
-  if (!state?.awaitingTimeChange || !state?.courierRow || !state?.day || !state?.stage) {
-    await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.punchTime}».`, getMenuForRole(ctx.from.id));
-    return;
-  }
-
-  setState(ctx.from.id, {
-    ...state,
-    awaitingTimeChange: false,
-    awaitingManualTime: true
-  });
-
-  await ctx.replyWithHTML(
-    `✏️ <b>Изменение времени</b>\n\n` +
-    `Этап: <b>${esc(formatStage(state.stage))}</b>\n\n` +
-    `Введите время в любом формате:\n` +
-    `• целое число — <code>7</code>\n` +
-    `• с половиной — <code>7,5</code> или <code>7.5</code>\n` +
-    `• часы:минуты — <code>07:30</code>, <code>07:44</code>, <code>08.46</code>, <code>8 14</code>\n\n` +
-    `Минуты округлятся до ближайших 30 (08:14 → 8, 08:46 → 9).`,
-    getMenuForRole(ctx.from.id)
-  );
-});
-
-bot.action('retry_mileage_photo', async (ctx) => {
-  await ctx.answerCbQuery();
-  const state = getState(ctx.from.id);
-
-  if (!state?.mileageRow || !state?.day || !state?.stage) {
-    await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.mileage}».`, getMenuForRole(ctx.from.id));
-    return;
-  }
-
-  setState(ctx.from.id, {
-    ...state,
-    mileageProcessing: false,
-    awaitingMileagePhoto: true,
-    awaitingManualMileage: false,
-    recognizedMileage: null,
-    ocrValue: null
-  });
-
-  await ctx.replyWithHTML('📷 Отправьте новое фото пробега крупным планом или нажмите «⏭️ Пропустить».', skipMileageKeyboard());
-});
 
 async function replaceMileageFlow(ctx, stage) {
   const profile = await ensureProfile(ctx);
 
   if (!profile) {
-    return;
+    return { status: 'no_profile' };
   }
 
   try {
     const result = await prepareMileage(profile.fio, profile.workplace, stage);
 
     if (result.notFound) {
-      const msg = formatNoSheetMessage(result, profile.workplace);
-      await ctx.replyWithHTML(msg);
-      return;
+      return { status: 'not_found', result, workplace: profile.workplace };
     }
 
     setState(ctx.from.id, makeMileageState(ctx.from.id, applyProfile(result, profile), { source: 'mileage' }));
     console.log('ожидание замены пробега', stage);
     await ctx.replyWithHTML(`📷 <b>Замена пробега</b>\n\nОтправьте фото для: <b>${esc(formatStage(stage))}</b>`, skipMileageKeyboard());
+    return { status: 'awaiting_photo' };
   } catch (error) {
     console.error('ошибка Google Sheets', error);
-    await ctx.replyWithHTML('⚠️ Не удалось подготовить замену пробега.\nПопробуйте ещё раз или обратитесь к администратору.');
+    return { status: 'error' };
   }
 }
 
-bot.action('replace_mileage_start', async (ctx) => {
-  await ctx.answerCbQuery();
-  await replaceMileageFlow(ctx, 'start');
-});
+async function replaceTimeAction(ctx, stage) {
+  const profile = await ensureProfile(ctx);
+  if (!profile) return { status: 'no_profile' };
 
-bot.action('replace_mileage_end', async (ctx) => {
-  await ctx.answerCbQuery();
-  await replaceMileageFlow(ctx, 'end');
-});
+  try {
+    const result = await replaceTime(profile.fio, profile.workplace, stage);
 
-// Фабрика обработчиков для replace_start / replace_end. Раньше это были
-// два почти идентичных блока по 25 строк, отличающихся лишь stage и иконкой.
-function replaceTimeAction(stage) {
-  return async (ctx) => {
-    await ctx.answerCbQuery();
-    const profile = await ensureProfile(ctx);
-    if (!profile) return;
-
-    try {
-      const result = await replaceTime(profile.fio, profile.workplace, stage);
-
-      if (result.notFound) {
-        await ctx.replyWithHTML(formatNoSheetMessage(result, profile.workplace));
-        return;
-      }
-
-      console.log('время записано', `replace_${stage}`);
-      clearState(ctx.from.id);
-      const icon = stage === 'start' ? '🟢' : '🔴';
-      const label = stage === 'start' ? 'Старт' : 'Конец';
-      await ctx.replyWithHTML(
-        `${icon} <b>${label} смены</b> заменён: <code>${esc(result.timeValue)}</code>`,
-        getMenuForRole(ctx.from.id)
-      );
-    } catch (error) {
-      console.error('ошибка Google Sheets', error);
-      await ctx.replyWithHTML('⚠️ Не удалось записать время.\nПопробуйте ещё раз или обратитесь к администратору.');
+    if (result.notFound) {
+      return { status: 'not_found', result, workplace: profile.workplace };
     }
-  };
+
+    console.log('время записано', `replace_${stage}`);
+    clearState(ctx.from.id);
+    return { status: 'replaced', stage, timeValue: result.timeValue };
+  } catch (error) {
+    console.error('ошибка Google Sheets', error);
+    return { status: 'error' };
+  }
 }
-
-bot.action('replace_start', replaceTimeAction('start'));
-bot.action('replace_end', replaceTimeAction('end'));
-
-bot.action('skip_mileage', async (ctx) => {
-  await ctx.answerCbQuery();
-  const state = getState(ctx.from.id);
-  const savedMileage = state?.savedMileage;
-
-  if (state?.mileageProcessing) {
-    setState(ctx.from.id, { ...state, mileageProcessing: false, awaitingMileagePhoto: false, awaitingManualMileage: false });
-    clearState(ctx.from.id);
-    await ctx.replyWithHTML('⏭️ Обработка фото отменена.', getMenuForRole(ctx.from.id));
-    return;
-  }
-
-  if (savedMileage) {
-    clearState(ctx.from.id);
-    await ctx.replyWithHTML('⬅️ Возвращаю в меню.', getMenuForRole(ctx.from.id));
-    return;
-  }
-
-  await ctx.replyWithHTML(
-    '⚠️ <b>Пропустить пробег?</b>\n\nПробег не будет записан в таблицу.',
-    Markup.inlineKeyboard([
-      [Markup.button.callback('✅ Да, пропустить', 'confirm_skip_mileage')],
-      [Markup.button.callback('❌ Отмена', 'cancel_skip_mileage')]
-    ])
-  );
-});
-
-bot.action('confirm_skip_mileage', async (ctx) => {
-  await ctx.answerCbQuery('⏭️ Пропущено');
-  clearState(ctx.from.id);
-  console.log('пропуск пробега подтверждён');
-  await ctx.replyWithHTML('⏭️ Пробег пропущен.', getMenuForRole(ctx.from.id));
-});
-
-bot.action('cancel_skip_mileage', async (ctx) => {
-  await ctx.answerCbQuery('Отменено');
-  try { await ctx.deleteMessage(); } catch {}
-});
-
-bot.action('edit_mileage', async (ctx) => {
-  await ctx.answerCbQuery();
-  const state = getState(ctx.from.id);
-
-  if (!state?.mileageRow || !state?.day || !state?.stage) {
-    await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.mileage}».`, getMenuForRole(ctx.from.id));
-    return;
-  }
-
-  setState(ctx.from.id, { ...state, mileageProcessing: false, awaitingManualMileage: true, awaitingMileagePhoto: false });
-  await ctx.replyWithHTML('✏️ <b>Ввод пробега вручную</b>\n\nВведите пробег только цифрами или загрузите фото повторно.', manualMileageKeyboard());
-});
 
 async function handleRouteSheetPhoto(ctx, state, fileId) {
   const telegramId = ctx.from.id;
@@ -4381,17 +3482,9 @@ async function finalizeReconciliationPostSend(ctx, state, telegramId, totalOrder
   }
 
   if (errors.length > 0) {
-    try {
-      await ctx.replyWithHTML(
-        `⚠️ <b>Фото отправлены, но не удалось записать:</b>\n` +
-        errors.map((e) => `• ${esc(e)}`).join('\n') +
-        '\n\nСообщите администратору.',
-        getMenuForRole(telegramId)
-      );
-    } catch (notifyErr) {
-      console.error('failed to notify user about reconciliation errors', notifyErr.message);
-    }
+    return { status: 'partial_error', errors };
   }
+  return { status: 'ok' };
 }
 
 async function handleReconciliationPhoto(ctx, state, fileId) {
@@ -4510,10 +3603,9 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       const ocrWarning = !state.reconciliationPhoto1TotalOrders && state.reconciliationPhoto1OcrReason
         ? `\n\n⚠️ OCR не распознал заказы/наличные. Фото отправлены, но данные не записаны автоматически.`
         : '';
-      await ctx.replyWithHTML(`✅ <b>Все фото (2 шт.) отправлены.</b>${ocrWarning}`, getMenuForRole(ctx.from.id));
-
       const totalOrders = state.reconciliationPhoto1TotalOrders;
-      await finalizeReconciliationPostSend(ctx, state, telegramId, totalOrders);
+      const postRes = await finalizeReconciliationPostSend(ctx, state, telegramId, totalOrders);
+      return { status: 'photos_sent_terminal', ocrWarning, postRes };
     } catch (error) {
       console.error('telegram send reconciliation album error', error);
       await ctx.replyWithHTML('⚠️ Не удалось отправить фото.\nПопробуйте ещё раз или обратитесь к администратору.', routeSheetKeyboard());
@@ -4591,10 +3683,9 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     const ocrWarning = shouldWarnAboutReconciliationOcr(cashInfo)
       ? `\n\n⚠️ OCR не распознал заказы/наличные. Фото отправлено, но данные не записаны автоматически.`
       : '';
-    await ctx.replyWithHTML(`✅ <b>Все фото (${total} шт.) отправлены.</b>${ocrWarning}`, getMenuForRole(ctx.from.id));
-
     const totalOrders = cashInfo.totalOrders;
-    await finalizeReconciliationPostSend(ctx, state, telegramId, totalOrders);
+    const postRes = await finalizeReconciliationPostSend(ctx, state, telegramId, totalOrders);
+    return { status: 'photos_sent', total, ocrWarning, postRes };
   } catch (error) {
     console.error('telegram send reconciliation photo error', error);
     await ctx.replyWithHTML('⚠️ Не удалось отправить фото.\nПопробуйте ещё раз или обратитесь к администратору.', routeSheetKeyboard());
@@ -4766,34 +3857,6 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
   }
 }
 
-bot.on('photo', async (ctx) => {
-  if (isLogist(ctx.from.id)) {
-    await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
-    return;
-  }
-  const telegramId = ctx.from.id;
-  const state = getState(telegramId);
-
-  const photos = ctx.message.photo;
-  const bestPhoto = photos[photos.length - 1];
-  const fileId = bestPhoto.file_id;
-
-  if (state?.awaitingRouteSheetPhoto) {
-    return handleRouteSheetPhoto(ctx, state, fileId);
-  }
-
-  if (state?.awaitingReconciliationPhoto) {
-    return handleReconciliationPhoto(ctx, state, fileId);
-  }
-
-  if (!state?.awaitingMileagePhoto) {
-    await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.mileage}».`, getMenuForRole(ctx.from.id));
-    return;
-  }
-
-  return handleMileagePhoto(ctx, state, fileId);
-});
-
 async function handleManualTime(ctx, state, text) {
   const telegramId = ctx.from.id;
   const timeValue = normalizeTimeValue(text);
@@ -4804,7 +3867,7 @@ async function handleManualTime(ctx, state, text) {
       'Поддерживаются: <code>7</code>, <code>7,5</code>, <code>07:30</code>, <code>08:46</code>, <code>08.46</code>, <code>8 14</code> (часы 0–24).\n' +
       'Минуты округляются до ближайших 30.'
     );
-    return;
+    return 'error';
   }
 
   try {
@@ -4813,10 +3876,12 @@ async function handleManualTime(ctx, state, text) {
     console.log('время изменено', state.stage);
     const icon = state.stage === 'start' ? '🟢' : '🔴';
     const label = state.stage === 'start' ? 'Старт' : 'Конец';
-    await ctx.replyWithHTML(`${icon} <b>${label} смены</b> изменён: <code>${esc(timeValue)}</code>`, getMenuForRole(ctx.from.id));
+    await ctx.replyWithHTML(`${icon} <b>${label} смены</b> изменён: <code>${esc(timeValue)}</code>`);
+    return 'done';
   } catch (error) {
     console.error('ошибка Google Sheets', error);
     await ctx.replyWithHTML('⚠️ Не удалось изменить время.\nПопробуйте ещё раз или обратитесь к администратору.');
+    return 'error';
   }
 }
 
@@ -4928,10 +3993,11 @@ async function handleUpdateEditText(ctx, state, text) {
 
 async function handleManualMileageInput(ctx, state, text) {
   if (!/^\d{2,6}$/.test(text)) {
-    await ctx.replyWithHTML('❌ Введите пробег от <b>2 до 6 цифр</b>.\n\nНапример: <code>25408</code>', manualMileageKeyboard());
-    return;
+    await ctx.replyWithHTML('❌ Введите пробег от <b>2 до 6 цифр</b>.\n\nНапример: <code>25408</code>');
+    return 'error';
   }
   await saveMileageFromState(ctx, Number(text));
+  return 'done';
 }
 
 // ─── Dispatcher для bot.on('text') ───
@@ -4947,90 +4013,6 @@ async function handleManualMileageInput(ctx, state, text) {
 //
 // Порядок ВАЖЕН: state-маршруты должны быть выше button-маршрутов,
 // чтобы юзер при заполнении формы не «выпадал» в меню.
-
-const TEXT_ROUTES = [
-  // 1) «Назад в меню» — общая кнопка
-  { match: (text) => ['🏠 В меню', '⬅️ Назад', 'Назад'].includes(text) || text === BUTTONS.back, handler: (ctx) => backToMainMenu(ctx) },
-
-  // 2) State-based: пользователь сейчас что-то вводит
-  { state: 'awaitingCarNumber', handler: (ctx, s, text) => saveCarNumber(ctx, text) },
-  { state: 'awaitingWorkplace', handler: (ctx, s, text) => saveWorkplace(ctx, text) },
-  { state: 'awaitingDevice', handler: (ctx, s, text) => saveDevice(ctx, text) },
-  { state: 'awaitingFio', handler: (ctx, s, text) => authorizeFio(ctx, text) },
-  { state: 'awaitingRoleChoice', handler: (ctx) => ctx.replyWithHTML('⚠️ Выберите роль кнопкой выше.', roleChoiceKeyboard()) },
-  { state: 'awaitingManualTime', handler: (ctx, state, text) => handleManualTime(ctx, state, text) },
-  { state: 'awaitingUpdateEdit', handler: (ctx, state, text) => handleUpdateEditText(ctx, state, text) },
-  { state: 'awaitingManualMileage', handler: (ctx, state, text) => handleManualMileageInput(ctx, state, text) },
-
-  // 3) Кнопки главного меню
-  { button: BUTTONS.punchTime, legacy: ['Время смены', 'Внести время смены', '⏱ Время'], handler: (ctx) => punchTimeFlow(ctx) },
-  { button: BUTTONS.mileage, legacy: ['Внести пробег', '🚗 Пробег'], handler: (ctx) => mileageFlow(ctx) },
-  { button: BUTTONS.routeSheet, legacy: ['Маршрутный лист', '📄 Маршрутник'], handler: (ctx) => routeSheetFlow(ctx) },
-  { button: BUTTONS.reconciliation, legacy: ['Сверки', '📊 Сверки'], handler: (ctx) => reconciliationFlow(ctx) },
-  { button: BUTTONS.cashCheck, legacy: ['Деньги к сдаче', '💵 Наличные'], handler: (ctx) => showPendingCashStatus(ctx) },
-  { button: BUTTONS.issues, legacy: ['Проблема с заказом', '⚠️ Проблема'], handler: (ctx) => showIssuesMenu(ctx) },
-  { button: BUTTONS.leaderBoard, legacy: ['Лидерборд', '🏆 Лидерборд'], handler: (ctx) => showLeaderboardMenu(ctx) },
-  { button: BUTTONS.cashCollect, handler: (ctx) => showDebtorsList(ctx) },
-  { button: BUTTONS.openShop, handler: (ctx) => openShopNotify(ctx) },
-
-  // 4) Меню настроек
-  { button: BUTTONS.settings, legacy: ['Настройки'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ <b>Настройки</b>', getSettingsMenuForRole(id)) },
-  { button: BUTTONS.profile, legacy: ['Профиль'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('✏️ <b>Профиль</b>', getProfileMenuForRole(ctx.from.id)) },
-  { button: BUTTONS.help, legacy: ['Помощь'], handler: (ctx) => sendHelp(ctx) },
-
-  // 5) Профиль (требуют ФИО)
-  { button: BUTTONS.changeCar, legacy: ['Изменить номер машины', 'Номер машины'], handler: async (ctx) => {
-    if (isLogist(ctx.from.id)) {
-      await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
-      return;
-    }
-    const fio = await requireFio(ctx);
-    if (fio) await askForCarNumber(ctx, fio);
-  }},
-  { button: BUTTONS.changeWorkplace, legacy: ['Изменить интернет-магазин', 'Поменять магазин', 'Магазин'], handler: async (ctx) => {
-    const fio = await requireFio(ctx);
-    if (fio) await askForWorkplace(ctx, fio);
-  }},
-  { button: BUTTONS.changeDevice, legacy: ['Изменить устройство', 'Устройство'], handler: async (ctx) => {
-    if (isLogist(ctx.from.id)) {
-      await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
-      return;
-    }
-    const fio = await requireFio(ctx);
-    if (fio) await askForDevice(ctx, fio);
-  }},
-  { button: BUTTONS.switchUser, legacy: ['Поменять сотрудника', 'Сменить сотрудника', 'Сотрудник'], handler: handleSwitchUser },
-
-  // 6) Настройки (Таблицы, Мой ID, История сборов)
-  { button: BUTTONS.sheetInfo, legacy: ['Таблицы'], handler: handleSheetsInfo },
-  { button: BUTTONS.myId, legacy: ['Мой ID'], handler: handleMyId },
-  { button: BUTTONS.cashHistory, handler: (ctx) => showCashHistory(ctx) }
-];
-
-function matchTextRoute(route, text, state) {
-  if (typeof route.match === 'function' && route.match(text, state)) return true;
-  if (route.state && state?.[route.state]) return true;
-  if (route.button) {
-    if (text === route.button) return true;
-    if (Array.isArray(route.legacy) && route.legacy.includes(text)) return true;
-  }
-  return false;
-}
-
-bot.on('text', async (ctx) => {
-  const telegramId = ctx.from.id;
-  const text = ctx.message.text.trim();
-  const state = getState(telegramId);
-
-  for (const route of TEXT_ROUTES) {
-    if (matchTextRoute(route, text, state)) {
-      return route.handler(ctx, state, text, telegramId);
-    }
-  }
-
-  // Fallback: текст не подошёл ни под одну ветку
-  await ctx.replyWithHTML('Выберите действие в меню или используйте /help.', getMenuForRole(telegramId));
-});
 
 bot.catch((error, ctx) => {
   console.error('bot error', error.message);
@@ -5082,6 +4064,75 @@ async function setupBotCommands() {
   ]);
 }
 
+const services = {
+  getUserField, setUserField, markUserSeen, getAdminIds,
+  getVersion, ensureProfile, getUserRole, getTimeGreeting,
+  esc, getEmployeeDisplayName, askForFio, logistMainMenu,
+  getMenuForRole, isLogist, askForCarNumber, askForWorkplace,
+  askForDevice, sendHelp, backToMainMenu,
+  isAdminUser, getSheetAccessUsers, addSheetAccessUser, removeSheetAccessUser,
+  _pendingUpdates, savePendingUpdates, notifyUsersAboutUpdate,
+  setState, getState, clearState,
+  // text router flows
+  punchTimeFlow, mileageFlow, routeSheetFlow, reconciliationFlow,
+  showPendingCashStatus, showIssuesMenu, showLeaderboardMenu,
+  handleSwitchUser, handleSheetsInfo, handleMyId, showCashHistory,
+  saveCarNumber, saveWorkplace, saveDevice, authorizeFio,
+  handleManualTime, handleUpdateEditText, handleManualMileageInput,
+  requireFio, roleChoiceKeyboard, getSettingsMenuForRole, getProfileMenuForRole,
+  // courier helpers
+  formatNoSheetMessage, makeMileageState, applyProfile,
+  replaceMileageFlow, replaceTimeAction,
+  handleRouteSheetPhoto, handleReconciliationPhoto, handleMileagePhoto,
+  finalizeReconciliationPostSend, saveMileageFromState,
+  getTodayText, getNextRouteSheetNumber, logRouteSheetPhoto,
+  buildRouteSheetCaption, sendPhotoToRouteSheetChat,
+  normalizeTimeValue, formatStage, formatMoneyRu,
+  notifyLogistsAboutSelfClearance, sendFunReaction,
+  courierMainMenu,
+  // logist helpers
+  pokeCourier, showCashHistoryForDate,
+  // common business
+  getPendingCash, setCashConfirmationStatus, clearPendingCashAndReminders,
+  logCashAction, deleteUser,
+  addXp, getXpForAction, updateChallengeProgress,
+  saveOcrDebugImage, updateOcrDebugStatus,
+  recordLeaderboardOrders, getLbDayOrders, getLbTodayKey,
+  getFullProfile,
+  getReminder, updateReminder, deleteReminder, getSelfClearanceRequest,
+  findLogistsForWorkplace, getDebtors, cleanupStaleReminders, getCashHistory,
+  WORKPLACE_FEATURES,
+  Markup, BUTTONS, getCurrentDateInfo,
+  // leaderboard & achievements
+  calculateLeaderboard, formatLeaderboard, getDailyTop3, findOvertakenCouriers,
+  checkNotifications, getWorkplaceRecord, setWorkplaceRecord,
+  checkMilestoneAchievements, unlockAchievement, getUnlockedAchievements, getAllAchievements,
+  updateStreak, getStreak, getStreakBonus,
+  getChallenges, generateWeeklyChallenges,
+  // sheets & ocr
+  readCell, updateCell, flushSheetUpdates,
+  db, checkpoint,
+  isSheetAccessUser,
+  WORKPLACES, LIMITS,
+  getMileageStageCell, buildMileageRecognitionOptions, parseMileageNumber, getMaxShiftMileageDelta,
+  checkRapidOcrHealth, recognizeMileage, downloadTelegramFile,
+  isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold,
+  logOcrFeedback, isEmptyCell, isScheduleMarker, getMileageColumns,
+  roundTimeToHalfHour, getColumnLetter, getCourierColumnsByDay,
+  prepareMileage, replaceTime, punchTime, getTodayStatus,
+  updateCourierTime, updateMileage,
+  // misc
+  openShopNotify, showDebtorsList,
+  showLeaderboardFilter, showWeeklyChallenges, showMyAchievements,
+  showMyProgress, showXpInfo, showNotificationSettings, sendCommandsList
+};
+
+setupCommands(bot, services);
+setupAdmin(bot, services);
+setupTextRouter(bot, services);
+setupCourier(bot, services);
+setupLogist(bot, services);
+
 async function startBot(retry = 0) {
   if (process.env.BOT_DISABLED === 'true') {
     console.log('bot disabled — .env BOT_DISABLED=true');
@@ -5090,6 +4141,8 @@ async function startBot(retry = 0) {
   try {
     const { version, changed, changedFiles, updates } = checkVersion();
     initGoogleSheets();
+    setNotifyAdminCallback(notifyAdmins);
+    loadPendingUpdatesFromDb();
     const removedMonths = cleanupOldMonths();
     if (removedMonths > 0) {
       console.log(`cleaned up ${removedMonths} old month(s) from storage`);
@@ -5171,9 +4224,7 @@ let _shutdownInProgress = false;
 
 function flushAllSync() {
   try { flushStateNow(); } catch (e) { console.error('flushStateNow failed', e.message); }
-  try { flushStorageNow(); } catch (e) { console.error('flushStorageNow failed', e.message); }
   try { flushFunReactionsNow(); } catch (e) { console.error('flushFunReactionsNow failed', e.message); }
-  try { flushLeaderboardNow(); } catch (e) { console.error('flushLeaderboardNow failed', e.message); }
 }
 
 function shutdown(signal) {

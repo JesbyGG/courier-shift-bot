@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
+const db = require('../db');
 
 const OCR_DEBUG_DIR = path.join(__dirname, '..', 'ocr_debug');
-const INDEX_FILE = path.join(OCR_DEBUG_DIR, 'index.json');
 const MAX_DISK_MB = 2000;
 const MAX_FILES = 300;
 const MAX_AGE_DAYS = 30;
@@ -10,26 +10,6 @@ const MAX_AGE_DAYS = 30;
 function ensureDir() {
   if (!fs.existsSync(OCR_DEBUG_DIR)) {
     fs.mkdirSync(OCR_DEBUG_DIR, { recursive: true });
-  }
-}
-
-function readIndex() {
-  try {
-    if (fs.existsSync(INDEX_FILE)) {
-      return JSON.parse(fs.readFileSync(INDEX_FILE, 'utf8'));
-    }
-  } catch (e) {
-    console.error('ocrDebug: readIndex error', e.message);
-  }
-  return {};
-}
-
-function writeIndex(index) {
-  try {
-    ensureDir();
-    fs.writeFileSync(INDEX_FILE, JSON.stringify(index, null, 2), 'utf8');
-  } catch (e) {
-    console.error('ocrDebug: writeIndex error', e.message);
   }
 }
 
@@ -68,22 +48,23 @@ function saveOcrDebugImage(imageBuffer, meta) {
     fs.writeFileSync(filePath, imageBuffer);
     const sizeMb = getFileSizeMb(filePath);
 
-    const index = readIndex();
-    index[fileName] = {
+    const stmt = db.prepare(
+      'INSERT INTO ocr_debug (fileName, filePath, timestamp, telegramId, stage, workplace, fio, fileId, ocrResult, userCorrectedValue, status, sizeMb) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    stmt.run(
       fileName,
       filePath,
-      timestamp: new Date().toISOString(),
-      telegramId: meta.telegramId,
-      stage: meta.stage || null,
-      workplace: meta.workplace || null,
-      fio: meta.fio || null,
-      fileId: meta.fileId || null,
-      ocrResult: meta.ocrResult !== undefined ? meta.ocrResult : null,
-      userCorrectedValue: meta.userCorrectedValue !== undefined ? meta.userCorrectedValue : null,
-      status: meta.status || 'ocr_fail',
-      sizeMb: Math.round(sizeMb * 100) / 100
-    };
-    writeIndex(index);
+      new Date().toISOString(),
+      String(meta.telegramId),
+      meta.stage || null,
+      meta.workplace || null,
+      meta.fio || null,
+      meta.fileId || null,
+      meta.ocrResult !== undefined ? meta.ocrResult : null,
+      meta.userCorrectedValue !== undefined ? meta.userCorrectedValue : null,
+      meta.status || 'ocr_fail',
+      Math.round(sizeMb * 100) / 100
+    );
 
     cleanupOldFiles();
     return fileName;
@@ -98,85 +79,61 @@ function saveOcrDebugImage(imageBuffer, meta) {
  */
 function updateOcrDebugStatus(fileId, status, userCorrectedValue) {
   if (!fileId) return;
-  const index = readIndex();
-  let changed = false;
-  for (const key of Object.keys(index)) {
-    if (index[key].fileId === fileId) {
-      index[key].status = status;
-      if (userCorrectedValue !== undefined) {
-        index[key].userCorrectedValue = userCorrectedValue;
-      }
-      changed = true;
-      break;
-    }
-  }
-  if (changed) {
-    writeIndex(index);
-  }
+  const stmt = db.prepare(
+    'UPDATE ocr_debug SET status = ?, userCorrectedValue = ? WHERE fileId = ?'
+  );
+  stmt.run(status, userCorrectedValue !== undefined ? userCorrectedValue : null, fileId);
 }
 
 function getTotalSizeMb() {
-  const index = readIndex();
-  let total = 0;
-  for (const key of Object.keys(index)) {
-    total += index[key].sizeMb || 0;
-  }
-  return total;
+  const row = db.prepare('SELECT SUM(sizeMb) as total FROM ocr_debug').get();
+  return row && row.total ? row.total : 0;
 }
 
 function cleanupOldFiles() {
   try {
     ensureDir();
-    const index = readIndex();
     const now = Date.now();
     const maxAgeMs = MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
-    let changed = false;
 
     // 1. Удалить по возрасту (>30 дней)
-    for (const key of Object.keys(index)) {
-      const ts = new Date(index[key].timestamp).getTime();
+    const rows = db.prepare('SELECT * FROM ocr_debug').all();
+    const deleteStmt = db.prepare('DELETE FROM ocr_debug WHERE fileName = ?');
+
+    for (const row of rows) {
+      const ts = new Date(row.timestamp).getTime();
       if (now - ts > maxAgeMs) {
-        const fp = path.join(OCR_DEBUG_DIR, key);
-        try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch (_) {}
-        delete index[key];
-        changed = true;
+        try { if (fs.existsSync(row.filePath)) fs.unlinkSync(row.filePath); } catch (_) {}
+        deleteStmt.run(row.fileName);
       }
     }
 
     // 2. Удалить по количеству (>300), сначала confirmed_ok, потом ocr_fail, потом ocr_mismatch
-    const ordered = Object.entries(index).sort((a, b) => {
+    const allRows = db.prepare('SELECT * FROM ocr_debug').all();
+    if (allRows.length > MAX_FILES) {
       const statusOrder = { confirmed_ok: 0, ocr_fail: 1, ocr_mismatch: 2 };
-      const sa = statusOrder[a[1].status] || 1;
-      const sb = statusOrder[b[1].status] || 1;
-      if (sa !== sb) return sa - sb;
-      return new Date(a[1].timestamp) - new Date(b[1].timestamp);
-    });
+      allRows.sort((a, b) => {
+        const sa = statusOrder[a.status] || 1;
+        const sb = statusOrder[b.status] || 1;
+        if (sa !== sb) return sa - sb;
+        return new Date(a.timestamp) - new Date(b.timestamp);
+      });
 
-    while (ordered.length > MAX_FILES) {
-      const entry = ordered.shift();
-      if (!entry) break;
-      const [key] = entry;
-      const fp = path.join(OCR_DEBUG_DIR, key);
-      try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch (_) {}
-      delete index[key];
-      changed = true;
-    }
-
-    // 3. Удалить по размеру (>2000 MB)
-    while (getTotalSizeMb() > MAX_DISK_MB && ordered.length > 0) {
-      const entry = ordered.shift();
-      if (!entry) break;
-      const [key] = entry;
-      if (index[key]) {
-        const fp = path.join(OCR_DEBUG_DIR, key);
-        try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch (_) {}
-        delete index[key];
-        changed = true;
+      while (allRows.length > MAX_FILES) {
+        const row = allRows.shift();
+        if (!row) break;
+        try { if (fs.existsSync(row.filePath)) fs.unlinkSync(row.filePath); } catch (_) {}
+        deleteStmt.run(row.fileName);
       }
     }
 
-    if (changed) {
-      writeIndex(index);
+    // 3. Удалить по размеру (>2000 MB)
+    while (getTotalSizeMb() > MAX_DISK_MB) {
+      const remaining = db.prepare('SELECT * FROM ocr_debug ORDER BY timestamp ASC').all();
+      if (remaining.length === 0) break;
+      const row = remaining[0];
+      try { if (fs.existsSync(row.filePath)) fs.unlinkSync(row.filePath); } catch (_) {}
+      deleteStmt.run(row.fileName);
     }
   } catch (error) {
     console.error('ocrDebug: cleanup error', error.message);
