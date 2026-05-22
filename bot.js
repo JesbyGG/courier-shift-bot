@@ -20,6 +20,8 @@ const {
   updateCourierTime,
   updateMileage,
   readCell,
+  updateCell,
+  flushSheetUpdates,
   getSheetConfig,
   updateEfficiencyOrders,
   loadPendingUpdatesFromDb,
@@ -33,7 +35,6 @@ const {
   deleteUser,
   getPendingCash,
   setPendingCash,
-  deletePendingCash,
   setCashConfirmationStatus,
   clearPendingCashAndReminders,
   getAllUserIds,
@@ -55,18 +56,17 @@ const {
   getReminder,
   updateReminder,
   deleteReminder,
-  getActiveRemindersForCourier,
   getSelfClearanceRequest,
   cleanupStaleReminders
 } = require('./services/storage');
 const { recognizeMileage, downloadTelegramFile, isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold, checkRapidOcrHealth } = require('./services/mileageOcr');
 const { saveOcrDebugImage, updateOcrDebugStatus } = require('./services/ocrDebug');
-const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, getDayOrders: getLbDayOrders, getWorkplaceRecord, setWorkplaceRecord, getDailyTop3, findOvertakenCouriers, getTodayKey: getLbTodayKey } = require('./services/leaderboard');
-const { addXp, getTotalXp, getRank, getRankProgress, formatRankInfo, getXpForAction } = require('./services/xp');
-const { checkMilestoneAchievements, unlockAchievement, getUnlockedAchievements, getAllAchievements } = require('./services/achievements');
+const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, getDayOrders: getLbDayOrders, getWorkplaceRecord, setWorkplaceRecord, getDailyTop3, findOvertakenCouriers, getTodayKey: getLbTodayKey, _getAllRecords } = require('./services/leaderboard');
+const { addXp, getTotalXp, formatRankInfo, getXpForAction } = require('./services/xp');
+const { getUnlockedAchievements, getAllAchievements } = require('./services/achievements');
 const { updateStreak, getStreak, getStreakBonus } = require('./services/streak');
 const { updateChallengeProgress, generateWeeklyChallenges, getChallenges } = require('./services/challenges');
-const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, roundMinutesToHalfHour } = require('./utils');
+const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, getCourierColumnsByDay, roundMinutesToHalfHour, roundTimeToHalfHour, isEmptyCell, isScheduleMarker } = require('./utils');
 const { registerSheetCommand } = require('./sheetCommand');
 const { WORKPLACES, DEVICES, ROLES, LIMITS, WORKPLACE_FEATURES, WORKPLACE_KEY_MAP, BUTTONS } = require('./config');
 const { isAdminUser, getAdminIds } = require('./services/auth');
@@ -93,7 +93,8 @@ const {
   mileageReplaceKeyboard,
   switchUserKeyboard,
   cashSubmitConfirmKeyboard,
-  debtorListKeyboard
+  debtorListKeyboard,
+  courierMainMenu
 } = require('./menus/keyboards');
 
 const db = require('./db');
@@ -406,10 +407,10 @@ async function pokeCourier(ctx, courierId) {
     action: 'reminded'
   });
 
-  const workpalceLabel = courierRecord.workplace || 'не указано';
+  const workplaceLabel = courierRecord.workplace || 'не указано';
   const courierMsg = `🔔 <b>Логист ${esc(logistFio)} напоминает:</b>\n\n` +
     `💵 У вас <code>${esc(formatted)}</code> ₽ к сдаче.\n` +
-    `🏬 <b>${esc(workpalceLabel)}</b>\n\n` +
+    `🏬 <b>${esc(workplaceLabel)}</b>\n\n` +
     `Сдали деньги?`;
 
   try {
@@ -2813,6 +2814,9 @@ async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, o
     const settings = getNotificationSettings(telegramId);
     const dayKey = getLbTodayKey();
 
+    // Сохраняем предыдущий топ-3 до обновления
+    const previousTop3 = workplace ? getDailyTop3(workplace, dayKey) : [];
+
     // 1. Личный рекорд
     if (settings.personalRecord) {
       const notifications = checkLeaderboardNotifications(telegramId, fio, workplace, ordersCount);
@@ -2862,7 +2866,6 @@ async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, o
     // 3. Рекорд точки + лидер дня + топ-3
     if (workplace) {
       const currentTop3 = getDailyTop3(workplace, dayKey);
-      const previousTop3 = [];
 
       // Получаем предыдущий рекорд точки для проверки
       const previousRecord = getWorkplaceRecord(workplace, dayKey);
@@ -3834,8 +3837,13 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
       return;
     }
 
-    // OCR успешно распознал — сохраняем в любом случае, даже если пользователь
-    // нажимал кнопки во время обработки. Используем originalState как fallback.
+    // OCR успешно распознал — проверяем, не изменил ли пользователь состояние
+    const currentState = getState(telegramId);
+    if (!currentState || currentState.fileId !== fileId || !currentState.mileageProcessing) {
+      console.log('mileage bg: state changed, ignoring OCR result');
+      return;
+    }
+
     await saveMileageFromState(
       { from: { id: telegramId }, telegram, replyWithHTML: sendMsg },
       mileageValue,
@@ -4014,8 +4022,43 @@ async function handleManualMileageInput(ctx, state, text) {
 // Порядок ВАЖЕН: state-маршруты должны быть выше button-маршрутов,
 // чтобы юзер при заполнении формы не «выпадал» в меню.
 
-bot.catch((error, ctx) => {
+let _shutdownInProgress = false;
+
+function flushAllSync() {
+  try { flushStateNow(); } catch (e) { console.error('flushStateNow failed', e.message); }
+  try { flushFunReactionsNow(); } catch (e) { console.error('flushFunReactionsNow failed', e.message); }
+}
+
+function shutdown(signal) {
+  if (_shutdownInProgress) return;
+  _shutdownInProgress = true;
+
+  console.log(`shutdown initiated by ${signal}`);
+  try {
+    checkpoint();
+  } catch (_) {}
+  flushAllSync();
+
+  try {
+    makeBackupSync('pre-shutdown');
+  } catch (e) {
+    console.error('pre-shutdown backup failed', e.message);
+  }
+
+  try {
+    bot.stop(signal);
+  } catch (e) {
+    console.error('bot.stop failed', e.message);
+  }
+}
+
+bot.catch(async (error, ctx) => {
   console.error('bot error', error.message);
+  try {
+    await ctx.replyWithHTML('⚠️ Произошла ошибка. Попробуйте ещё раз или используйте /start.');
+  } catch (replyErr) {
+    console.error('failed to send error reply:', replyErr.message);
+  }
 });
 
 process.on('uncaughtException', (error) => {
@@ -4105,8 +4148,8 @@ const services = {
   Markup, BUTTONS, getCurrentDateInfo,
   // leaderboard & achievements
   calculateLeaderboard, formatLeaderboard, getDailyTop3, findOvertakenCouriers,
-  checkNotifications, getWorkplaceRecord, setWorkplaceRecord,
-  checkMilestoneAchievements, unlockAchievement, getUnlockedAchievements, getAllAchievements,
+  checkNotifications: checkLeaderboardNotifications, getWorkplaceRecord, setWorkplaceRecord,
+  getUnlockedAchievements, getAllAchievements,
   updateStreak, getStreak, getStreakBonus,
   getChallenges, generateWeeklyChallenges,
   // sheets & ocr
@@ -4117,12 +4160,12 @@ const services = {
   getMileageStageCell, buildMileageRecognitionOptions, parseMileageNumber, getMaxShiftMileageDelta,
   checkRapidOcrHealth, recognizeMileage, downloadTelegramFile,
   isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold,
-  logOcrFeedback, isEmptyCell, isScheduleMarker, getMileageColumns,
+  logOcrFeedback, isEmptyCell, isScheduleMarker, getMileageColumns: getMileageColumnsByDay,
   roundTimeToHalfHour, getColumnLetter, getCourierColumnsByDay,
-  prepareMileage, replaceTime, punchTime, getTodayStatus,
+  prepareMileage, replaceTime, punchTime,
   updateCourierTime, updateMileage,
   // misc
-  openShopNotify, showDebtorsList,
+  openShopNotify,
   showLeaderboardFilter, showWeeklyChallenges, showMyAchievements,
   showMyProgress, showXpInfo, showNotificationSettings, sendCommandsList
 };
@@ -4219,36 +4262,6 @@ async function startBot(retry = 0) {
 }
 
 startBot();
-
-let _shutdownInProgress = false;
-
-function flushAllSync() {
-  try { flushStateNow(); } catch (e) { console.error('flushStateNow failed', e.message); }
-  try { flushFunReactionsNow(); } catch (e) { console.error('flushFunReactionsNow failed', e.message); }
-}
-
-function shutdown(signal) {
-  if (_shutdownInProgress) return;
-  _shutdownInProgress = true;
-
-  console.log(`shutdown initiated by ${signal}`);
-  try {
-    checkpoint();
-  } catch (_) {}
-  flushAllSync();
-
-  try {
-    makeBackupSync('pre-shutdown');
-  } catch (e) {
-    console.error('pre-shutdown backup failed', e.message);
-  }
-
-  try {
-    bot.stop(signal);
-  } catch (e) {
-    console.error('bot.stop failed', e.message);
-  }
-}
 
 function makeBackupSync(reason = 'auto') {
   const now = new Date();

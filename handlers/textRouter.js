@@ -143,8 +143,7 @@ module.exports = function setupTextRouter(bot, services) {
 
     // 6) Настройки (Таблицы, Мой ID, История сборов)
     { button: BUTTONS.sheetInfo, legacy: ['Таблицы'], handler: handleSheetsInfo },
-    { button: BUTTONS.myId, legacy: ['Мой ID'], handler: handleMyId },
-    { button: BUTTONS.cashHistory, handler: (ctx) => showCashHistory(ctx) }
+    { button: BUTTONS.myId, legacy: ['Мой ID'], handler: handleMyId }
   ];
 
   function matchTextRoute(route, text, state) {

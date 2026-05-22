@@ -56,6 +56,7 @@ module.exports = function setupCommands(bot, services) {
     const profile = await ensureProfile(ctx);
 
     if (!profile) {
+      await ctx.replyWithHTML('⚠️ Не удалось загрузить профиль. Попробуйте /start позже или обратитесь к администратору.');
       return;
     }
 

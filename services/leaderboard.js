@@ -229,6 +229,9 @@ function getDailyTop3(workplace, dayKey) {
     });
   }
   entries.sort((a, b) => b.orders - a.orders);
+  for (let i = 0; i < entries.length; i++) {
+    entries[i].rank = i + 1;
+  }
   return entries.slice(0, 3);
 }
 
@@ -262,5 +265,6 @@ module.exports = {
   setWorkplaceRecord,
   getDailyTop3,
   findOvertakenCouriers,
-  getTodayKey
+  getTodayKey,
+  _getAllRecords
 };

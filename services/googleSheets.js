@@ -735,6 +735,8 @@ module.exports = {
   updateCourierTime,
   updateMileage,
   readCell,
+  updateCell,
+  flushSheetUpdates,
   verifySheetAccess,
   getSheetConfig,
   updateEfficiencyOrders,

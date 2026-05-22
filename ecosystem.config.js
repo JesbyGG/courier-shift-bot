@@ -19,7 +19,7 @@ module.exports = {
       name: 'rapidocr-server',
       script: 'rapidocr_server.py',
       args: '--server',
-      interpreter: './venv/bin/python',
+      interpreter: process.env.PYTHON_PATH || './venv/bin/python',
       interpreter_args: '',
       cwd: __dirname,
       autorestart: true,

@@ -13,6 +13,7 @@ module.exports = function setupCourier(bot, services) {
     addXp, getXpForAction, updateChallengeProgress,
     backToMainMenu,
     replaceTimeAction,
+    WORKPLACE_FEATURES, sendCommandsList,
     Markup, BUTTONS, esc
   } = services;
 
