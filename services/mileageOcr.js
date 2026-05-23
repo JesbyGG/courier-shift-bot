@@ -135,52 +135,55 @@ function smartPickFromGroups(groups, options = {}) {
   const valid = groups.filter((g) => Number.isFinite(g.mileage) && g.mileage > 0);
   if (valid.length === 0) return { mileage: null, candidates: [] };
 
-  // km groups ALWAYS win — if a number has "km" next to it, it's the odometer
-  const kmGroups = valid.filter((g) => g.has_km && !g.is_noise && g.mileage >= 100);
-  if (kmGroups.length > 0) {
-    const bestKm = kmGroups.sort((a, b) => {
-      const aLen = String(a.mileage).length;
-      const bLen = String(b.mileage).length;
-      if (aLen >= 5 && bLen < 5) return -1;
-      if (bLen >= 5 && aLen < 5) return 1;
-      return b.avgConfidence - a.avgConfidence;
-    })[0];
-    if (bestKm) {
-      const candidates = kmGroups.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence }));
-      return { mileage: bestKm.mileage, candidates };
-    }
+  // Separate km and non-km groups
+  const nonNoise = valid.filter((g) => !g.is_noise && g.mileage >= 100);
+  const kmGroups = nonNoise.filter((g) => g.has_km);
+  const nonKmGroups = nonNoise.filter((g) => !g.has_km);
+
+  // Find best km group
+  const bestKm = kmGroups.length > 0
+    ? kmGroups.sort((a, b) => {
+        const aLen = String(a.mileage).length;
+        const bLen = String(b.mileage).length;
+        if (aLen >= 5 && bLen < 5) return -1;
+        if (bLen >= 5 && aLen < 5) return 1;
+        return b.avgConfidence - a.avgConfidence;
+      })[0]
+    : null;
+
+  // Find best non-km group (5-6 digits preferred)
+  const bestNonKm = nonKmGroups.length > 0
+    ? nonKmGroups.sort((a, b) => {
+        const aOdo = String(a.mileage).length >= 5 ? 1 : 0;
+        const bOdo = String(b.mileage).length >= 5 ? 1 : 0;
+        if (aOdo !== bOdo) return bOdo - aOdo;
+        if (a.count !== b.count) return b.count - a.count;
+        return b.avgConfidence - a.avgConfidence;
+      })[0]
+    : null;
+
+  // Decision: don't blindly trust has_km if another candidate is much stronger
+  let selected = null;
+  if (bestKm && bestKm.avgConfidence >= 0.95) {
+    // High-confidence km group → trust it
+    selected = bestKm;
+  } else if (bestNonKm && bestKm && bestNonKm.avgConfidence - bestKm.avgConfidence > 0.03) {
+    // Non-km is significantly more confident → trust non-km
+    selected = bestNonKm;
+  } else if (bestKm) {
+    // Fallback to km group
+    selected = bestKm;
+  } else {
+    // No km groups at all → best non-km
+    selected = bestNonKm;
   }
 
-  // No km groups — pick best non-noise long number
-  const ranked = [...valid].sort((a, b) => {
-    const aLen = String(a.mileage).length;
-    const bLen = String(b.mileage).length;
-    const aOdo = aLen >= 5 && aLen <= 6 ? 1 : 0;
-    const bOdo = bLen >= 5 && bLen <= 6 ? 1 : 0;
-    if (aOdo !== bOdo) return bOdo - aOdo;
-
-    const aNoise = a.is_noise ? 0 : 1;
-    const bNoise = b.is_noise ? 0 : 1;
-    if (aNoise !== bNoise) return bNoise - aNoise;
-
-    const aInBounds = isMileageInBounds(a.mileage, options) ? 1 : 0;
-    const bInBounds = isMileageInBounds(b.mileage, options) ? 1 : 0;
-    if (aInBounds !== bInBounds) return bInBounds - aInBounds;
-
-    if (a.count !== b.count) return b.count - a.count;
-    return b.avgConfidence - a.avgConfidence;
-  });
-
-  const best = ranked[0];
-  if (best && best.avgConfidence >= 0.30) {
-    return { mileage: best.mileage, candidates: ranked.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence })) };
+  if (selected) {
+    const candidates = nonNoise.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence }));
+    return { mileage: selected.mileage, candidates };
   }
 
-  if (best && isMileageInBounds(best.mileage, options)) {
-    return { mileage: best.mileage, candidates: ranked.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence })) };
-  }
-
-  return { mileage: null, candidates: ranked.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence })) };
+  return { mileage: null, candidates: [] };
 }
 
 // OCR-only mode
