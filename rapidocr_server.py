@@ -252,15 +252,6 @@ def recognize(image_bytes, options=None):
             if c['has_km']:
                 grouped[m]['has_km'] = True
         
-        # ЖЁСТКИЙ ФИЛЬТР ПО ДЛИНЕ: если есть 6-значные — отбрасываем всех короче
-        max_len = max(len(str(gg['mileage'])) for gg in grouped.values())
-        if max_len >= 6:
-            # Только 6-значные и длиннее
-            grouped = {k: v for k, v in grouped.items() if len(str(v['mileage'])) >= 6}
-        elif max_len == 5:
-            # Если есть 5-значные — отбрасываем 4-значные
-            grouped = {k: v for k, v in grouped.items() if len(str(v['mileage'])) >= 5}
-        
         # Считаем средний conf и выбираем лучшего
         scored = []
         max_count = max(gg['count'] for gg in grouped.values())
@@ -269,13 +260,13 @@ def recognize(image_bytes, options=None):
             m_str = str(g['mileage'])
             m_len = len(m_str)
             
-            # Score: conf*0.4 + count_ratio*0.25 + has_km*0.15 + length_bonus*0.2
+            # Score: conf*0.35 + count_ratio*0.25 + has_km*0.15 + length_bonus*0.25
             count_score = (g['count'] / max_count) * 0.25 if max_count > 0 else 0
             km_score = 0.15 if g['has_km'] else 0
             
-            # БОНУС ЗА ДЛИНУ: 6 цифр = +0.20, 5 = +0.15, 4 = +0.05
+            # БОНУС ЗА ДЛИНУ: 6 цифр = +0.25, 5 = +0.15, 4 = +0.05
             if m_len >= 6:
-                len_score = 0.20
+                len_score = 0.25
             elif m_len == 5:
                 len_score = 0.15
             else:
@@ -285,7 +276,7 @@ def recognize(image_bytes, options=None):
             if m_str.startswith('1'):
                 len_score += 0.05
             
-            score = avg_conf * 0.4 + count_score + km_score + len_score
+            score = avg_conf * 0.35 + count_score + km_score + len_score
             scored.append({
                 'mileage': g['mileage'],
                 'conf': avg_conf,
@@ -296,6 +287,18 @@ def recognize(image_bytes, options=None):
         
         scored.sort(key=lambda x: x['score'], reverse=True)
         best = scored[0]
+        
+        # ОСОБЫЙ КЕЙС: если есть 6-значный, начинающийся с "1" — это почти всегда правильный пробег
+        # (в парке все машины 100000+, но 5-значные тоже возможны у новых машин)
+        six_digit_ones = [s for s in scored if len(str(s['mileage'])) >= 6 and str(s['mileage']).startswith('1')]
+        if six_digit_ones:
+            # Если 6-значный начинается с 1 и его score не сильно ниже лучшего
+            top_score = scored[0]['score']
+            for candidate in six_digit_ones:
+                if candidate['score'] >= top_score * 0.85:
+                    best = candidate
+                    print(f'PREFER: 6-digit starting with 1: {candidate["mileage"]} (score={candidate["score"]:.3f})', flush=True)
+                    break
     
     # --- Fallback: если ровно 5 цифр >= 10000 — скорее всего потерялась ведущая "1" ---
     # В вашем парке все пробеги 6-значные, начинаются с "1" (100000+ км)
