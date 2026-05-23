@@ -6,56 +6,19 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Validate secrets
+      - name: Deploy
         run: |
-          missing=0
-          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
-            echo "::error::Secret VPS_SSH_KEY is empty or missing!"
-            missing=1
-          fi
-          if [ -z "${{ secrets.VPS_HOST }}" ]; then
-            echo "::error::Secret VPS_HOST is empty or missing!"
-            missing=1
-          fi
-          if [ -z "${{ secrets.VPS_USER }}" ]; then
-            echo "::error::Secret VPS_USER is empty or missing!"
-            missing=1
-          fi
-          if [ -z "${{ secrets.VPS_PATH }}" ]; then
-            echo "::error::Secret VPS_PATH is empty or missing!"
-            missing=1
-          fi
-          if [ "$missing" -eq 1 ]; then
-            exit 1
-          fi
-          echo "All secrets are present."
+          cd /root/courier-shift-bot
+          git pull origin main
+          npm install --omit=dev
+          source venv/bin/activate
+          pip install -q -r requirements.txt 2>/dev/null || pip install -q rapidocr_onnxruntime
+          pm2 restart ecosystem.config.js --update-env || pm2 restart courier-shift-bot rapidocr-server
 
-      - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
-
-      - name: Add host to known_hosts
-        run: ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
-
-      - name: Deploy to VPS
-        run: |
-          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
-            cd ${{ secrets.VPS_PATH }} &&
-            git pull origin main &&
-            npm install --omit=dev &&
-            source venv/bin/activate &&
-            pip install -q -r requirements.txt 2>/dev/null || pip install -q rapidocr_onnxruntime &&
-            pm2 restart ecosystem.config.js --update-env || pm2 restart courier-shift-bot rapidocr-server
-          "
-
-      - name: Check deployment status
-        if: failure()
-        run: |
-          echo "::error::Deployment failed! Check SSH credentials and VPS availability."
-          exit 1
+      - name: Check status
+        run: pm2 status
