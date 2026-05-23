@@ -48,10 +48,11 @@ cnn_transform = T.Compose([
 
 
 def predict_digit(gray_img):
-    if len(gray_img.shape) == 2:
-        rgb = cv2.cvtColor(gray_img, cv2.COLOR_GRAY2RGB)
-    else:
-        rgb = gray_img
+    # Invert colors for real photos (white digits on dark background -> black digits on light background)
+    # This matches how synthetic training data looks
+    inverted = cv2.bitwise_not(gray_img)
+    
+    rgb = cv2.cvtColor(inverted, cv2.COLOR_GRAY2RGB)
     pil = Image.fromarray(rgb)
     tensor = cnn_transform(pil).unsqueeze(0).to(DEVICE)
     with torch.no_grad():
