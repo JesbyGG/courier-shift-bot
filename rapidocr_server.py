@@ -48,9 +48,9 @@ def _preprocess_basic(crop):
     if scale > 1:
         crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
     
-    # Для тёмных фото — gamma correction
+    # Для тёмных фото — gamma correction (очень сильное осветление)
     if _is_dark_image(crop):
-        crop = _gamma_correction(crop, gamma=1.8)
+        crop = _gamma_correction(crop, gamma=2.5)
     
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
     clahe = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(8, 8))
@@ -67,7 +67,7 @@ def _preprocess_adaptive(crop):
         crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
     
     if _is_dark_image(crop):
-        crop = _gamma_correction(crop, gamma=2.0)
+        crop = _gamma_correction(crop, gamma=2.5)
     
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
     clahe = cv2.createCLAHE(clipLimit=6.0, tileGridSize=(8, 8))
@@ -88,7 +88,7 @@ def _preprocess_led(crop, threshold=60):
     # Для тёмных фото — понижаем порог
     if _is_dark_image(crop):
         threshold = 35
-        crop = _gamma_correction(crop, gamma=2.0)
+        crop = _gamma_correction(crop, gamma=2.5)
     
     # HSV для выделения яркости
     hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
@@ -110,6 +110,25 @@ def _preprocess_led(crop, threshold=60):
     denoise = cv2.fastNlMeansDenoising(led_clahe, None, 8, 5, 15)
     adaptive = cv2.adaptiveThreshold(denoise, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 35, 5)
     return cv2.cvtColor(adaptive, cv2.COLOR_GRAY2BGR)
+
+
+def _preprocess_invert(crop):
+    """Инверсия цветов для светлых цифр на тёмном фоне (LCD-одометр ночью)"""
+    h, w = crop.shape[:2]
+    scale = max(2.0, 600.0 / min(h, w))
+    if scale > 1:
+        crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    
+    if _is_dark_image(crop):
+        crop = _gamma_correction(crop, gamma=2.5)
+    
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    # Инвертируем: светлые цифры станут чёрными на белом фоне
+    inverted = cv2.bitwise_not(gray)
+    clahe = cv2.createCLAHE(clipLimit=6.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(inverted)
+    denoise = cv2.fastNlMeansDenoising(enhanced, None, 10, 5, 15)
+    return cv2.cvtColor(denoise, cv2.COLOR_GRAY2BGR)
 
 
 def _make_variants(image):
@@ -149,6 +168,10 @@ def _make_variants(image):
     if led_low is not None and (led is None or not np.array_equal(led, led_low)):
         variants.append(led_low)
     
+    # Вариант 1e: инверсия цветов (для тёмных фото со светлыми сегментами LCD)
+    if _is_dark_image(crop):
+        variants.append(_preprocess_invert(crop))
+    
     # --- Вариант 2: полное изображение БЕЗ КРОПА (только для крупных планов) ---
     if is_closeup:
         variants.append(_preprocess_basic(image))
@@ -175,6 +198,11 @@ def _extract_candidates(ocr_result):
         # Убираем пробелы, ищем 4-6 цифр подряд
         clean = text.replace(' ', '').replace('\n', '')
         matches = re.findall(r'\d{4,6}', clean)
+        
+        # DEBUG: логируем все найденные цифры для отладки темных фото
+        all_digits = re.findall(r'\d+', clean)
+        if all_digits:
+            print(f'    DEBUG: digits in "{text}": {all_digits}', flush=True)
         
         for m in matches:
             num = int(m)
