@@ -135,52 +135,34 @@ function smartPickFromGroups(groups, options = {}) {
   const valid = groups.filter((g) => Number.isFinite(g.mileage) && g.mileage > 0);
   if (valid.length === 0) return { mileage: null, candidates: [] };
 
-  // km groups ALWAYS win — if a number has "km" next to it, it's the odometer
-  const kmGroups = valid.filter((g) => g.has_km && !g.is_noise && g.mileage >= 100);
-  if (kmGroups.length > 0) {
-    const bestKm = kmGroups.sort((a, b) => {
-      const aLen = String(a.mileage).length;
-      const bLen = String(b.mileage).length;
-      if (aLen >= 5 && bLen < 5) return -1;
-      if (bLen >= 5 && aLen < 5) return 1;
-      return b.avgConfidence - a.avgConfidence;
-    })[0];
-    if (bestKm) {
-      const candidates = kmGroups.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence }));
-      return { mileage: bestKm.mileage, candidates };
-    }
-  }
+  // Combine all non-noise groups and calculate score
+  const nonNoise = valid.filter((g) => !g.is_noise && g.mileage >= 100);
+  if (nonNoise.length === 0) return { mileage: null, candidates: [] };
 
-  // No km groups — pick best non-noise long number
-  const ranked = [...valid].sort((a, b) => {
-    const aLen = String(a.mileage).length;
-    const bLen = String(b.mileage).length;
-    const aOdo = aLen >= 5 && aLen <= 6 ? 1 : 0;
-    const bOdo = bLen >= 5 && bLen <= 6 ? 1 : 0;
-    if (aOdo !== bOdo) return bOdo - aOdo;
+  const maxCount = Math.max(...nonNoise.map((g) => g.count));
 
-    const aNoise = a.is_noise ? 0 : 1;
-    const bNoise = b.is_noise ? 0 : 1;
-    if (aNoise !== bNoise) return bNoise - aNoise;
-
-    const aInBounds = isMileageInBounds(a.mileage, options) ? 1 : 0;
-    const bInBounds = isMileageInBounds(b.mileage, options) ? 1 : 0;
-    if (aInBounds !== bInBounds) return bInBounds - aInBounds;
-
-    if (a.count !== b.count) return b.count - a.count;
-    return b.avgConfidence - a.avgConfidence;
+  const scored = nonNoise.map((g) => {
+    const len = String(g.mileage).length;
+    const lenScore = len >= 5 && len <= 6 ? 0.2 : (len >= 4 ? 0.1 : 0);
+    const countScore = maxCount > 0 ? (g.count / maxCount) * 0.3 : 0;
+    const confScore = g.avgConfidence * 0.5;
+    const kmBonus = g.has_km ? 0.05 : 0;
+    const score = confScore + countScore + lenScore + kmBonus;
+    return { ...g, _score: score };
   });
 
-  const best = ranked[0];
-  if (best && best.avgConfidence >= 0.30) {
-    return { mileage: best.mileage, candidates: ranked.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence })) };
-  }
+  scored.sort((a, b) => b._score - a._score);
+  const selected = scored[0];
 
-  if (best && isMileageInBounds(best.mileage, options)) {
-    return { mileage: best.mileage, candidates: ranked.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence })) };
-  }
+  const candidates = scored.slice(0, 5).map((g) => ({
+    mileage: g.mileage,
+    source: 'ocr',
+    confidence: g.avgConfidence,
+    has_km: g.has_km,
+    score: Math.round(g._score * 1000) / 1000
+  }));
 
-  return { mileage: null, candidates: ranked.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence })) };
+  return { mileage: selected.mileage, candidates };
 }
 
 // OCR-only mode
