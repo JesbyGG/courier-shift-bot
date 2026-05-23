@@ -136,7 +136,8 @@ def _preprocess_gray(gray, scale=2.8, clip_limit=4.0):
     gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
     clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(8, 8))
     gray = clahe.apply(gray)
-    denoise = cv2.fastNlMeansDenoising(gray, None, 12, 7, 21)
+    # speed: lighter denoise vs full NLM
+    denoise = cv2.fastNlMeansDenoising(gray, None, 8, 5, 15)
     adaptive = cv2.adaptiveThreshold(denoise, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 35, 5)
     return gray, adaptive
 
@@ -153,7 +154,7 @@ def _extract_led_channel(bgr_crop, threshold=60):
 
 def _make_phase1_variants(image):
     height, width = image.shape[:2]
-    resize = min(1280 / max(width, 1), 1280 / max(height, 1))
+    resize = min(1920 / max(width, 1), 1920 / max(height, 1))
     if resize < 1.0:
         image = cv2.resize(image, None, fx=resize, fy=resize, interpolation=cv2.INTER_AREA)
 
@@ -162,21 +163,28 @@ def _make_phase1_variants(image):
     gray_full = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
     gray_clahe = clahe.apply(gray_full)
-    denoise = cv2.fastNlMeansDenoising(gray_clahe, None, 12, 7, 21)
+    denoise = cv2.fastNlMeansDenoising(gray_clahe, None, 8, 5, 15)
     adaptive = cv2.adaptiveThreshold(denoise, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 35, 5)
     variants.append(cv2.cvtColor(adaptive, cv2.COLOR_GRAY2BGR))
 
+    # standard LED (bright digits)
     led_full = _extract_led_channel(image, threshold=60)
     if np.count_nonzero(led_full) > led_full.size * 0.005:
         _, led_adaptive = _preprocess_gray(led_full, scale=2.8, clip_limit=4.0)
         variants.append(cv2.cvtColor(led_adaptive, cv2.COLOR_GRAY2BGR))
+
+    # low-threshold LED for tiny "km" text
+    led_low = _extract_led_channel(image, threshold=35)
+    if np.count_nonzero(led_low) > led_low.size * 0.003:
+        _, led_low_adaptive = _preprocess_gray(led_low, scale=2.8, clip_limit=4.0)
+        variants.append(cv2.cvtColor(led_low_adaptive, cv2.COLOR_GRAY2BGR))
 
     return variants
 
 
 def _make_phase3_variants(image):
     height, width = image.shape[:2]
-    resize = min(1280 / max(width, 1), 1280 / max(height, 1))
+    resize = min(1920 / max(width, 1), 1920 / max(height, 1))
     if resize < 1.0:
         image = cv2.resize(image, None, fx=resize, fy=resize, interpolation=cv2.INTER_AREA)
         height, width = image.shape[:2]
@@ -184,60 +192,43 @@ def _make_phase3_variants(image):
     variants = []
     crop_y_offsets = []
 
-    crops = [
-        (0.05, 0.60, 0.90, 0.38),
-        (0.10, 0.65, 0.80, 0.33),
-        (0.0, 0.70, 1.0, 0.30),
-    ]
-
-    for left_ratio, top_ratio, width_ratio, height_ratio in crops:
-        left = max(0, int(width * left_ratio))
-        top = max(0, int(height * top_ratio))
-        crop_w = min(width - left, int(width * width_ratio))
-        crop_h = min(height - top, int(height * height_ratio))
-        if crop_w <= 0 or crop_h <= 0:
-            continue
+    # One aggressive full-width lower crop
+    left = 0
+    top = int(height * 0.55)
+    crop_w = width
+    crop_h = min(height - top, int(height * 0.45))
+    if crop_h > 0:
         crop = image[top:top + crop_h, left:left + crop_w]
 
         crop_gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        gray_crop, adaptive_crop = _preprocess_gray(crop_gray, scale=4.0, clip_limit=8.0)
+        gray_crop, adaptive_crop = _preprocess_gray(crop_gray, scale=3.0, clip_limit=6.0)
         variants.append(cv2.cvtColor(adaptive_crop, cv2.COLOR_GRAY2BGR))
-        crop_y_offsets.append(top_ratio)
+        crop_y_offsets.append(0.55)
 
-        for threshold in (40, 80):
+        for threshold in (40, 75):
             crop_led = _extract_led_channel(crop, threshold=threshold)
             if np.count_nonzero(crop_led) > crop_led.size * 0.003:
-                _, led_adaptive = _preprocess_gray(crop_led, scale=4.5, clip_limit=8.0)
+                _, led_adaptive = _preprocess_gray(crop_led, scale=3.0, clip_limit=6.0)
                 variants.append(cv2.cvtColor(led_adaptive, cv2.COLOR_GRAY2BGR))
-                crop_y_offsets.append(top_ratio)
-
-        inv_crop = 255 - crop_gray
-        clahe = cv2.createCLAHE(clipLimit=8.0, tileGridSize=(8, 8))
-        inv_clahe = clahe.apply(inv_crop)
-        inv_denoise = cv2.fastNlMeansDenoising(inv_clahe, None, 8, 7, 21)
-        inv_adaptive = cv2.adaptiveThreshold(inv_denoise, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 25, 8)
-        variants.append(cv2.cvtColor(inv_adaptive, cv2.COLOR_GRAY2BGR))
-        crop_y_offsets.append(top_ratio)
+                crop_y_offsets.append(0.55)
 
     return variants, crop_y_offsets
 
 
 def _make_phase2_variants(image):
     height, width = image.shape[:2]
-    resize = min(1280 / max(width, 1), 1280 / max(height, 1))
+    resize = min(1920 / max(width, 1), 1920 / max(height, 1))
     if resize < 1.0:
         image = cv2.resize(image, None, fx=resize, fy=resize, interpolation=cv2.INTER_AREA)
         height, width = image.shape[:2]
 
     variants = []
     crop_y_offsets = []
-    clahe = cv2.createCLAHE(clipLimit=6.0, tileGridSize=(8, 8))
 
+    # Only 2 crops: full-width lower + central region
     crops = [
-        (0.15, 0.50, 0.70, 0.48),
-        (0.0, 0.55, 1.0, 0.45),
-        (0.20, 0.35, 0.60, 0.40),
-        (0.30, 0.55, 0.50, 0.40),
+        (0.0, 0.45, 1.0, 0.55),   # full width, lower half
+        (0.15, 0.35, 0.70, 0.50), # central region
     ]
     for left_ratio, top_ratio, width_ratio, height_ratio in crops:
         left = max(0, int(width * left_ratio))
@@ -249,26 +240,20 @@ def _make_phase2_variants(image):
         crop = image[top:top + crop_height, left:left + crop_width]
 
         crop_gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        gray_crop, adaptive_crop = _preprocess_gray(crop_gray, scale=3.5, clip_limit=6.0)
+        gray_crop, adaptive_crop = _preprocess_gray(crop_gray, scale=2.5, clip_limit=5.0)
         variants.append(cv2.cvtColor(gray_crop, cv2.COLOR_GRAY2BGR))
         crop_y_offsets.append(top_ratio)
         variants.append(cv2.cvtColor(adaptive_crop, cv2.COLOR_GRAY2BGR))
         crop_y_offsets.append(top_ratio)
 
-        inv_crop = 255 - crop_gray
-        inv_clahe_crop = clahe.apply(inv_crop)
-        inv_denoise_crop = cv2.fastNlMeansDenoising(inv_clahe_crop, None, 12, 7, 21)
-        inv_adaptive_crop = cv2.adaptiveThreshold(inv_denoise_crop, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 35, 5)
-        variants.append(cv2.cvtColor(inv_adaptive_crop, cv2.COLOR_GRAY2BGR))
-        crop_y_offsets.append(top_ratio)
-
         crop_led = _extract_led_channel(crop, threshold=60)
         if np.count_nonzero(crop_led) > crop_led.size * 0.005:
-            _, crop_led_adaptive = _preprocess_gray(crop_led, scale=3.5, clip_limit=6.0)
+            _, crop_led_adaptive = _preprocess_gray(crop_led, scale=2.5, clip_limit=5.0)
             variants.append(cv2.cvtColor(crop_led_adaptive, cv2.COLOR_GRAY2BGR))
             crop_y_offsets.append(top_ratio)
 
-    gray_scaled, adaptive_scaled = _preprocess_gray(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), scale=3.5, clip_limit=6.0)
+    # One full-image adaptive at moderate scale
+    gray_scaled, adaptive_scaled = _preprocess_gray(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), scale=2.2, clip_limit=5.0)
     variants.append(cv2.cvtColor(adaptive_scaled, cv2.COLOR_GRAY2BGR))
     crop_y_offsets.append(0.0)
 
@@ -530,12 +515,12 @@ def _process_ocr_results(results, options=None):
 
 
 def _check_phase1_done(grouped):
-    km_groups = [g for g in grouped.values() if g['has_km'] and not g['is_noise'] and g['mileage'] >= MIN_MILEAGE and g['avg_confidence'] >= 0.6]
+    km_groups = [g for g in grouped.values() if g['has_km'] and not g['is_noise'] and g['mileage'] >= MIN_MILEAGE and g['avg_confidence'] >= 0.50]
     if km_groups:
         best = max(km_groups, key=lambda g: (len(str(g['mileage'])) >= 5, g['count'], g['avg_confidence']))
         if best['count'] >= 1:
             return True
-    long_groups = [g for g in grouped.values() if not g['is_noise'] and g['mileage'] >= MIN_MILEAGE and len(str(g['mileage'])) >= 5 and g['avg_confidence'] >= 0.7 and g['count'] >= 2]
+    long_groups = [g for g in grouped.values() if not g['is_noise'] and g['mileage'] >= MIN_MILEAGE and len(str(g['mileage'])) >= 5 and g['avg_confidence'] >= 0.60 and g['count'] >= 2]
     if long_groups:
         return True
     return False
@@ -599,7 +584,7 @@ def _merge_fragments_smart(results):
                 best_dist = total_dist
                 best_km = ki
 
-        if best_km is not None and best_dist < max(d_h or 30, 30) * 3:
+        if best_km is not None and best_dist < max(d_h or 30, 30) * 5:
             k = km_items[best_km]
             combined_text = d['text'] + k['text']
             combined_conf = (d['confidence'] + k['confidence']) / 2
