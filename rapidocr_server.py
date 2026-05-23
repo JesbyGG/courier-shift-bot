@@ -252,6 +252,15 @@ def recognize(image_bytes, options=None):
             if c['has_km']:
                 grouped[m]['has_km'] = True
         
+        # ЖЁСТКИЙ ФИЛЬТР ПО ДЛИНЕ: если есть 6-значные — отбрасываем всех короче
+        max_len = max(len(str(gg['mileage'])) for gg in grouped.values())
+        if max_len >= 6:
+            # Только 6-значные и длиннее
+            grouped = {k: v for k, v in grouped.items() if len(str(v['mileage'])) >= 6}
+        elif max_len == 5:
+            # Если есть 5-значные — отбрасываем 4-значные
+            grouped = {k: v for k, v in grouped.items() if len(str(v['mileage'])) >= 5}
+        
         # Считаем средний conf и выбираем лучшего
         scored = []
         max_count = max(gg['count'] for gg in grouped.values())
