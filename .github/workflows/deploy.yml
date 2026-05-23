@@ -11,6 +11,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Validate secrets
+        run: |
+          missing=0
+          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
+            echo "::error::Secret VPS_SSH_KEY is empty or missing!"
+            missing=1
+          fi
+          if [ -z "${{ secrets.VPS_HOST }}" ]; then
+            echo "::error::Secret VPS_HOST is empty or missing!"
+            missing=1
+          fi
+          if [ -z "${{ secrets.VPS_USER }}" ]; then
+            echo "::error::Secret VPS_USER is empty or missing!"
+            missing=1
+          fi
+          if [ -z "${{ secrets.VPS_PATH }}" ]; then
+            echo "::error::Secret VPS_PATH is empty or missing!"
+            missing=1
+          fi
+          if [ "$missing" -eq 1 ]; then
+            exit 1
+          fi
+          echo "All secrets are present."
+
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
