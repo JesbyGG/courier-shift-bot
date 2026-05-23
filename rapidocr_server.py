@@ -199,11 +199,6 @@ def _extract_candidates(ocr_result):
         clean = text.replace(' ', '').replace('\n', '')
         matches = re.findall(r'\d{4,6}', clean)
         
-        # DEBUG: логируем все найденные цифры для отладки темных фото
-        all_digits = re.findall(r'\d+', clean)
-        if all_digits:
-            print(f'    DEBUG: digits in "{text}": {all_digits}', flush=True)
-        
         for m in matches:
             num = int(m)
             # Фильтры
@@ -259,13 +254,29 @@ def recognize(image_bytes, options=None):
         
         # Считаем средний conf и выбираем лучшего
         scored = []
+        max_count = max(gg['count'] for gg in grouped.values())
         for g in grouped.values():
             avg_conf = sum(g['confs']) / len(g['confs'])
-            # Score: conf*0.5 + count_ratio*0.3 + has_km*0.2
-            max_count = max(gg['count'] for gg in grouped.values())
-            count_score = (g['count'] / max_count) * 0.3 if max_count > 0 else 0
-            km_score = 0.2 if g['has_km'] else 0
-            score = avg_conf * 0.5 + count_score + km_score
+            m_str = str(g['mileage'])
+            m_len = len(m_str)
+            
+            # Score: conf*0.4 + count_ratio*0.25 + has_km*0.15 + length_bonus*0.2
+            count_score = (g['count'] / max_count) * 0.25 if max_count > 0 else 0
+            km_score = 0.15 if g['has_km'] else 0
+            
+            # БОНУС ЗА ДЛИНУ: 6 цифр = +0.20, 5 = +0.15, 4 = +0.05
+            if m_len >= 6:
+                len_score = 0.20
+            elif m_len == 5:
+                len_score = 0.15
+            else:
+                len_score = 0.05
+            
+            # ДОП БОНУС: начинается с "1" (ваш парк 100000+)
+            if m_str.startswith('1'):
+                len_score += 0.05
+            
+            score = avg_conf * 0.4 + count_score + km_score + len_score
             scored.append({
                 'mileage': g['mileage'],
                 'conf': avg_conf,
