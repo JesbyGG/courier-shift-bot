@@ -102,5 +102,28 @@
     ],
     "updates": [],
     "message": "🆕 <b><i>Обновление бота v2.4.9</i></b>\n\n<b>Коротко, что изменили:</b>\n• 🤖 Подправили сценарии работы и стабильность.\n\n💙 Хорошей смены!"
+  },
+  "2.4.10": {
+    "changedFiles": [
+      "bot.js"
+    ],
+    "updates": [
+      "🔧 Исправлено: Add manualMileageKeyboard to services, increase OCR concurrency 2->5"
+    ],
+    "message": "🆕 <b><i>Обновление бота v2.4.10</i></b>\n\n<b>Коротко, что изменили:</b>\n• 🔧 Исправлено: Add manualMileageKeyboard to services, increase OCR concurrency 2-&gt;5\n\n💙 Хорошей смены!"
+  },
+  "2.4.11": {
+    "changedFiles": [
+      "bot.js"
+    ],
+    "updates": [],
+    "message": "🆕 <b><i>Обновление бота v2.4.11</i></b>\n\n<b>Коротко, что изменили:</b>\n• 🤖 Подправили сценарии работы и стабильность.\n\n💙 Хорошей смены!"
+  },
+  "2.4.12": {
+    "changedFiles": [
+      "bot.js"
+    ],
+    "updates": [],
+    "message": "🆕 <b><i>Обновление бота v2.4.12</i></b>\n\n<b>Коротко, что изменили:</b>\n• 🤖 Подправили сценарии работы и стабильность.\n\n💙 Хорошей смены!"
   }
 }
