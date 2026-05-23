@@ -135,55 +135,34 @@ function smartPickFromGroups(groups, options = {}) {
   const valid = groups.filter((g) => Number.isFinite(g.mileage) && g.mileage > 0);
   if (valid.length === 0) return { mileage: null, candidates: [] };
 
-  // Separate km and non-km groups
+  // Combine all non-noise groups and calculate score
   const nonNoise = valid.filter((g) => !g.is_noise && g.mileage >= 100);
-  const kmGroups = nonNoise.filter((g) => g.has_km);
-  const nonKmGroups = nonNoise.filter((g) => !g.has_km);
+  if (nonNoise.length === 0) return { mileage: null, candidates: [] };
 
-  // Find best km group
-  const bestKm = kmGroups.length > 0
-    ? kmGroups.sort((a, b) => {
-        const aLen = String(a.mileage).length;
-        const bLen = String(b.mileage).length;
-        if (aLen >= 5 && bLen < 5) return -1;
-        if (bLen >= 5 && aLen < 5) return 1;
-        return b.avgConfidence - a.avgConfidence;
-      })[0]
-    : null;
+  const maxCount = Math.max(...nonNoise.map((g) => g.count));
 
-  // Find best non-km group (5-6 digits preferred)
-  const bestNonKm = nonKmGroups.length > 0
-    ? nonKmGroups.sort((a, b) => {
-        const aOdo = String(a.mileage).length >= 5 ? 1 : 0;
-        const bOdo = String(b.mileage).length >= 5 ? 1 : 0;
-        if (aOdo !== bOdo) return bOdo - aOdo;
-        if (a.count !== b.count) return b.count - a.count;
-        return b.avgConfidence - a.avgConfidence;
-      })[0]
-    : null;
+  const scored = nonNoise.map((g) => {
+    const len = String(g.mileage).length;
+    const lenScore = len >= 5 && len <= 6 ? 0.2 : (len >= 4 ? 0.1 : 0);
+    const countScore = maxCount > 0 ? (g.count / maxCount) * 0.3 : 0;
+    const confScore = g.avgConfidence * 0.5;
+    const kmBonus = g.has_km ? 0.05 : 0;
+    const score = confScore + countScore + lenScore + kmBonus;
+    return { ...g, _score: score };
+  });
 
-  // Decision: don't blindly trust has_km if another candidate is much stronger
-  let selected = null;
-  if (bestKm && bestKm.avgConfidence >= 0.95) {
-    // High-confidence km group → trust it
-    selected = bestKm;
-  } else if (bestNonKm && bestKm && bestNonKm.avgConfidence - bestKm.avgConfidence > 0.03) {
-    // Non-km is significantly more confident → trust non-km
-    selected = bestNonKm;
-  } else if (bestKm) {
-    // Fallback to km group
-    selected = bestKm;
-  } else {
-    // No km groups at all → best non-km
-    selected = bestNonKm;
-  }
+  scored.sort((a, b) => b._score - a._score);
+  const selected = scored[0];
 
-  if (selected) {
-    const candidates = nonNoise.slice(0, 5).map((g) => ({ mileage: g.mileage, source: 'ocr', confidence: g.avgConfidence }));
-    return { mileage: selected.mileage, candidates };
-  }
+  const candidates = scored.slice(0, 5).map((g) => ({
+    mileage: g.mileage,
+    source: 'ocr',
+    confidence: g.avgConfidence,
+    has_km: g.has_km,
+    score: Math.round(g._score * 1000) / 1000
+  }));
 
-  return { mileage: null, candidates: [] };
+  return { mileage: selected.mileage, candidates };
 }
 
 // OCR-only mode

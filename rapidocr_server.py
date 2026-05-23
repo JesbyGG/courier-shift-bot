@@ -103,33 +103,11 @@ def _is_noise(text):
         if _is_speed_scale_number(num):
             return True
     has_km = _has_km_marker(text)
-    if has_km and digits and len(digits) <= 7:
+    if has_km and digits and len(digits) <= 6:
         num = int(digits)
-        stripped = _try_strip_leading_digit(num, has_km) if len(digits) >= 7 else num
-        if _is_speed_scale_number(stripped if len(str(stripped)) <= 6 else num):
+        if _is_speed_scale_number(num):
             return True
     return False
-
-
-def _try_strip_leading_digit(mileage, has_km):
-    s = str(mileage)
-    if len(s) < 7:
-        return mileage
-    candidates = []
-    for offset in range(1, min(3, len(s) - 4)):
-        stripped = int(s[offset:])
-        if 1000 <= stripped <= 999999:
-            candidates.append(stripped)
-    stripped5 = int(s[-5:])
-    stripped6 = int(s[-6:])
-    if 10000 <= stripped5 <= 99999:
-        candidates.append(stripped5)
-    if 100000 <= stripped6 <= 999999:
-        candidates.append(stripped6)
-    if not candidates:
-        return mileage
-    candidates.sort(key=lambda x: (5 <= len(str(x)) <= 6, x), reverse=True)
-    return candidates[0]
 
 
 def _preprocess_gray(gray, scale=2.8, clip_limit=4.0):
@@ -435,12 +413,8 @@ def _process_ocr_results(results, options=None):
             km_match = re.search(r'(\d[\d\s.,]*)\s*(?:km|ikm|lkm|xkm|/km|/m|cm|／m)', text.lower().replace(' ', ''))
             if km_match:
                 digit_str = re.sub(r'\D', '', km_match.group(1))
-                if 3 <= len(digit_str) <= 7:
+                if 3 <= len(digit_str) <= 6:
                     mileage = int(digit_str)
-                    if len(digit_str) >= 7:
-                        stripped = _try_strip_leading_digit(mileage, True)
-                        if stripped != mileage:
-                            mileage = stripped
 
         if mileage is None and item.get('merged_from'):
             merged_digits = re.sub(r'\D', '', ''.join(item['merged_from']))
@@ -449,12 +423,6 @@ def _process_ocr_results(results, options=None):
                 mileage = int(merged_digits)
                 if _has_km_marker(merged_km):
                     has_km = True
-            elif len(merged_digits) >= 7:
-                stripped = _try_strip_leading_digit(int(merged_digits), _has_km_marker(merged_km))
-                if 3 <= len(str(stripped)) <= 6:
-                    mileage = stripped
-                    if _has_km_marker(merged_km):
-                        has_km = True
 
         if mileage is None:
             continue
@@ -463,11 +431,8 @@ def _process_ocr_results(results, options=None):
             continue
 
         if has_km and len(str(mileage)) >= 7:
-            stripped = _try_strip_leading_digit(mileage, True)
-            if stripped != mileage and 3 <= len(str(stripped)) <= 6:
-                mileage_stripped = stripped
-            else:
-                mileage_stripped = None
+            # 7-digit numbers are not valid for our use case (max 6 digits)
+            mileage_stripped = None
         else:
             mileage_stripped = None
 
