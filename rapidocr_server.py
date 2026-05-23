@@ -19,40 +19,87 @@ BASE_DIR = Path(__file__).resolve().parent
 MIN_MILEAGE = int(os.getenv('OCR_MIN_MILEAGE', '100') or 100)
 MAX_MILEAGE = 300000
 
+# Letter-to-digit substitutions for OCR cleanup
+CHAR_SUBSTITUTIONS = str.maketrans({
+    'E': '3', 'e': '3',
+    'O': '0', 'o': '0', 'Q': '0', 'q': '0', 'D': '0',
+    'I': '1', 'i': '1', 'l': '1', 'L': '1', '|': '1',
+    'S': '5', 's': '5',
+    'B': '8',
+    'g': '9',
+    'Z': '2', 'z': '2',
+    'T': '7', 't': '7',
+    'A': '4', 'a': '4',
+})
+
 print('RapidOCR loading...')
 engine = RapidOCR()
 print('RapidOCR ready')
 
 
+def _normalize_text(text):
+    """Replace lookalike letters with digits and clean up."""
+    text = str(text)
+    # Apply character substitutions first
+    text = text.translate(CHAR_SUBSTITUTIONS)
+    # Remove whitespace inside digit groups (e.g. "1 14 136" -> "114136")
+    text = re.sub(r'(?<=\d)\s+(?=\d)', '', text)
+    return text
+
+
 def _extract_mileage(text_items):
+    """Extract mileage from OCR text items. Accepts any 4-6 digit number."""
     candidates = []
+    all_texts = []
+    combined_text = ''
+
+    # Step 1: normalize all texts and collect
     for raw_text, conf in text_items:
-        text = re.sub(r'[^0-9]', '', str(raw_text))
-        if not text:
-            continue
-        if 4 <= len(text) <= 6 and text.startswith('1'):
+        normalized = _normalize_text(raw_text)
+        all_texts.append((normalized, float(conf) if conf else 0.8))
+        combined_text += ' ' + normalized
+
+    # Step 2: find 4-6 digit numbers in each individual text item
+    for text, conf in all_texts:
+        # Find all 4-6 digit numbers
+        for match in re.finditer(r'\d{4,6}', text):
             try:
-                val = int(text)
+                val = int(match.group())
                 if MIN_MILEAGE <= val <= MAX_MILEAGE:
-                    candidates.append({'mileage': val, 'conf': float(conf) if conf else 0.8})
+                    candidates.append({
+                        'mileage': val,
+                        'conf': conf,
+                        'source': 'item',
+                        'len': len(match.group())
+                    })
             except ValueError:
                 pass
 
-    if not candidates:
-        for raw_text, conf in text_items:
-            text = str(raw_text)
-            for match in re.finditer(r'[1][0-9]{3,5}', text):
-                try:
-                    val = int(match.group())
-                    if MIN_MILEAGE <= val <= MAX_MILEAGE:
-                        candidates.append({'mileage': val, 'conf': float(conf) if conf else 0.8})
-                except ValueError:
-                    pass
+    # Step 3: find 4-6 digit numbers in combined text (catches split digits)
+    for match in re.finditer(r'\d{4,6}', combined_text):
+        try:
+            val = int(match.group())
+            if MIN_MILEAGE <= val <= MAX_MILEAGE:
+                candidates.append({
+                    'mileage': val,
+                    'conf': 0.75,  # lower confidence for combined
+                    'source': 'combined',
+                    'len': len(match.group())
+                })
+        except ValueError:
+            pass
 
     if not candidates:
         return None
 
-    candidates.sort(key=lambda x: (len(str(x['mileage'])) != 6, -x['conf']))
+    # Prefer longer numbers (5-6 digits), then higher confidence
+    candidates.sort(key=lambda x: (
+        x['len'] >= 5,      # prefer 5-6 digits over 4
+        x['len'] == 6,      # prefer 6 digits over 5
+        x['conf'],          # higher confidence
+        x['source'] == 'item'  # prefer direct over combined
+    ), reverse=True)
+
     return candidates[0]
 
 
@@ -162,7 +209,7 @@ class RapidOcrHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
-            self.wfile.write(b'{"status":"ok","engine":"rapidocr_onnxruntime"}')
+            self.wfile.write(b'{"status":"ok","engine":"rapidocr_onnxruntime_v2"}')
             return
         self.send_response(404)
         self.end_headers()
@@ -179,7 +226,7 @@ def main():
     if len(sys.argv) >= 2 and sys.argv[1] == '--server':
         port = int(os.getenv('RAPIDOCR_PORT', '9527') or 9527)
         server = ThreadingHTTPServer(('127.0.0.1', port), RapidOcrHandler)
-        print(f'RapidOCR server listening on 127.0.0.1:{port}', flush=True)
+        print(f'RapidOCR server v2 listening on 127.0.0.1:{port}', flush=True)
         server.serve_forever()
     else:
         print(json.dumps({'mileage': None, 'error': 'usage: rapidocr_server.py --server'}))
