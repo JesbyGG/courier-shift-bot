@@ -462,16 +462,23 @@ def _process_ocr_results(results, options=None):
     if not non_noise_groups:
         non_noise_groups = [g for g in grouped.values() if not g['is_noise'] and g['mileage'] >= min_mileage]
 
-    # Combined score: confidence*0.5 + count_ratio*0.3 + length_bonus*0.2 + km_bonus*0.05
+    # Combined score: confidence*0.6 + count_ratio*0.25 + length_bonus*0.15
+    # has_km used only as tie-breaker, not as a deciding factor
     max_count = max((g['count'] for g in non_noise_groups), default=1)
     for g in non_noise_groups:
         length = len(str(g['mileage']))
-        len_bonus = 0.2 if 5 <= length <= 6 else (0.1 if length >= 4 else 0)
+        len_bonus = 0.15 if 5 <= length <= 6 else (0.05 if length >= 4 else 0)
         count_ratio = g['count'] / max_count if max_count > 0 else 0
-        km_bonus = 0.05 if g['has_km'] else 0
-        g['_score'] = g['avg_confidence'] * 0.5 + count_ratio * 0.3 + len_bonus + km_bonus
+        g['_score'] = g['avg_confidence'] * 0.6 + count_ratio * 0.25 + len_bonus
 
-    non_noise_groups.sort(key=lambda g: (g['_score'], g['count'], g['avg_confidence']), reverse=True)
+    # Sort by score, then use has_km as tie-breaker for nearly-equal scores
+    def sort_key(g):
+        score = g['_score']
+        # If scores are very close (< 0.02 apart), has_km can tip the balance
+        km_tie = 1 if g['has_km'] else 0
+        return (score, km_tie, g['count'], g['avg_confidence'])
+
+    non_noise_groups.sort(key=sort_key, reverse=True)
 
     all_sorted = sorted(grouped.values(), key=lambda g: (
         g.get('_score', 0),
