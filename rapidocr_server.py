@@ -44,6 +44,8 @@ def _normalize_text(text):
     text = text.translate(CHAR_SUBSTITUTIONS)
     # Remove whitespace inside digit groups (e.g. "1 14 136" -> "114136")
     text = re.sub(r'(?<=\d)\s+(?=\d)', '', text)
+    # Strip all remaining non-digit characters
+    text = re.sub(r'[^0-9]', '', text)
     return text
 
 
