@@ -17,7 +17,7 @@ jobs:
           git pull origin main
           npm install --omit=dev
           source venv/bin/activate
-          pip install -q -r requirements.txt 2>/dev/null || pip install -q rapidocr_onnxruntime
+          pip install -q torch rapidocr_onnxruntime
           pm2 restart ecosystem.config.js --update-env || pm2 restart courier-shift-bot rapidocr-server
 
       - name: Check status
