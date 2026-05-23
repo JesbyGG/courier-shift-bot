@@ -459,9 +459,22 @@ def _process_ocr_results(results, options=None):
     km_groups.sort(key=lambda g: (not g.get('is_upper'), len(str(g['mileage'])), g['count'], g['avg_confidence']), reverse=True)
 
     non_noise_groups = [g for g in grouped.values() if not g['is_noise'] and g['mileage'] >= min_mileage and len(str(g['mileage'])) >= 5]
-    non_noise_groups.sort(key=lambda g: (not g.get('is_upper'), g['count'], g['avg_confidence']), reverse=True)
+    if not non_noise_groups:
+        non_noise_groups = [g for g in grouped.values() if not g['is_noise'] and g['mileage'] >= min_mileage]
+
+    # Combined score: confidence*0.5 + count_ratio*0.3 + length_bonus*0.2 + km_bonus*0.05
+    max_count = max((g['count'] for g in non_noise_groups), default=1)
+    for g in non_noise_groups:
+        length = len(str(g['mileage']))
+        len_bonus = 0.2 if 5 <= length <= 6 else (0.1 if length >= 4 else 0)
+        count_ratio = g['count'] / max_count if max_count > 0 else 0
+        km_bonus = 0.05 if g['has_km'] else 0
+        g['_score'] = g['avg_confidence'] * 0.5 + count_ratio * 0.3 + len_bonus + km_bonus
+
+    non_noise_groups.sort(key=lambda g: (g['_score'], g['count'], g['avg_confidence']), reverse=True)
 
     all_sorted = sorted(grouped.values(), key=lambda g: (
+        g.get('_score', 0),
         g['has_km'],
         not g['is_noise'],
         not g.get('is_upper'),
@@ -470,11 +483,7 @@ def _process_ocr_results(results, options=None):
         g['avg_confidence'],
     ), reverse=True)
 
-    best = None
-    if km_groups:
-        best = km_groups[0]
-    elif non_noise_groups:
-        best = non_noise_groups[0]
+    best = non_noise_groups[0] if non_noise_groups else None
 
     return best, grouped, all_sorted
 
