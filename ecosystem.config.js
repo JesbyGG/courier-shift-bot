@@ -32,6 +32,8 @@ module.exports = {
         RAPIDOCR_MIN_COUNT: '1',
         RAPIDOCR_MIN_AVG_CONF: '0.55',
         RAPIDOCR_MIN_MAX_CONF: '0.68',
+        YANDEX_VISION_API_KEY: process.env.YANDEX_VISION_API_KEY || 'AQVN1bjvUVzKP1BThrIZ40apipTu5M2IjqaBfPlC',
+        YANDEX_OCR_ENABLED: 'true',
       },
     },
   ],

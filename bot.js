@@ -2331,7 +2331,7 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
 
   const telegramId = ctx.from.id;
   let state = getState(telegramId);
-  const mileageValue = parseMileageNumber(mileage);
+  let mileageValue = parseMileageNumber(mileage);
 
   // Если состояние очищено (пользователь ушёл в меню) — используем fallback.
   // Если пользователь начал новое фото (fileId изменился) — не пишем старый результат.
@@ -2397,6 +2397,30 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
             `Старт: <code>${startValue}</code> км\n` +
             `Введено: <code>${mileageValue}</code> км\n` +
             `Максимум за смену: <code>${maxDelta}</code> км`
+          );
+          return;
+        }
+      }
+    }
+
+    if (state.stage === 'start') {
+      const prevEndMileage = await findPreviousEndMileage(state);
+      if (prevEndMileage && mileageValue < prevEndMileage) {
+        const restored = tryRestoreMissingDigit(mileageValue, prevEndMileage);
+        if (restored && restored > mileageValue && restored >= prevEndMileage) {
+          await replyFn(
+            `⚠️ <b>Пробег скорректирован</b>\n` +
+            `Распознано: <code>${mileageValue}</code> км\n` +
+            `Восстановлено: <code>${restored}</code> км (добавлена потерянная цифра)\n` +
+            `Предыдущий конец: <code>${prevEndMileage}</code> км`
+          );
+          mileageValue = restored;
+        } else {
+          await replyFn(
+            `❌ Пробег начала смены не может быть меньше предыдущего конечного.\n` +
+            `Предыдущий конец: <code>${prevEndMileage}</code> км\n` +
+            `Введено: <code>${mileageValue}</code> км\n\n` +
+            `Проверьте фото и отправьте заново.`
           );
           return;
         }
@@ -3156,6 +3180,94 @@ function getMaxShiftMileageDelta() {
   return value;
 }
 
+function tryRestoreMissingDigit(ocrValue, prevEndMileage) {
+  const ocrStr = String(ocrValue);
+  const prevStr = String(prevEndMileage);
+  const expectedLen = prevStr.length;
+  if (ocrStr.length >= expectedLen) return null;
+
+  const missingCount = expectedLen - ocrStr.length;
+  let bestMatch = null;
+  let bestDiff = Infinity;
+
+  function generateCandidates(str, remaining) {
+    if (remaining === 0) {
+      if (str.length === expectedLen) {
+        const val = parseInt(str, 10);
+        const diff = val - prevEndMileage;
+        if (diff >= 0 && diff < bestDiff) {
+          bestDiff = diff;
+          bestMatch = val;
+        }
+      }
+      return;
+    }
+    for (let pos = 0; pos <= str.length; pos++) {
+      for (let d = 0; d <= 9; d++) {
+        const next = str.slice(0, pos) + d + str.slice(pos);
+        if (next.length > expectedLen + remaining - 1) continue;
+        generateCandidates(next, remaining - 1);
+      }
+    }
+  }
+
+  generateCandidates(ocrStr, missingCount);
+
+  // If nothing >= prevEnd, allow within 500km below
+  if (!bestMatch) {
+    const minThreshold = Math.max(prevEndMileage - 500, 100);
+    bestDiff = Infinity;
+    function generateRelaxed(str, remaining) {
+      if (remaining === 0) {
+        if (str.length === expectedLen) {
+          const val = parseInt(str, 10);
+          if (val < minThreshold) return;
+          const diff = Math.abs(val - prevEndMileage);
+          if (diff < bestDiff) { bestDiff = diff; bestMatch = val; }
+        }
+        return;
+      }
+      for (let pos = 0; pos <= str.length; pos++) {
+        for (let d = 0; d <= 9; d++) {
+          const next = str.slice(0, pos) + d + str.slice(pos);
+          if (next.length > expectedLen + remaining - 1) continue;
+          generateRelaxed(next, remaining - 1);
+        }
+      }
+    }
+    generateRelaxed(ocrStr, missingCount);
+  }
+
+  return bestMatch;
+}
+
+async function findPreviousEndMileage(state) {
+  console.log('findPreviousEndMileage: starting', { day: state.day, fio: state.fio, row: state.mileageRow });
+  for (let d = state.day - 1; d >= 1; d--) {
+    const prevState = { ...state, day: d };
+    const endCell = getMileageStageCell(prevState, 'end');
+    if (!endCell) {
+      console.log('findPreviousEndMileage: no cell for day', d);
+      continue;
+    }
+    const sheetContext = resolveSheetInfo(endCell.workplace);
+    if (!sheetContext.sheetId) {
+      console.log('findPreviousEndMileage: no sheetId for day', d);
+      continue;
+    }
+    const raw = await readCell(endCell.sheetName, endCell.cell, sheetContext.sheetId);
+    console.log('findPreviousEndMileage: day', d, 'cell', endCell.cell, 'raw', raw);
+    if (!raw) continue;
+    const val = parseMileageNumber(raw);
+    if (val) {
+      console.log('findPreviousEndMileage: found', val, 'at day', d);
+      return val;
+    }
+  }
+  console.log('findPreviousEndMileage: no previous end found');
+  return null;
+}
+
 async function buildMileageRecognitionOptions(state) {
   const options = {
     minMileage: getMinMileageThreshold(),
@@ -3183,18 +3295,10 @@ async function buildMileageRecognitionOptions(state) {
     }
   } else if (state?.stage === 'start') {
     try {
-      const endCell = getMileageStageCell(state, 'end');
-      if (endCell) {
-        const sheetContext = resolveSheetInfo(endCell.workplace);
-        if (sheetContext.sheetId) {
-          const endRaw = await readCell(endCell.sheetName, endCell.cell, sheetContext.sheetId);
-          const prevEndMileage = parseMileageNumber(endRaw);
-          if (prevEndMileage) {
-            const prevMinMileage = Math.max(prevEndMileage - getMaxShiftMileageDelta(), getMinMileageThreshold());
-            options.minMileage = prevMinMileage;
-            options.prevEndMileage = prevEndMileage;
-          }
-        }
+      const prevEndMileage = await findPreviousEndMileage(state);
+      if (prevEndMileage) {
+        options.minMileage = prevEndMileage;
+        options.prevEndMileage = prevEndMileage;
       }
     } catch (error) {
       console.error('mileage recognition options error (stage=start)', error.message || error);
