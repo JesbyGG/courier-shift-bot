@@ -697,21 +697,27 @@ function truncateCaption(text, limit = TELEGRAM_CAPTION_LIMIT) {
   return text.slice(0, limit - 1) + '…';
 }
 
-function buildPhotoCaption(state) {
-  // Caption уходит без HTML-парсинга в sendPhotoToWorkChat — escape не нужен,
-  // но если в ФИО окажутся <, > — пусть будут как есть, без поломки рендера.
+function buildPhotoCaption(state, telegramId) {
+  const name = getEmployeeDisplayName(state.fio);
+  const nameLine = telegramId
+    ? `👤 <a href="tg://user?id=${telegramId}">${esc(name)}</a>`
+    : `👤 ${name}`;
   return truncateCaption([
     formatPhotoStatus(state.stage),
-    `👤 ${getEmployeeDisplayName(state.fio)}`,
+    nameLine,
     `🚙 ${state.auto || 'не указано'}`,
     `🏬 ${state.workplace || 'не указано'}`
   ].join('\n'));
 }
 
-function buildRouteSheetCaption(state, routeSheetNumber) {
+function buildRouteSheetCaption(state, routeSheetNumber, telegramId) {
+  const name = getEmployeeDisplayName(state.fio);
+  const nameLine = telegramId
+    ? `👤 <a href="tg://user?id=${telegramId}">${esc(name)}</a>`
+    : `👤 ${name}`;
   return truncateCaption([
     `📄 Маршрутный лист №${routeSheetNumber}`,
-    `👤 ${getEmployeeDisplayName(state.fio)}`,
+    nameLine,
     `🏬 ${state.workplace || 'не указано'}`
   ].join('\n'));
 }
@@ -2540,12 +2546,14 @@ async function sendMediaGroupToChat(ctx, items, { envChatId, envThreadId, parseM
 const PHOTO_DESTINATIONS = {
   work: {
     envChatId: 'WORK_CHAT_ID',
-    envThreadId: 'WORK_THREAD_ID'
+    envThreadId: 'WORK_THREAD_ID',
+    parseMode: 'HTML'
   },
   routeSheet: {
     envChatId: 'ROUTE_SHEET_CHAT_ID',
     envThreadId: 'ROUTE_SHEET_THREAD_ID',
-    fallbackEnvChatId: 'WORK_CHAT_ID'
+    fallbackEnvChatId: 'WORK_CHAT_ID',
+    parseMode: 'HTML'
   },
   reconciliation: {
     envChatId: 'RECONCILIATION_CHAT_ID',
@@ -3540,7 +3548,7 @@ async function handleRouteSheetPhoto(ctx, state, fileId) {
   logRouteSheetPhoto(telegramId, fileId, state, date, routeSheetNumber);
 
   try {
-    const forwarded = await sendPhotoToRouteSheetChat(ctx, fileId, buildRouteSheetCaption(state, routeSheetNumber));
+    const forwarded = await sendPhotoToRouteSheetChat(ctx, fileId, buildRouteSheetCaption(state, routeSheetNumber, ctx.from.id));
 
     if (!forwarded) {
       await ctx.replyWithHTML('⚠️ Временные проблемы с отправкой.\nСообщите администратору.', routeSheetKeyboard());
@@ -3603,12 +3611,12 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
 
   if (isTerminalFirstPhoto) {
     const cashInfo = await recognizeReconciliationCashSafe(ctx, fileId, 'terminal_first_photo');
-    const shouldAttachCash = cashInfo.valid && Number(cashInfo.amount) >= 1 && Number(cashInfo.orders) > 0;
+  const shouldAttachCash = cashInfo.valid && Number(cashInfo.amount) > 10 && Number(cashInfo.orders) > 0;
     const cashFormatted = shouldAttachCash ? formatMoneyRu(cashInfo.amount) : null;
 
     const captionLines = [
       `📊 Сверки — Терминал (статистика)`,
-      `👤 ${esc(getEmployeeDisplayName(state.fio))}`,
+      `👤 <a href="tg://user?id=${telegramId}">${esc(getEmployeeDisplayName(state.fio))}</a>`,
       `🏬 ${esc(state.workplace || 'не указано')}`
     ];
 
@@ -3722,12 +3730,12 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
 
   const label = 'Пин-Панель';
   const cashInfo = await recognizeReconciliationCashSafe(ctx, fileId, 'pin_panel');
-  const shouldAttachCash = cashInfo.valid && Number(cashInfo.amount) >= 1 && Number(cashInfo.orders) > 0;
+  const shouldAttachCash = cashInfo.valid && Number(cashInfo.amount) > 10 && Number(cashInfo.orders) > 0;
   const cashFormatted = shouldAttachCash ? formatMoneyRu(cashInfo.amount) : null;
 
   const captionLines = [
     `📊 Сверки — ${esc(label)}`,
-    `👤 ${esc(getEmployeeDisplayName(state.fio))}`,
+    `👤 <a href="tg://user?id=${telegramId}">${esc(getEmployeeDisplayName(state.fio))}</a>`,
     `🏬 ${esc(state.workplace || 'не указано')}`
   ];
 
@@ -3824,7 +3832,7 @@ async function handleMileagePhoto(ctx, state, fileId) {
       recognizedMileage: null,
       ocrValue: null
     });
-    sendPhotoToWorkChat(ctx, fileId, buildPhotoCaption(state)).catch((error) => {
+    sendPhotoToWorkChat(ctx, fileId, buildPhotoCaption(state, telegramId)).catch((error) => {
       console.error('telegram send photo error', error);
     });
     await ctx.replyWithHTML('⚠️ Авто-распознавание сейчас недоступно.\nВведите пробег вручную или нажмите «⏭️ Пропустить».', mileageConfirmKeyboard());
@@ -3842,7 +3850,7 @@ async function handleMileagePhoto(ctx, state, fileId) {
       recognizedMileage: null,
       ocrValue: null
     });
-    sendPhotoToWorkChat(ctx, fileId, buildPhotoCaption(state)).catch((error) => {
+    sendPhotoToWorkChat(ctx, fileId, buildPhotoCaption(state, telegramId)).catch((error) => {
       console.error('telegram send photo error', error);
     });
     await ctx.replyWithHTML('⚠️ Сервер распознавания недоступен.\nВведите пробег вручную или нажмите «⏭️ Пропустить».', mileageConfirmKeyboard());
@@ -3884,7 +3892,7 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
 
     const [recognitionOptions] = await Promise.all([
       buildMileageRecognitionOptions(originalState),
-      forwardPhoto({ telegram }, fileId, buildPhotoCaption(originalState), 'work').catch((error) => {
+      forwardPhoto({ telegram }, fileId, buildPhotoCaption(originalState, telegramId), 'work').catch((error) => {
         console.error('telegram send photo error', error);
       })
     ]);

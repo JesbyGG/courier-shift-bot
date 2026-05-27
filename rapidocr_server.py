@@ -275,7 +275,22 @@ def _format_error(error_msg):
 
 
 def recognize_text(image_bytes):
-    return {'text_items': []}
+    import cv2
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if image is None:
+        return {'text_items': []}
+
+    result = rapidocr_engine(image)
+    boxes = result[0] if result else []
+    text_items = []
+    for box in boxes:
+        if len(box) >= 3:
+            text_items.append({'text': str(box[1]), 'confidence': float(box[2]) if box[2] else 0.8})
+        elif len(box) == 2:
+            text_items.append({'text': str(box[1]), 'confidence': 0.8})
+
+    return {'text_items': text_items}
 
 
 # ===== HTTP Server =====
