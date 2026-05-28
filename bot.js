@@ -4388,7 +4388,7 @@ async function startBot(retry = 0) {
       }, 3000);
     }
 
-    // Очистка клавиатур в группах при старте
+    // Очистка клавиатур и кнопки меню в группах при старте
     setTimeout(() => {
       const groupChats = ['WORK_CHAT_ID', 'RECONCILIATION_CHAT_ID', 'ROUTE_SHEET_CHAT_ID', 'SHOP_STATUS_CHAT_ID'];
       for (const key of groupChats) {
@@ -4397,6 +4397,7 @@ async function startBot(retry = 0) {
           bot.telegram.sendMessage(chatId, '', { reply_markup: { remove_keyboard: true } })
             .then((m) => bot.telegram.deleteMessage(chatId, m.message_id).catch(() => {}))
             .catch(() => {});
+          bot.telegram.setChatMenuButton(Number(chatId), { type: 'default' }).catch(() => {});
         }
       }
     }, 2000);
