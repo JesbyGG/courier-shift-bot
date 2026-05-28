@@ -2492,6 +2492,9 @@ async function sendPhotoToChat(ctx, fileId, caption, { envChatId, envThreadId, p
     options.message_thread_id = Number(threadId);
   }
 
+  // Clear any stale reply keyboard in group chats
+  options.reply_markup = { remove_keyboard: true };
+
   try {
     const result = await ctx.telegram.sendPhoto(chatId, fileId, options);
     return result;
@@ -2535,6 +2538,16 @@ async function sendMediaGroupToChat(ctx, items, { envChatId, envThreadId, parseM
 
   try {
     const result = await ctx.telegram.sendMediaGroup(chatId, media, options);
+
+    // Clear any stale reply keyboard in group chats
+    try {
+      const cleanupMsg = await ctx.telegram.sendMessage(chatId, '', {
+        reply_markup: { remove_keyboard: true },
+        message_thread_id: threadId ? Number(threadId) : undefined
+      });
+      await ctx.telegram.deleteMessage(chatId, cleanupMsg.message_id).catch(() => {});
+    } catch (_) {}
+
     return result;
   } catch (error) {
     console.error('telegram sendMediaGroup error', error?.message || error);
