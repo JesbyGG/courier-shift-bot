@@ -4388,17 +4388,23 @@ async function startBot(retry = 0) {
       }, 3000);
     }
 
-    // Очистка клавиатур и кнопки меню в группах при старте
+    // Очистка клавиатур во всех топиках и группах при старте
     setTimeout(() => {
-      const groupChats = ['WORK_CHAT_ID', 'RECONCILIATION_CHAT_ID', 'ROUTE_SHEET_CHAT_ID', 'SHOP_STATUS_CHAT_ID'];
-      for (const key of groupChats) {
-        const chatId = process.env[key];
-        if (chatId) {
-          bot.telegram.sendMessage(chatId, '', { reply_markup: { remove_keyboard: true } })
-            .then((m) => bot.telegram.deleteMessage(chatId, m.message_id).catch(() => {}))
-            .catch(() => {});
-          bot.telegram.setChatMenuButton(Number(chatId), { type: 'default' }).catch(() => {});
-        }
+      const targets = [
+        { chatKey: 'WORK_CHAT_ID', threadKey: 'WORK_THREAD_ID' },
+        { chatKey: 'ROUTE_SHEET_CHAT_ID', threadKey: 'ROUTE_SHEET_THREAD_ID' },
+        { chatKey: 'RECONCILIATION_CHAT_ID', threadKey: 'RECONCILIATION_THREAD_ID' },
+        { chatKey: 'SHOP_STATUS_CHAT_ID', threadKey: null }
+      ];
+      for (const t of targets) {
+        const chatId = process.env[t.chatKey];
+        const threadId = t.threadKey ? process.env[t.threadKey] : null;
+        if (!chatId) continue;
+        const opts = { reply_markup: { remove_keyboard: true } };
+        if (threadId) opts.message_thread_id = Number(threadId);
+        bot.telegram.sendMessage(chatId, '', opts)
+          .then((m) => bot.telegram.deleteMessage(chatId, m.message_id).catch(() => {}))
+          .catch(() => {});
       }
     }, 2000);
 
