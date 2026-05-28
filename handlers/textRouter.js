@@ -168,6 +168,11 @@ module.exports = function setupTextRouter(bot, services) {
       }
     }
 
+    // Fallback: если reply на сообщение бота — не отправлять меню
+    if (ctx.message.reply_to_message?.from?.is_bot) {
+      return;
+    }
+
     // Fallback
     await ctx.replyWithHTML('Выберите действие в меню или используйте /help.', getMenuForRole(telegramId));
   });

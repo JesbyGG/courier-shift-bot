@@ -31,30 +31,52 @@ module.exports = function setupReplyForwarding(bot, services) {
     try {
       let result;
       const managerName = ctx.from?.first_name || 'Менеджер';
+      const groupChatId = thread.group_chat_id;
+      const groupMessageId = thread.group_message_id;
+
+      // 1. Переслать оригинальное фото/сообщение из группы курьеру
+      let forwardedOriginal = null;
+      try {
+        forwardedOriginal = await bot.telegram.forwardMessage(
+          courierId,
+          groupChatId,
+          groupMessageId
+        );
+      } catch (e) {
+        console.log('forward original failed:', e.message);
+      }
+
+      const sendOpts = { parse_mode: 'HTML' };
+      if (forwardedOriginal) {
+        sendOpts.reply_to_message_id = forwardedOriginal.message_id;
+      }
 
       if (ctx.message.text) {
-        const text = `📨 <b>${esc(managerName)}</b> по сверке:\n\n${esc(ctx.message.text)}`;
-        result = await bot.telegram.sendMessage(courierId, text, { parse_mode: 'HTML' });
+        const text = `📨 <b>${esc(managerName)}</b>:\n\n${esc(ctx.message.text)}`;
+        result = await bot.telegram.sendMessage(courierId, text, sendOpts);
       } else if (ctx.message.photo) {
-        const caption = `📨 <b>${esc(managerName)}</b> прислал фото`;
+        const caption = `📨 <b>${esc(managerName)}</b>:`;
         result = await bot.telegram.sendPhoto(courierId, ctx.message.photo[ctx.message.photo.length - 1].file_id, {
           caption,
-          parse_mode: 'HTML'
+          parse_mode: 'HTML',
+          reply_to_message_id: forwardedOriginal?.message_id
         });
       } else if (ctx.message.document) {
-        const caption = `📨 <b>${esc(managerName)}</b> прислал документ`;
+        const caption = `📨 <b>${esc(managerName)}</b>:`;
         result = await bot.telegram.sendDocument(courierId, ctx.message.document.file_id, {
           caption,
-          parse_mode: 'HTML'
+          parse_mode: 'HTML',
+          reply_to_message_id: forwardedOriginal?.message_id
         });
       } else if (ctx.message.voice) {
-        const caption = `📨 <b>${esc(managerName)}</b> прислал голосовое`;
+        const caption = `📨 <b>${esc(managerName)}</b>:`;
         result = await bot.telegram.sendVoice(courierId, ctx.message.voice.file_id, {
           caption,
-          parse_mode: 'HTML'
+          parse_mode: 'HTML',
+          reply_to_message_id: forwardedOriginal?.message_id
         });
       } else {
-        result = await bot.telegram.sendMessage(courierId, `📨 <b>${esc(managerName)}</b> прислал сообщение`, { parse_mode: 'HTML' });
+        result = await bot.telegram.sendMessage(courierId, `📨 <b>${esc(managerName)}</b>:`, sendOpts);
       }
 
       if (result) {
@@ -69,21 +91,15 @@ module.exports = function setupReplyForwarding(bot, services) {
         });
       } catch (_) {}
     }
-    
+
     return next();
   });
 
-  // Handler for courier replies in private
+  // ─── Courier replies in private → forward to group ───
   bot.on('message', async (ctx, next) => {
-    // Set botId if not set
-    if (!botId && bot.botInfo) {
-      botId = bot.botInfo.id;
-      console.log('Reply forwarding bot ID set:', botId);
-    }
-    
-    // Only private chats
+    if (!botId && bot.botInfo) botId = bot.botInfo.id;
+
     if (ctx.chat?.type !== 'private') return next();
-    // Must be reply to bot's message
     if (!ctx.message?.reply_to_message) return next();
     if (!botId) return next();
     if (ctx.message.reply_to_message.from?.id !== botId) return next();
@@ -168,6 +184,16 @@ module.exports = function setupReplyForwarding(bot, services) {
       if (result) {
         saveForwardedMessage(groupChatId, result.message_id, thread.id, 'courier_to_group');
         console.log('reply forward: courier → group', { groupChatId, threadId: thread.id });
+
+        // Подтверждение курьеру
+        try {
+          await bot.telegram.sendMessage(ctx.chat.id, '✅ <b>Ответ отправлен</b>', {
+            parse_mode: 'HTML',
+            reply_to_message_id: ctx.message.message_id
+          });
+        } catch (confirmErr) {
+          console.log('confirmation send failed:', confirmErr.message);
+        }
       }
     } catch (e) {
       console.error('reply forward courier→group error:', e.message);
@@ -177,11 +203,10 @@ module.exports = function setupReplyForwarding(bot, services) {
         });
       } catch (_) {}
     }
-    
+
     return next();
   });
 
-  // Export cleanup for use elsewhere
   bot.context = bot.context || {};
   bot.context.cleanupOldThreads = cleanupOldThreads;
 };
