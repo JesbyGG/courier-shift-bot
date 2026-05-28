@@ -4388,28 +4388,6 @@ async function startBot(retry = 0) {
     }
 
     // Очистка клавиатур во всех топиках и группах при старте
-    setTimeout(() => {
-      const targets = [
-        { name: 'work', chatKey: 'WORK_CHAT_ID', threadKey: 'WORK_THREAD_ID' },
-        { name: 'routeSheet', chatKey: 'ROUTE_SHEET_CHAT_ID', threadKey: 'ROUTE_SHEET_THREAD_ID' },
-        { name: 'reconciliation', chatKey: 'RECONCILIATION_CHAT_ID', threadKey: 'RECONCILIATION_THREAD_ID' },
-        { name: 'shopStatus', chatKey: 'SHOP_STATUS_CHAT_ID', threadKey: null }
-      ];
-      for (const t of targets) {
-        const chatId = process.env[t.chatKey];
-        const threadId = t.threadKey ? process.env[t.threadKey] : null;
-        if (!chatId) continue;
-        const opts = { parse_mode: 'HTML', reply_markup: { remove_keyboard: true }, disable_notification: true };
-        if (threadId) opts.message_thread_id = Number(threadId);
-        bot.telegram.sendMessage(chatId, '·', opts)
-          .then((m) => {
-            console.log(`keyboard cleanup sent to ${t.name} (chat=${chatId}, thread=${threadId || 'none'}) msg_id=${m.message_id}`);
-            setTimeout(() => bot.telegram.deleteMessage(chatId, m.message_id).catch(() => {}), 1000);
-          })
-          .catch((e) => console.error(`keyboard cleanup failed for ${t.name}:`, e.message));
-      }
-    }, 2000);
-
     // bot.launch() возвращает Promise, который резолвится только при stop().
     // НЕ ставим await — иначе всё, что после, не выполнится.
     bot.launch();
