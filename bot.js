@@ -1173,7 +1173,7 @@ bot.use(async (ctx, next) => {
     if (ctx.message?.text?.startsWith('/chatid')) {
       return next();
     }
-    return;
+    return next(); // Allow group messages to pass through to other handlers
   }
 
   const originalReplyWithHTML = ctx.replyWithHTML.bind(ctx);
