@@ -281,6 +281,22 @@ def recognize_text(image_bytes):
     if image is None:
         return {'text_items': []}
 
+    # Tesseract: русский + английский (бесплатный, кириллица)
+    try:
+        import pytesseract
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        text = pytesseract.image_to_string(rgb, lang='rus+eng', timeout=30)
+        if text and text.strip():
+            lines = [line.strip() for line in text.split('\n') if line.strip()]
+            print(f'Tesseract text: {len(lines)} lines, preview: {lines[:3]}')
+            return {'text_items': [{'text': line, 'confidence': 0.9} for line in lines]}
+        print('Tesseract returned empty text, falling back to RapidOCR')
+    except ImportError:
+        print('pytesseract not installed, falling back to RapidOCR')
+    except Exception as e:
+        print(f'Tesseract error: {e}, falling back to RapidOCR')
+
+    # Fallback: RapidOCR (латиница по умолчанию)
     result = rapidocr_engine(image)
     boxes = result[0] if result else []
     text_items = []
@@ -344,6 +360,11 @@ class OcrHandler(BaseHTTPRequestHandler):
             if YANDEX_ENABLED:
                 engines.append('yandex')
             engines.append('rapidocr_onnxruntime_v2')
+            try:
+                import pytesseract
+                engines.append('tesseract')
+            except ImportError:
+                pass
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
@@ -371,6 +392,11 @@ def main():
         print(f'OCR server listening on 127.0.0.1:{port}', flush=True)
         print(f'  Yandex Vision: {"ENABLED" if YANDEX_ENABLED else "DISABLED (set YANDEX_VISION_API_KEY)"}', flush=True)
         print(f'  RapidOCR fallback: LOADED', flush=True)
+        try:
+            import pytesseract
+            print(f'  Tesseract: AVAILABLE (rus+eng)', flush=True)
+        except ImportError:
+            print(f'  Tesseract: NOT INSTALLED (pip install pytesseract)', flush=True)
         print(f'  MIN_MILEAGE={MIN_MILEAGE} MAX_MILEAGE={MAX_MILEAGE}', flush=True)
         server.serve_forever()
     else:
