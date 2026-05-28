@@ -12,6 +12,17 @@ module.exports = function setupReplyForwarding(bot, services) {
 
   // ─── Manager replies in group → forward to courier ───
   bot.on('message', async (ctx, next) => {
+    // Log ALL messages for debugging
+    console.log('reply fwd ALL msg:', {
+      chatType: ctx.chat?.type,
+      chatId: ctx.chat?.id,
+      fromId: ctx.from?.id,
+      isReply: !!ctx.message?.reply_to_message,
+      replyFromId: ctx.message?.reply_to_message?.from?.id,
+      botId: bot.botInfo?.id,
+      textPreview: ctx.message?.text?.substring(0, 30)
+    });
+
     // Only groups
     if (ctx.chat?.type === 'private') return next();
     // Must be reply
@@ -19,7 +30,7 @@ module.exports = function setupReplyForwarding(bot, services) {
     // Must reply to our bot's message
     const replyFromId = ctx.message.reply_to_message.from?.id;
     const botId = bot.botInfo?.id;
-    console.log('reply forward check:', { chatType: ctx.chat?.type, replyFromId, botId, match: replyFromId === botId, replyMsgId: ctx.message.reply_to_message.message_id });
+    console.log('reply forward check:', { replyFromId, botId, match: replyFromId === botId, replyMsgId: ctx.message.reply_to_message.message_id });
     if (replyFromId !== botId) return next();
 
     const thread = findThreadByGroupMessage(ctx.chat.id, ctx.message.reply_to_message.message_id);
@@ -76,6 +87,15 @@ module.exports = function setupReplyForwarding(bot, services) {
 
   // ─── Courier replies in private → forward to group ───
   bot.on('message', async (ctx, next) => {
+    console.log('reply fwd private msg:', {
+      chatType: ctx.chat?.type,
+      chatId: ctx.chat?.id,
+      fromId: ctx.from?.id,
+      isReply: !!ctx.message?.reply_to_message,
+      replyFromId: ctx.message?.reply_to_message?.from?.id,
+      botId: bot.botInfo?.id
+    });
+
     // Only private chats
     if (ctx.chat?.type !== 'private') return next();
     // Must be reply to bot's message
