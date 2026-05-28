@@ -140,10 +140,10 @@ def recognize_with_gemini(image_bytes):
     payload = {
         "contents": [{
             "parts": [
-                {"text": "You are an odometer reader. "
-                         "List every number visible on this car dashboard image, "
-                         "one number per line. Add ' km' after each mileage number. "
-                         "Reply only with numbers, nothing else."},
+                {"text": "You are analyzing a car dashboard photo. "
+                         "Find the total mileage (odometer) number. "
+                         "Ignore: time, temperature, fuel, speed, RPM, trip. "
+                         "Reply ONLY with the number, no text."},
                 {"inline_data": {"mime_type": "image/jpeg", "data": image_b64}}
             ]
         }]
