@@ -183,6 +183,33 @@ function _getCurrentGitHash() {
   }
 }
 
+const _EN_TO_RU = {
+  'gemini': 'Gemini', 'prompt': 'промт', 'remove': 'удалён', 'switch': 'замена',
+  'fix': 'исправление', 'add': 'добавлено', 'better': 'улучшен', 'single': 'только число',
+  'odometer': 'одометр', 'mileage': 'пробег', 'ocr': 'OCR', 'text': 'текст',
+  'fallback': 'запасной вариант', 'model': 'модель', 'available': 'доступна',
+  'deprecated': 'устарела', 'numpy': 'numpy', 'import': 'импорт',
+  'config': 'настройки', 'ecosystem': 'конфиг', 'server': 'сервер',
+  'reader': 'чтение', 'env': 'окружение', 'key': 'ключ', 'api': 'API',
+  'flash': 'Flash', 'lite': 'Lite', 'photo': 'фото', 'image': 'изображение',
+  'dashboard': 'панель приборов', 'car': 'автомобиля', 'number': 'номер',
+  'ignore': 'игнорируется', 'time': 'время', 'temperature': 'температура',
+  'fuel': 'топливо', 'speed': 'скорость', 'rpm': 'RPM', 'trip': 'поездка',
+  'reply': 'ответ', 'only': 'только', 'analyze': 'анализ', 'find': 'поиск',
+  'total': 'общий', 'yandex': 'Yandex', 'rapidocr': 'RapidOCR',
+  'tesseract': 'Tesseract', 'vision': 'Vision', 'initialize': 'загрузка',
+  'support': 'поддержка', 'configured': 'настроен', 'version': 'версия',
+  'startup': 'запуск', 'health': 'проверка', 'endpoint': 'эндпоинт',
+  'sheet': 'таблица', 'log': 'лог', 'change': 'изменение', 'update': 'обновление',
+  'clean': 'очистка', 'old': 'старый', 'new': 'новый', 'code': 'код',
+  'file': 'файл', 'function': 'функция', 'variable': 'переменная',
+  'error': 'ошибка', 'handle': 'обработка', 'result': 'результат',
+  'recognize': 'распознавание', 'recognize_text': 'распознавание текста',
+  'extract': 'извлечение', 'detect': 'обнаружение', 'check': 'проверка',
+  'validate': 'валидация', 'save': 'сохранение', 'load': 'загрузка',
+  'process': 'обработка', 'background': 'фоновая', 'async': 'асинхронно',
+};
+
 const COMMIT_PREFIX_RU = {
   feat: '✨ Добавлено',
   fix: '🔧 Исправлено',
@@ -196,6 +223,16 @@ const COMMIT_PREFIX_RU = {
   ci: '⚙️ CI/CD',
   revert: '↩️ Откат'
 };
+
+function _translateToRussian(text) {
+  let result = text;
+  for (const [en, ru] of Object.entries(_EN_TO_RU)) {
+    const regex = new RegExp(`\\b${en}\\b`, 'gi');
+    result = result.replace(regex, ru);
+  }
+  result = result.replace(/\b(\d+)\s*-\s*(\w)/g, (m, d, w) => `${d} — ${w.toLowerCase()}`);
+  return result;
+}
 
 function _getGitLogSince(fromHash) {
   if (!fromHash) return null;
@@ -211,12 +248,14 @@ function _getGitLogSince(fromHash) {
           const prefix = prefixMatch[1].toLowerCase();
           const ruPrefix = COMMIT_PREFIX_RU[prefix] || prefix;
           msg = msg.slice(prefixMatch[0].length);
+          msg = _translateToRussian(msg);
           msg = msg.charAt(0).toUpperCase() + msg.slice(1);
           return `${ruPrefix}: ${msg}`;
         }
         if (msg.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})\s*/u)) {
           return msg.charAt(0).toUpperCase() + msg.slice(1);
         }
+        msg = _translateToRussian(msg);
         msg = msg.charAt(0).toUpperCase() + msg.slice(1);
         return msg;
       })
@@ -2187,55 +2226,68 @@ function getChangelogBump() {
 }
 
 function buildUpdateHighlights(changedFiles = [], version, updates = []) {
-  if (Array.isArray(updates) && updates.length > 0) {
-    return updates;
-  }
-
-  const changelogNotes = getLatestChangelogNotes();
-  if (changelogNotes && changelogNotes.length > 0) {
-    return changelogNotes;
-  }
-
-  const envNotes = parseUpdateNotesFromEnv();
-  if (envNotes.length > 0) {
-    return envNotes;
-  }
-
   const files = new Set((changedFiles || []).map((file) => String(file || '').toLowerCase()));
   const includesAny = (targets) => targets.some((target) => files.has(target.toLowerCase()));
   const highlights = [];
 
+  if (includesAny(['rapidocr_server.py'])) {
+    highlights.push('📸 Полностью обновлён движок OCR: Gemini распознаёт и пробег, и сверки, Tesseract как запасной.');
+  }
+
   if (includesAny(['bot.js'])) {
-    highlights.push('🤖 Подправили сценарии работы и стабильность.');
+    highlights.push('🤖 Обновлена логика бота, улучшена стабильность.');
+  }
+
+  if (includesAny(['ecosystem.config.js'])) {
+    highlights.push('⚙️ Обновлены настройки запуска.');
   }
 
   if (includesAny(['sheetcommand.js', 'googlesheets.js', 'storage.js'])) {
-    highlights.push('🗂 Улучшили работу с таблицами и привязками.');
+    highlights.push('🗂 Улучшена работа с таблицами.');
   }
 
   if (includesAny(['mileageocr.js'])) {
-    highlights.push('📸 Улучшили распознавание пробега по фото.');
+    highlights.push('📸 Улучшено распознавание пробега.');
+  }
+
+  if (includesAny(['achievements.js', 'xp.js', 'challenges.js', 'leaderboard.js', 'streak.js'])) {
+    highlights.push('🏆 Обновлена система достижений и рейтинга.');
+  }
+
+  if (includesAny(['courier.js', 'logist.js', 'commands.js', 'admin.js', 'textrouter.js', 'replyforwarding.js'])) {
+    highlights.push('💬 Обновлены сценарии общения с ботом.');
   }
 
   if (includesAny(['utils.js'])) {
-    highlights.push('🧮 Обновили вспомогательные функции.');
+    highlights.push('🧮 Обновлены вспомогательные функции.');
   }
 
   if (highlights.length === 0) {
     highlights.push('✨ Небольшие улучшения стабильности и удобства.');
   }
 
-  return highlights.slice(0, 4);
+  // Добавляем 1-2 git-коммита как детали (если есть)
+  if (Array.isArray(updates) && updates.length > 0) {
+    const details = updates.slice(0, 3).map((u) => `• ${u}`);
+    return { highlights: highlights.slice(0, 4), details };
+  }
+
+  return { highlights: highlights.slice(0, 4), details: [] };
 }
 
 function formatUpdateMessage(version, changedFiles = [], updates = []) {
-  const highlights = buildUpdateHighlights(changedFiles, version, updates);
+  const { highlights, details } = buildUpdateHighlights(changedFiles, version, updates);
   const lines = highlights.map((item) => `• ${esc(item)}`).join('\n');
+
+  let detailsBlock = '';
+  if (details.length > 0) {
+    detailsBlock = '\n\n<b>Подробности:</b>\n' + details.join('\n');
+  }
 
   return (
     `🆕 <b><i>Обновление бота v${esc(version)}</i></b>\n\n` +
     '<b>Коротко, что изменили:</b>\n' +
-    `${lines}\n\n` +
+    `${lines}${detailsBlock}\n\n` +
     '💙 Хорошей смены!'
   );
 }
