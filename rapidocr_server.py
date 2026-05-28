@@ -215,6 +215,7 @@ def _format_error(error_msg):
 def recognize_text(image_bytes):
     """Text recognition for /text endpoint. Gemini -> Tesseract fallback."""
     import cv2
+    import numpy as np
     nparr = np.frombuffer(image_bytes, np.uint8)
     image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if image is None:
