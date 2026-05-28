@@ -4402,7 +4402,7 @@ async function startBot(retry = 0) {
         if (!chatId) continue;
         const opts = { parse_mode: 'HTML', reply_markup: { remove_keyboard: true }, disable_notification: true };
         if (threadId) opts.message_thread_id = Number(threadId);
-        bot.telegram.sendMessage(chatId, '‎', opts)
+        bot.telegram.sendMessage(chatId, '·', opts)
           .then((m) => {
             console.log(`keyboard cleanup sent to ${t.name} (chat=${chatId}, thread=${threadId || 'none'}) msg_id=${m.message_id}`);
             setTimeout(() => bot.telegram.deleteMessage(chatId, m.message_id).catch(() => {}), 1000);
