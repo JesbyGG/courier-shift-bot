@@ -4300,18 +4300,6 @@ const services = {
   showMyProgress, showXpInfo, showNotificationSettings, sendCommandsList
 };
 
-// Debug: log ALL messages
-bot.on('message', (ctx, next) => {
-  console.log('DEBUG MESSAGE:', {
-    chatType: ctx.chat?.type,
-    chatId: ctx.chat?.id,
-    fromId: ctx.from?.id,
-    text: ctx.message?.text?.substring(0, 30),
-    hasPhoto: !!ctx.message?.photo
-  });
-  return next();
-});
-
 setupCommands(bot, services);
 setupAdmin(bot, services);
 setupReplyForwarding(bot, services);
