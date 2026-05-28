@@ -29,12 +29,7 @@ module.exports = {
       env: {
         RAPIDOCR_PORT: '9527',
         OCR_MIN_MILEAGE: '1000',
-        RAPIDOCR_MIN_COUNT: '1',
-        RAPIDOCR_MIN_AVG_CONF: '0.55',
-        RAPIDOCR_MIN_MAX_CONF: '0.68',
         GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
-        YANDEX_VISION_API_KEY: process.env.YANDEX_VISION_API_KEY || 'AQVN1bjvUVzKP1BThrIZ40apipTu5M2IjqaBfPlC',
-        YANDEX_OCR_ENABLED: 'true',
       },
     },
   ],
