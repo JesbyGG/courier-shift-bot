@@ -201,7 +201,7 @@ def recognize_with_yandex(image_bytes):
             'content': image_b64,
             'model': 'page',
         }
-        headers = {'Authorization': f'Api-Key {YANDEX_API_KEY}', 'Content-Type': 'application/json'}
+        headers = {'Authorization': f'Api-Key {_YANDEX_API_KEY}', 'Content-Type': 'application/json'}
         req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers, method='POST')
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
