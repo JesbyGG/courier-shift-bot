@@ -136,7 +136,7 @@ def recognize_with_gemini(image_bytes):
     optimized = optimize_image_for_ocr(image_bytes)
     image_b64 = base64.b64encode(optimized).decode('utf-8')
 
-    url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}'
+    url = f'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-lite:generateContent?key={api_key}'
     payload = {
         "contents": [{
             "parts": [
@@ -426,7 +426,7 @@ def main():
         port = int(os.getenv('RAPIDOCR_PORT', '9527') or 9527)
         server = ThreadingHTTPServer(('127.0.0.1', port), OcrHandler)
         print(f'OCR server listening on 127.0.0.1:{port}', flush=True)
-        print(f'  Gemini 1.5 Flash: {"ENABLED" if GEMINI_ENABLED else "DISABLED (set GEMINI_API_KEY)"}', flush=True)
+        print(f'  Gemini 2.5 Flash Lite: {"ENABLED" if GEMINI_ENABLED else "DISABLED (set GEMINI_API_KEY)"}', flush=True)
         print(f'  RapidOCR fallback: LOADED', flush=True)
         print(f'  Image optimize: {GEMINI_MAX_DIM}px, JPEG q{GEMINI_JPEG_QUALITY}', flush=True)
         try:
