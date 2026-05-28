@@ -435,48 +435,6 @@ async function findCourierInAllSheets(fio) {
   return null;
 }
 
-async function getTodayStatus(fio, workplace) {
-  const ctx = await resolveCourierContext(fio, workplace);
-  if (ctx.notFound) {
-    if (ctx.noSheet) {
-      return { notFound: true, noSheet: true, noSheetForMonth: ctx.noSheetForMonth, monthKey: ctx.monthKey };
-    }
-    return null;
-  }
-
-  const { spreadsheetId, config, courier, mileage } = ctx;
-
-  const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
-  const { dateText, day } = getCurrentDateInfo(timezone);
-  const courierColumns = getCourierColumnsByDay(day);
-  const mileageColumns = getMileageColumns(workplace, day);
-
-  const fromCell = `${getColumnLetter(courierColumns.startColumn)}${courier.row}`;
-  const toCell = `${getColumnLetter(courierColumns.endColumn)}${courier.row}`;
-
-  const mileageStartCell = `${getColumnLetter(mileageColumns.startColumn)}${mileage.row}`;
-  const mileageEndCell = `${getColumnLetter(mileageColumns.endColumn)}${mileage.row}`;
-
-  const [from, to, mileageStart, mileageEnd] = await Promise.all([
-    readCell(config.courierSheet, fromCell, spreadsheetId),
-    readCell(config.courierSheet, toCell, spreadsheetId),
-    readCell(config.mileageSheet, mileageStartCell, spreadsheetId),
-    readCell(config.mileageSheet, mileageEndCell, spreadsheetId)
-  ]);
-
-  const cleanMarker = (v) => isScheduleMarker(v) ? '' : v;
-
-  return {
-    fio: courier.fio,
-    auto: courier.auto || mileage.auto,
-    date: dateText,
-    from: cleanMarker(from),
-    to: cleanMarker(to),
-    mileageStart,
-    mileageEnd
-  };
-}
-
 function makePunchState({ courier, mileage, dateText, day, stage, timeValue }) {
   return {
     fio: courier.fio,
@@ -728,7 +686,6 @@ async function updateEfficiencyOrders(fio, workplace, day, ordersCount) {
 module.exports = {
   initGoogleSheets,
   findCourierInAllSheets,
-  getTodayStatus,
   punchTime,
   prepareMileage,
   replaceTime,

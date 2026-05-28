@@ -114,9 +114,6 @@ function getXpForAction(actionKey) {
 module.exports = {
   addXp,
   getTotalXp,
-  getRank,
-  getNextRank,
-  getRankProgress,
   formatRankInfo,
   getXpForAction,
   AUTO_RANKS,

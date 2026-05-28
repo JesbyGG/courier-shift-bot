@@ -9,15 +9,6 @@ const {
 } = require('../services/storage');
 const { isAdminUser } = require('../services/auth');
 
-function mainMenu() {
-  return Markup.keyboard([
-    [BUTTONS.punchTime, BUTTONS.mileage],
-    [BUTTONS.routeSheet, BUTTONS.reconciliation],
-    [BUTTONS.cashCheck, BUTTONS.issues],
-    [BUTTONS.leaderBoard, BUTTONS.settings]
-  ]).resize();
-}
-
 function courierMainMenu(telegramId) {
   const courierType = getUserField(telegramId, 'courierType') || 'auto';
   const rows = [
@@ -236,7 +227,6 @@ function debtorListKeyboard(debtors, logistWorkplace) {
 }
 
 module.exports = {
-  mainMenu,
   courierMainMenu,
   profileMenu,
   workplaceMenu,

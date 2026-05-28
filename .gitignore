@@ -22,6 +22,8 @@ backups/
 ocr_feedback.json
 __pycache__/
 venv/
+scripts/
+test_photos/
 *.tmp
 database.sqlite-shm
 database.sqlite-wal

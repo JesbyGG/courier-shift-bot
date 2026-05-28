@@ -3891,18 +3891,12 @@ async function handleMileagePhoto(ctx, state, fileId) {
   const chatId = ctx.chat.id;
   const telegram = ctx.telegram;
 
-  const MILEAGE_TIMEOUT_MS = 120000;
-
-  const bgPromise = processMileagePhotoInBackground(telegram, chatId, telegramId, photoState, fileId, photoState);
-
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error(' mileage processing timeout')), MILEAGE_TIMEOUT_MS)
-  );
-
-  Promise.race([bgPromise, timeoutPromise]).catch((err) => {
-    console.error('mileage bg error:', err.message);
+  withTimeout(processMileagePhotoInBackground(telegram, chatId, telegramId, photoState, fileId, photoState), 120000, 'mileage processing').catch((err) => {
     if (err.message && err.message.includes('timeout')) {
+      console.error('mileage processing timeout');
       telegram.sendMessage(chatId, '⚠️ Превышено время распознавания. Введите пробег вручную или нажмите «⏭️ Пропустить».', { parse_mode: 'HTML' }).catch(() => {});
+    } else {
+      console.error('mileage bg error:', err.message);
     }
   });
 }
@@ -4186,6 +4180,11 @@ function shutdown(signal) {
     makeBackupSync('pre-shutdown');
   } catch (e) {
     console.error('pre-shutdown backup failed', e.message);
+  }
+
+  if (funReactionCleanupTimer) {
+    clearInterval(funReactionCleanupTimer);
+    funReactionCleanupTimer = null;
   }
 
   try {
