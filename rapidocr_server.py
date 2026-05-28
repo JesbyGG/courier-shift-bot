@@ -25,6 +25,19 @@ BASE_DIR = Path(__file__).resolve().parent
 MIN_MILEAGE = int(os.getenv('OCR_MIN_MILEAGE', '100') or 100)
 MAX_MILEAGE = 300000
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+# Fallback: читаем .env файл напрямую
+if not GEMINI_API_KEY:
+    try:
+        _env_path = os.path.join(BASE_DIR, '.env')
+        with open(_env_path) as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if _line.startswith('GEMINI_API_KEY='):
+                    _val = _line.split('=', 1)[1].strip()
+                    GEMINI_API_KEY = _val.strip('"\'')
+                    break
+    except Exception:
+        pass
 GEMINI_ENABLED = bool(GEMINI_API_KEY)
 
 # Yandex — fallback, если Gemini не настроен
