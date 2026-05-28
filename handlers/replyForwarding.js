@@ -1,4 +1,6 @@
 module.exports = function setupReplyForwarding(bot, services) {
+  console.log('Setting up reply forwarding handler...');
+  
   const {
     saveThread,
     findThreadByGroupMessage,
@@ -12,44 +14,49 @@ module.exports = function setupReplyForwarding(bot, services) {
 
   // Store bot ID after launch
   let botId = null;
-  bot.use(async (ctx, next) => {
+  
+  // Handler for manager replies in groups
+  bot.on('message', async (ctx, next) => {
+    console.log('reply fwd handler TRIGGERED:', {
+      chatType: ctx.chat?.type,
+      chatId: ctx.chat?.id,
+      fromId: ctx.from?.id,
+      hasMessage: !!ctx.message,
+      isReply: !!ctx.message?.reply_to_message,
+      text: ctx.message?.text?.substring(0, 30)
+    });
+    
+    // Set botId if not set
     if (!botId && bot.botInfo) {
       botId = bot.botInfo.id;
       console.log('Reply forwarding bot ID set:', botId);
     }
-    return next();
-  });
-
-  // ─── Manager replies in group → forward to courier ───
-  bot.use(async (ctx, next) => {
-    console.log('reply fwd middleware TRIGGERED:', {
-      updateType: ctx.updateType,
-      chatType: ctx.chat?.type,
-      chatId: ctx.chat?.id,
-      hasMessage: !!ctx.message,
-      isReply: !!ctx.message?.reply_to_message
-    });
-    
-    // Only process messages
-    if (!ctx.message) return next();
     
     // Only groups
-    if (ctx.chat?.type === 'private') return next();
+    if (ctx.chat?.type === 'private') {
+      console.log('reply fwd: private chat, skipping');
+      return next();
+    }
+    
     // Must be reply
-    if (!ctx.message.reply_to_message) return next();
+    if (!ctx.message?.reply_to_message) {
+      console.log('reply fwd: not a reply, skipping');
+      return next();
+    }
+    
     // Must reply to our bot's message
     const replyFromId = ctx.message.reply_to_message.from?.id;
     if (!botId) {
-      console.log('reply forward: botId not yet set, skipping');
+      console.log('reply fwd: botId not yet set, skipping');
       return next();
     }
     if (replyFromId !== botId) {
-      console.log('reply forward: reply not to our message', { replyFromId, botId });
+      console.log('reply fwd: reply not to our message', { replyFromId, botId });
       return next();
     }
 
     const thread = findThreadByGroupMessage(ctx.chat.id, ctx.message.reply_to_message.message_id);
-    console.log('reply forward thread:', thread ? { id: thread.id, courierId: thread.courier_telegram_id } : 'NOT FOUND');
+    console.log('reply fwd thread:', thread ? { id: thread.id, courierId: thread.courier_telegram_id } : 'NOT FOUND');
     if (!thread) return next();
 
     const courierId = Number(thread.courier_telegram_id);
@@ -96,17 +103,22 @@ module.exports = function setupReplyForwarding(bot, services) {
         });
       } catch (_) {}
     }
+    
+    return next();
   });
 
-  // ─── Courier replies in private → forward to group ───
-  bot.use(async (ctx, next) => {
-    // Only process messages
-    if (!ctx.message) return next();
+  // Handler for courier replies in private
+  bot.on('message', async (ctx, next) => {
+    // Set botId if not set
+    if (!botId && bot.botInfo) {
+      botId = bot.botInfo.id;
+      console.log('Reply forwarding bot ID set:', botId);
+    }
     
     // Only private chats
     if (ctx.chat?.type !== 'private') return next();
     // Must be reply to bot's message
-    if (!ctx.message.reply_to_message) return next();
+    if (!ctx.message?.reply_to_message) return next();
     if (!botId) return next();
     if (ctx.message.reply_to_message.from?.id !== botId) return next();
 
@@ -199,6 +211,8 @@ module.exports = function setupReplyForwarding(bot, services) {
         });
       } catch (_) {}
     }
+    
+    return next();
   });
 
   // Export cleanup for use elsewhere
