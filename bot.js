@@ -4388,6 +4388,19 @@ async function startBot(retry = 0) {
       }, 3000);
     }
 
+    // Очистка клавиатур в группах при старте
+    setTimeout(() => {
+      const groupChats = ['WORK_CHAT_ID', 'RECONCILIATION_CHAT_ID', 'ROUTE_SHEET_CHAT_ID', 'SHOP_STATUS_CHAT_ID'];
+      for (const key of groupChats) {
+        const chatId = process.env[key];
+        if (chatId) {
+          bot.telegram.sendMessage(chatId, '', { reply_markup: { remove_keyboard: true } })
+            .then((m) => bot.telegram.deleteMessage(chatId, m.message_id).catch(() => {}))
+            .catch(() => {});
+        }
+      }
+    }, 2000);
+
     // bot.launch() возвращает Promise, который резолвится только при stop().
     // НЕ ставим await — иначе всё, что после, не выполнится.
     bot.launch();
