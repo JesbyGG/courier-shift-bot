@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-OCR server: Yandex Vision (primary) + rapidocr_onnxruntime (fallback).
+OCR server: Google Gemini Flash 2.0 (primary) + rapidocr_onnxruntime (fallback).
 Smart selection: prioritise lines with "km", ignore tachometer/speedometer noise.
 """
 
@@ -24,11 +24,17 @@ BASE_DIR = Path(__file__).resolve().parent
 
 MIN_MILEAGE = int(os.getenv('OCR_MIN_MILEAGE', '100') or 100)
 MAX_MILEAGE = 300000
-YANDEX_API_KEY = os.getenv('YANDEX_VISION_API_KEY', '')
-YANDEX_ENABLED = bool(YANDEX_API_KEY) and os.getenv('YANDEX_OCR_ENABLED', 'true').lower() != 'false'
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+GEMINI_ENABLED = bool(GEMINI_API_KEY)
 
+# Yandex — fallback, если Gemini не настроен
+_YANDEX_API_KEY = os.getenv('YANDEX_VISION_API_KEY', '')
+_YANDEX_ENABLED = bool(_YANDEX_API_KEY) and os.getenv('YANDEX_OCR_ENABLED', 'true').lower() != 'false'
 _yandex_lock = threading.Lock()
 _yandex_last_call = 0.0
+
+GEMINI_MAX_DIM = int(os.getenv('GEMINI_MAX_DIM', '1200') or 1200)
+GEMINI_JPEG_QUALITY = int(os.getenv('GEMINI_JPEG_QUALITY', '85') or 85)
 
 NOISE_PATTERNS = [r'x1000', r'r/min', r'rpm', r'km/h', r'mph', r'trip', r'avg', r'speedo', r'tacho']
 SPEED_NUBS = {'40', '60', '80', '100', '120', '140', '160', '180', '200', '220', '240', '260', '280'}
@@ -96,7 +102,76 @@ def smart_select_mileage(lines):
     return groups[0], groups
 
 
-# ===== Yandex Vision OCR =====
+# ===== Gemini Flash 2.0 (primary OCR for mileage) =====
+
+def optimize_image_for_ocr(image_bytes, max_dim=None, quality=None):
+    if max_dim is None:
+        max_dim = GEMINI_MAX_DIM
+    if quality is None:
+        quality = GEMINI_JPEG_QUALITY
+    import cv2
+    import numpy as np
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if img is None:
+        return image_bytes
+    h, w = img.shape[:2]
+    if max(h, w) > max_dim:
+        scale = max_dim / max(h, w)
+        img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+    _, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    return encoded.tobytes()
+
+
+def recognize_with_gemini(image_bytes):
+    api_key = GEMINI_API_KEY
+    if not api_key:
+        return None, 'Gemini API key not configured'
+
+    optimized = optimize_image_for_ocr(image_bytes)
+    image_b64 = base64.b64encode(optimized).decode('utf-8')
+
+    url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}'
+    payload = {
+        "contents": [{
+            "parts": [
+                {"text": "You are an odometer reader. "
+                         "List every number visible on this car dashboard image, "
+                         "one number per line. Add ' km' after each mileage number. "
+                         "Reply only with numbers, nothing else."},
+                {"inline_data": {"mime_type": "image/jpeg", "data": image_b64}}
+            ]
+        }]
+    }
+    headers = {'Content-Type': 'application/json'}
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode('utf-8'),
+        headers=headers,
+        method='POST'
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        return None, f'Gemini HTTP {e.code} ({e.read().decode()[:200]})'
+    except Exception as e:
+        return None, f'Gemini error: {e}'
+
+    try:
+        text = result['candidates'][0]['content']['parts'][0]['text']
+    except (KeyError, IndexError):
+        return None, f'Gemini unexpected response: {json.dumps(result, ensure_ascii=True)[:300]}'
+
+    if not text or not text.strip():
+        return None, 'Gemini returned empty text'
+
+    lines = [l.strip() for l in text.strip().split('\n') if l.strip()]
+    print(f'Gemini raw lines: {lines}')
+    return lines, None
+
+
+# ===== Yandex Vision OCR (fallback if Gemini not configured) =====
 
 def recognize_with_yandex(image_bytes):
     global _yandex_last_call
@@ -221,13 +296,13 @@ def recognize_with_rapidocr(image_bytes):
 
 # ===== Response formatting =====
 
-def _format_yandex_result(best, groups, elapsed, lines):
+def _format_gemini_result(best, groups, elapsed, lines, engine='gemini'):
     selected = best or (groups[0] if groups else None)
     if not selected:
-        return _format_error('yandex no result')
+        return _format_error(f'{engine} no result')
     return {
         'mileage': selected['mileage'],
-        'engine': 'yandex',
+        'engine': engine,
         'selected': {
             'mileage': selected['mileage'],
             'count': 1,
@@ -340,15 +415,33 @@ class OcrHandler(BaseHTTPRequestHandler):
 
     def _recognize(self, image_bytes):
         start = time.time()
-        if YANDEX_ENABLED:
-            lines, err = recognize_with_yandex(image_bytes)
+
+        # 1. Gemini Flash 2.0 (первичный)
+        if GEMINI_ENABLED:
+            lines, err = recognize_with_gemini(image_bytes)
             if lines:
                 best, groups = smart_select_mileage(lines)
                 elapsed = time.time() - start
                 if best:
-                    print(f'Yandex OK: {best["mileage"]} {elapsed:.2f}s lines={lines}')
-                    return _format_yandex_result(best, groups, elapsed, lines)
-                print(f'Yandex no-valid: {elapsed:.2f}s lines={lines}')
+                    print(f'Gemini OK: {best["mileage"]} {elapsed:.2f}s lines={lines}')
+                    return _format_gemini_result(best, groups, elapsed, lines, 'gemini')
+                print(f'Gemini no-valid ({err}): {elapsed:.2f}s lines={lines}')
+            else:
+                print(f'Gemini fail: {err}')
+            # fall through to next engine
+
+        # 2. Yandex Vision (если Gemini не настроен или не сработал)
+        if _YANDEX_ENABLED:
+            y_lines, y_err = recognize_with_yandex(image_bytes)
+            if y_lines:
+                y_best, y_groups = smart_select_mileage(y_lines)
+                elapsed = time.time() - start
+                if y_best:
+                    print(f'Yandex OK: {y_best["mileage"]} {elapsed:.2f}s lines={y_lines}')
+                    return _format_gemini_result(y_best, y_groups, elapsed, y_lines, 'yandex')
+                print(f'Yandex no-valid: {elapsed:.2f}s lines={y_lines}')
+
+        # 3. RapidOCR ONNX (fallback)
         best, err, elapsed = recognize_with_rapidocr(image_bytes)
         if best:
             return _format_rapidocr_result(best, elapsed)
@@ -357,7 +450,9 @@ class OcrHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/health':
             engines = []
-            if YANDEX_ENABLED:
+            if GEMINI_ENABLED:
+                engines.append('gemini')
+            if _YANDEX_ENABLED:
                 engines.append('yandex')
             engines.append('rapidocr_onnxruntime_v2')
             try:
@@ -371,7 +466,7 @@ class OcrHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({
                 'status': 'ok',
                 'engine': '+'.join(engines),
-                'yandex_enabled': YANDEX_ENABLED,
+                'gemini_enabled': GEMINI_ENABLED,
             }).encode())
             return
         self.send_response(404)
