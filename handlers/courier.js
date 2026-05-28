@@ -19,6 +19,7 @@ module.exports = function setupCourier(bot, services) {
   } = services;
 
   bot.on('photo', async (ctx) => {
+    if (ctx.chat?.type !== 'private') return;
     if (isLogist(ctx.from.id)) {
       await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
       return;

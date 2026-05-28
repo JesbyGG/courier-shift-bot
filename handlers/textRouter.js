@@ -157,6 +157,7 @@ module.exports = function setupTextRouter(bot, services) {
   }
 
   bot.on('text', async (ctx) => {
+    if (ctx.chat?.type !== 'private') return;
     const telegramId = ctx.from.id;
     const text = ctx.message.text.trim();
     const state = getState(telegramId);

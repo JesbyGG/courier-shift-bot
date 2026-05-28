@@ -24,6 +24,7 @@ module.exports = function setupCommands(bot, services) {
   } = services;
 
   bot.start(async (ctx) => {
+    if (ctx.chat?.type !== 'private') return;
     console.log('/start');
 
     if (!getUserField(ctx.from.id, 'fio')) {
@@ -91,6 +92,7 @@ module.exports = function setupCommands(bot, services) {
   bot.help(sendHelp);
 
   bot.command('car', async (ctx) => {
+    if (ctx.chat?.type !== 'private') return;
     if (isLogist(ctx.from.id)) {
       await ctx.replyWithHTML('❌ Эта команда доступна только курьерам.', getMenuForRole(ctx.from.id));
       return;
@@ -101,12 +103,14 @@ module.exports = function setupCommands(bot, services) {
   });
 
   bot.command('workplace', async (ctx) => {
+    if (ctx.chat?.type !== 'private') return;
     const fio = getUserField(ctx.from.id, 'fio');
     if (!fio) { await askForFio(ctx); return; }
     await askForWorkplace(ctx, fio);
   });
 
   bot.command('device', async (ctx) => {
+    if (ctx.chat?.type !== 'private') return;
     if (isLogist(ctx.from.id)) {
       await ctx.replyWithHTML('❌ Эта команда доступна только курьерам.', getMenuForRole(ctx.from.id));
       return;
@@ -123,6 +127,7 @@ module.exports = function setupCommands(bot, services) {
   });
 
   bot.command('cancel', async (ctx) => {
+    if (ctx.chat?.type !== 'private') return;
     await backToMainMenu(ctx);
   });
 

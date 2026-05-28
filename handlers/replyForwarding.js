@@ -1,6 +1,4 @@
 module.exports = function setupReplyForwarding(bot, services) {
-  console.log('Setting up reply forwarding handler...');
-  
   const {
     saveThread,
     findThreadByGroupMessage,
@@ -12,51 +10,19 @@ module.exports = function setupReplyForwarding(bot, services) {
 
   const esc = services.esc || ((s) => String(s || '').replace(/[<>&"]/g, (c) => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])));
 
-  // Store bot ID after launch
   let botId = null;
-  
-  // Handler for manager replies in groups
+
+  // ─── Manager replies in group → forward to courier ───
   bot.on('message', async (ctx, next) => {
-    console.log('reply fwd handler TRIGGERED:', {
-      chatType: ctx.chat?.type,
-      chatId: ctx.chat?.id,
-      fromId: ctx.from?.id,
-      hasMessage: !!ctx.message,
-      isReply: !!ctx.message?.reply_to_message,
-      text: ctx.message?.text?.substring(0, 30)
-    });
-    
-    // Set botId if not set
-    if (!botId && bot.botInfo) {
-      botId = bot.botInfo.id;
-      console.log('Reply forwarding bot ID set:', botId);
-    }
-    
-    // Only groups
-    if (ctx.chat?.type === 'private') {
-      console.log('reply fwd: private chat, skipping');
-      return next();
-    }
-    
-    // Must be reply
-    if (!ctx.message?.reply_to_message) {
-      console.log('reply fwd: not a reply, skipping');
-      return next();
-    }
-    
-    // Must reply to our bot's message
+    if (!botId && bot.botInfo) botId = bot.botInfo.id;
+
+    if (ctx.chat?.type === 'private') return next();
+    if (!ctx.message?.reply_to_message) return next();
+
     const replyFromId = ctx.message.reply_to_message.from?.id;
-    if (!botId) {
-      console.log('reply fwd: botId not yet set, skipping');
-      return next();
-    }
-    if (replyFromId !== botId) {
-      console.log('reply fwd: reply not to our message', { replyFromId, botId });
-      return next();
-    }
+    if (!botId || replyFromId !== botId) return next();
 
     const thread = findThreadByGroupMessage(ctx.chat.id, ctx.message.reply_to_message.message_id);
-    console.log('reply fwd thread:', thread ? { id: thread.id, courierId: thread.courier_telegram_id } : 'NOT FOUND');
     if (!thread) return next();
 
     const courierId = Number(thread.courier_telegram_id);
