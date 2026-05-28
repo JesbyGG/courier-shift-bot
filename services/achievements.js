@@ -68,55 +68,96 @@ function unlockAchievement(telegramId, achievementId) {
 }
 
 function checkMilestoneAchievements(telegramId, stats) {
+  const db = require('../db');
   const unlocked = [];
   for (const ach of ACHIEVEMENTS) {
     if (isAchievementUnlocked(telegramId, ach.id)) continue;
-    if (ach.condition.type === 'orders' && (stats.totalOrders || 0) >= ach.condition.value) {
-      unlockAchievement(telegramId, ach.id);
-      unlocked.push(ach);
-    }
-    if (ach.condition.type === 'cash' && (stats.totalCash || 0) >= ach.condition.value) {
-      unlockAchievement(telegramId, ach.id);
-      unlocked.push(ach);
-    }
-    if (ach.condition.type === 'shifts' && (stats.totalShifts || 0) >= ach.condition.value) {
-      unlockAchievement(telegramId, ach.id);
-      unlocked.push(ach);
-    }
-    if (ach.condition.type === 'photos' && (stats.totalPhotos || 0) >= ach.condition.value) {
-      if (!ach.condition.courierType || stats.courierType === ach.condition.courierType) {
-        unlockAchievement(telegramId, ach.id);
+    let met = false;
+
+    if (ach.condition.type === 'orders' && (stats.totalOrders || 0) >= ach.condition.value) met = true;
+    else if (ach.condition.type === 'cash' && (stats.totalCash || 0) >= ach.condition.value) met = true;
+    else if (ach.condition.type === 'shifts' && (stats.totalShifts || 0) >= ach.condition.value) met = true;
+    else if (ach.condition.type === 'photos' && (stats.totalPhotos || 0) >= ach.condition.value) {
+      met = !ach.condition.courierType || stats.courierType === ach.condition.courierType;
+    } else if (ach.condition.type === 'steps' && (stats.totalSteps || 0) >= ach.condition.value) {
+      met = !ach.condition.courierType || stats.courierType === ach.condition.courierType;
+    } else if (ach.condition.type === 'streak' && (stats.currentStreak || 0) >= ach.condition.value) met = true;
+    else if (ach.condition.type === 'early_start' && (stats.earlyStarts || 0) >= ach.condition.value) met = true;
+    else if (ach.condition.type === 'late_finish' && (stats.lateFinishes || 0) >= ach.condition.value) met = true;
+    else if (ach.condition.type === 'no_issues' && (stats.shiftsWithoutIssues || 0) >= ach.condition.value) met = true;
+    else if (ach.condition.type === 'perfect_streak' && (stats.perfectStreak || 0) >= ach.condition.value) met = true;
+    else if (ach.condition.type === 'orders_single' && (stats.singleDayOrders || 0) >= ach.condition.value) met = true;
+    else if (ach.condition.type === 'top1_day' && stats.top1Day) met = true;
+    else if (ach.condition.type === 'early_bird' && stats.earlyBird) met = true;
+    else if (ach.condition.type === 'night_owl' && stats.nightOwl) met = true;
+    else if (ach.condition.type === 'perfect_shift' && stats.perfectShift) met = true;
+    else if (ach.condition.type === 'month_no_skip' && (stats.daysWorked || 0) >= ach.condition.value) met = true;
+    else if (ach.condition.type === 'rank_jump' && stats.rankJump) met = true;
+
+    if (met) {
+      const result = unlockAchievement(telegramId, ach.id);
+      if (result) {
+        // Начисляем XP за достижение
+        if (ach.reward > 0) {
+          try {
+            const { addXp } = require('./xp');
+            addXp(telegramId, ach.reward, `Достижение: ${ach.name}`);
+          } catch (_) {}
+        }
         unlocked.push(ach);
       }
-    }
-    if (ach.condition.type === 'steps' && (stats.totalSteps || 0) >= ach.condition.value) {
-      if (!ach.condition.courierType || stats.courierType === ach.condition.courierType) {
-        unlockAchievement(telegramId, ach.id);
-        unlocked.push(ach);
-      }
-    }
-    if (ach.condition.type === 'streak' && (stats.currentStreak || 0) >= ach.condition.value) {
-      unlockAchievement(telegramId, ach.id);
-      unlocked.push(ach);
-    }
-    if (ach.condition.type === 'early_start' && (stats.earlyStarts || 0) >= ach.condition.value) {
-      unlockAchievement(telegramId, ach.id);
-      unlocked.push(ach);
-    }
-    if (ach.condition.type === 'late_finish' && (stats.lateFinishes || 0) >= ach.condition.value) {
-      unlockAchievement(telegramId, ach.id);
-      unlocked.push(ach);
-    }
-    if (ach.condition.type === 'no_issues' && (stats.shiftsWithoutIssues || 0) >= ach.condition.value) {
-      unlockAchievement(telegramId, ach.id);
-      unlocked.push(ach);
-    }
-    if (ach.condition.type === 'perfect_streak' && (stats.perfectStreak || 0) >= ach.condition.value) {
-      unlockAchievement(telegramId, ach.id);
-      unlocked.push(ach);
     }
   }
   return unlocked;
+}
+
+function getAchievementStats(telegramId) {
+  const allTimeOrders = db.prepare('SELECT COALESCE(SUM(orders), 0) as total FROM daily_orders WHERE telegramId = ?').get(String(telegramId));
+  const streakRow = db.prepare('SELECT currentStreak, maxStreak FROM streaks WHERE telegramId = ?').get(String(telegramId));
+  const userRow = db.prepare('SELECT data FROM users WHERE telegramId = ?').get(String(telegramId));
+  let totalShifts = 0;
+  let totalCash = 0;
+  let earlyStarts = 0;
+  let lateFinishes = 0;
+  let courierType = 'auto';
+  if (userRow) {
+    try {
+      const ud = JSON.parse(userRow.data);
+      totalShifts = ud.shiftCount || 0;
+      totalCash = ud.totalCashRecorded || 0;
+      earlyStarts = ud.earlyStarts || 0;
+      lateFinishes = ud.lateFinishes || 0;
+      courierType = ud.courierType || 'auto';
+    } catch (_) {}
+  }
+
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayRow = db.prepare('SELECT orders FROM daily_orders WHERE telegramId = ? AND date = ?').get(String(telegramId), todayKey);
+  const singleDayOrders = todayRow ? Number(todayRow.orders) || 0 : 0;
+
+  return {
+    totalOrders: allTimeOrders ? Number(allTimeOrders.total) || 0 : 0,
+    totalCash,
+    totalShifts,
+    currentStreak: streakRow ? Number(streakRow.currentStreak) || 0 : 0,
+    maxStreak: streakRow ? Number(streakRow.maxStreak) || 0 : 0,
+    courierType,
+    earlyStarts,
+    lateFinishes,
+    singleDayOrders
+  };
+}
+
+function notifyAchievements(ctx, telegramId, unlocked) {
+  if (!unlocked || unlocked.length === 0) return;
+  const sendMsg = ctx.sendMessage ? ctx.sendMessage.bind(ctx) : (id, msg) => {
+    const tg = ctx.telegram || ctx;
+    tg.sendMessage(id, msg, { parse_mode: 'HTML' }).catch(() => {});
+  };
+  for (const ach of unlocked) {
+    const msg = `🏆 Достижение разблокировано: ${ach.name}\n${ach.desc}${ach.reward > 0 ? `\n+${ach.reward} XP` : ''}`;
+    sendMsg(telegramId, msg);
+  }
 }
 
 module.exports = {
@@ -124,5 +165,7 @@ module.exports = {
   getUnlockedAchievements,
   isAchievementUnlocked,
   unlockAchievement,
-  checkMilestoneAchievements
+  checkMilestoneAchievements,
+  getAchievementStats,
+  notifyAchievements
 };

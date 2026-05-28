@@ -63,7 +63,7 @@ const { recognizeMileage, downloadTelegramFile, isRapidOcrEnabled, recognizeText
 const { saveOcrDebugImage, updateOcrDebugStatus } = require('./services/ocrDebug');
 const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, getDayOrders: getLbDayOrders, getWorkplaceRecord, setWorkplaceRecord, getDailyTop3, findOvertakenCouriers, getTodayKey: getLbTodayKey, _getAllRecords } = require('./services/leaderboard');
 const { addXp, getTotalXp, formatRankInfo, getXpForAction } = require('./services/xp');
-const { getUnlockedAchievements, getAllAchievements } = require('./services/achievements');
+const { getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements } = require('./services/achievements');
 const { updateStreak, getStreak, getStreakBonus } = require('./services/streak');
 const { updateChallengeProgress, generateWeeklyChallenges, getChallenges } = require('./services/challenges');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, getCourierColumnsByDay, roundMinutesToHalfHour, roundTimeToHalfHour, isEmptyCell, isScheduleMarker } = require('./utils');
@@ -1841,6 +1841,17 @@ async function punchTimeFlow(ctx, explicitStage = null) {
     if (streakBonus > 0) {
       addXp(telegramId, streakBonus, `Бонус за стрик ${streak.currentStreak} смен`);
     }
+    // Считаем количество смен
+    if (result.stage === 'start') {
+      const cur = Number(getUserField(telegramId, 'shiftCount') || 0);
+      setUserField(telegramId, 'shiftCount', cur + 1);
+      updateChallengeProgress(telegramId, 'shifts');
+    }
+    try {
+      const stats = getAchievementStats(telegramId);
+      const unlocked = checkMilestoneAchievements(telegramId, stats);
+      if (unlocked.length > 0) notifyAchievements(ctx, telegramId, unlocked);
+    } catch (_) {}
 
     const icon = result.stage === 'start' ? '🟢' : '🔴';
     const label = result.stage === 'start' ? 'Старт' : 'Конец';
@@ -2438,6 +2449,11 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
     console.log('пробег записан');
     addXp(telegramId, getXpForAction('mileage'), 'Запись пробега');
     updateChallengeProgress(telegramId, 'mileages');
+    try {
+      const stats = getAchievementStats(telegramId);
+      const unlocked = checkMilestoneAchievements(telegramId, stats);
+      if (unlocked.length > 0) notifyAchievements(ctx, telegramId, unlocked);
+    } catch (_) {}
     logOcrFeedback(telegramId, state.ocrValue || null, mileageValue, sourceBuffer, {
       stage: state.stage,
       workplace: state.workplace,
@@ -3586,6 +3602,14 @@ async function handleRouteSheetPhoto(ctx, state, fileId) {
 async function finalizeReconciliationPostSend(ctx, state, telegramId, totalOrders) {
   const errors = [];
 
+  // Всегда начисляем XP и прогресс челленджа за отправку сверки
+  try {
+    addXp(telegramId, getXpForAction('reconciliation'), 'Сверка');
+    updateChallengeProgress(telegramId, 'reconciliations');
+  } catch (lbErr) {
+    console.error('reconciliation xp error', lbErr.message || lbErr);
+  }
+
   if (totalOrders && totalOrders > 0 && state.fio && state.workplace) {
     const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
     const { day } = getCurrentDateInfo(timezone);
@@ -3609,12 +3633,20 @@ async function finalizeReconciliationPostSend(ctx, state, telegramId, totalOrder
       const profileLb = getFullProfile(telegramId);
       recordLeaderboardOrders(String(telegramId), state.fio, state.workplace, totalOrders, profileLb.courierType);
       await handleLeaderboardNotifications(ctx, String(telegramId), state.fio, state.workplace, totalOrders, oldOrders);
-      addXp(telegramId, getXpForAction('reconciliation'), 'Сверка');
-      updateChallengeProgress(telegramId, 'reconciliations');
     } catch (lbErr) {
       console.error('leaderboard record error', lbErr.message || lbErr);
       errors.push('рейтинг');
     }
+  }
+
+  try {
+    const stats = getAchievementStats(telegramId);
+    const unlocked = checkMilestoneAchievements(telegramId, stats);
+    if (unlocked.length > 0) {
+      notifyAchievements(ctx, telegramId, unlocked);
+    }
+  } catch (achErr) {
+    console.error('achievement check error', achErr.message || achErr);
   }
 
   if (errors.length > 0) {
@@ -4291,7 +4323,7 @@ const services = {
   // leaderboard & achievements
   calculateLeaderboard, formatLeaderboard, getDailyTop3, findOvertakenCouriers,
   checkNotifications: checkLeaderboardNotifications, getWorkplaceRecord, setWorkplaceRecord,
-  getUnlockedAchievements, getAllAchievements,
+  getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements,
   updateStreak, getStreak, getStreakBonus,
   getChallenges, generateWeeklyChallenges,
   // sheets & ocr

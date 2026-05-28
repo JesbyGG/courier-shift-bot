@@ -6,6 +6,7 @@ module.exports = function setupLogist(bot, services) {
     logCashAction, clearPendingCashAndReminders,
     setCashConfirmationStatus,
     addXp, getXpForAction, updateChallengeProgress,
+    checkMilestoneAchievements, getAchievementStats, notifyAchievements,
     esc, formatMoneyRu, getMenuForRole,
     Markup, sendFunReaction
   } = services;
@@ -139,6 +140,11 @@ module.exports = function setupLogist(bot, services) {
 
     addXp(reminder.courierId, getXpForAction('cashSubmit'), 'Сдача наличных (подтверждено)');
     updateChallengeProgress(reminder.courierId, 'cashSubmits');
+    try {
+      const stats = getAchievementStats(reminder.courierId);
+      const unlocked = checkMilestoneAchievements(reminder.courierId, stats);
+      if (unlocked.length > 0) notifyAchievements(ctx, reminder.courierId, unlocked);
+    } catch (_) {}
 
     deleteReminder(shortId);
 
@@ -237,6 +243,11 @@ module.exports = function setupLogist(bot, services) {
 
     addXp(courierId, getXpForAction('cashSubmit'), 'Сдача наличных (self-clearance)');
     updateChallengeProgress(courierId, 'cashSubmits');
+    try {
+      const stats = getAchievementStats(courierId);
+      const unlocked = checkMilestoneAchievements(courierId, stats);
+      if (unlocked.length > 0) notifyAchievements(ctx, courierId, unlocked);
+    } catch (_) {}
 
     logCashAction({
       logistId, logistFio,

@@ -11,6 +11,7 @@ module.exports = function setupCourier(bot, services) {
     clearPendingCashAndReminders, logCashAction,
     deleteUser,
     addXp, getXpForAction, updateChallengeProgress,
+    checkMilestoneAchievements, getAchievementStats, notifyAchievements,
     backToMainMenu,
     replaceTimeAction,
     WORKPLACE_FEATURES, sendCommandsList,
@@ -104,6 +105,11 @@ module.exports = function setupCourier(bot, services) {
     }
     addXp(ctx.from.id, getXpForAction('routeSheet'), 'Маршрутник');
     updateChallengeProgress(ctx.from.id, 'routeSheets');
+    try {
+      const stats = getAchievementStats(ctx.from.id);
+      const unlocked = checkMilestoneAchievements(ctx.from.id, stats);
+      if (unlocked.length > 0) notifyAchievements(ctx, ctx.from.id, unlocked);
+    } catch (_) {}
     await ctx.replyWithHTML('✅ Завершено. Спасибо.', courierMainMenu(ctx.from.id));
   });
 
@@ -132,6 +138,11 @@ module.exports = function setupCourier(bot, services) {
       });
       addXp(telegramId, getXpForAction('cashSubmit'), 'Сдача наличных');
       updateChallengeProgress(telegramId, 'cashSubmits');
+      try {
+        const stats = getAchievementStats(telegramId);
+        const unlocked = checkMilestoneAchievements(telegramId, stats);
+        if (unlocked.length > 0) notifyAchievements(ctx, telegramId, unlocked);
+      } catch (_) {}
       try {
         await ctx.editMessageText(`✅ <b>${esc(courierFio)}</b>, сдача <code>${esc(formatted)}</code> ₽ подтверждена.`);
       } catch (e) { /* ignore */ }
