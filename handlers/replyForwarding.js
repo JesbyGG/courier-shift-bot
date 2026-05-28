@@ -22,6 +22,14 @@ module.exports = function setupReplyForwarding(bot, services) {
 
   // ─── Manager replies in group → forward to courier ───
   bot.use(async (ctx, next) => {
+    console.log('reply fwd middleware TRIGGERED:', {
+      updateType: ctx.updateType,
+      chatType: ctx.chat?.type,
+      chatId: ctx.chat?.id,
+      hasMessage: !!ctx.message,
+      isReply: !!ctx.message?.reply_to_message
+    });
+    
     // Only process messages
     if (!ctx.message) return next();
     
