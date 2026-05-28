@@ -75,6 +75,7 @@ const setupAdmin = require('./handlers/admin');
 const setupTextRouter = require('./handlers/textRouter');
 const setupCourier = require('./handlers/courier');
 const setupLogist = require('./handlers/logist');
+const setupReplyForwarding = require('./handlers/replyForwarding');
 const {
   workplaceMenu,
   deviceMenu,
@@ -98,7 +99,7 @@ const {
 } = require('./menus/keyboards');
 
 const db = require('./db');
-const { checkpoint } = require('./db');
+const { checkpoint, saveThread, findThreadByGroupMessage, findThreadById, saveForwardedMessage, findForwardedMessage, cleanupOldThreads } = require('./db');
 
 function getState(telegramId) {
   const row = db.prepare('SELECT data FROM states WHERE telegramId = ?').get(String(telegramId));
@@ -2477,7 +2478,7 @@ async function sendPhotoToChat(ctx, fileId, caption, { envChatId, envThreadId, p
 
   if (!chatId) {
     console.log(`${envChatId || 'chatId'} is empty, photo is not forwarded`);
-    return false;
+    return null;
   }
 
   const options = { caption };
@@ -2492,11 +2493,11 @@ async function sendPhotoToChat(ctx, fileId, caption, { envChatId, envThreadId, p
   }
 
   try {
-    await ctx.telegram.sendPhoto(chatId, fileId, options);
-    return true;
+    const result = await ctx.telegram.sendPhoto(chatId, fileId, options);
+    return result;
   } catch (error) {
     console.error('telegram sendPhoto error', error?.message || error);
-    return false;
+    return null;
   }
 }
 
@@ -2509,7 +2510,7 @@ async function sendMediaGroupToChat(ctx, items, { envChatId, envThreadId, parseM
 
   if (!chatId) {
     console.log(`${envChatId || 'chatId'} is empty, media group is not forwarded`);
-    return false;
+    return null;
   }
 
   const media = items.map((item, index) => {
@@ -2533,11 +2534,11 @@ async function sendMediaGroupToChat(ctx, items, { envChatId, envThreadId, parseM
   }
 
   try {
-    await ctx.telegram.sendMediaGroup(chatId, media, options);
-    return true;
+    const result = await ctx.telegram.sendMediaGroup(chatId, media, options);
+    return result;
   } catch (error) {
     console.error('telegram sendMediaGroup error', error?.message || error);
-    return false;
+    return null;
   }
 }
 
@@ -2567,7 +2568,7 @@ function forwardPhoto(ctx, fileId, caption, destinationKey) {
   const dest = PHOTO_DESTINATIONS[destinationKey];
   if (!dest) {
     console.error('forwardPhoto: unknown destination', destinationKey);
-    return Promise.resolve(false);
+    return Promise.resolve(null);
   }
   return sendPhotoToChat(ctx, fileId, caption, {
     envChatId: dest.envChatId,
@@ -2586,7 +2587,7 @@ function forwardMediaGroup(ctx, items, destinationKey) {
   const dest = PHOTO_DESTINATIONS[destinationKey];
   if (!dest) {
     console.error('forwardMediaGroup: unknown destination', destinationKey);
-    return Promise.resolve(false);
+    return Promise.resolve(null);
   }
   return sendMediaGroupToChat(ctx, items, {
     envChatId: dest.envChatId,
@@ -2594,6 +2595,12 @@ function forwardMediaGroup(ctx, items, destinationKey) {
     parseMode: dest.parseMode,
     fallbackChatId: dest.fallbackEnvChatId ? process.env[dest.fallbackEnvChatId] : undefined
   });
+}
+
+function savePhotoThread(result, telegramId, type) {
+  if (!result || !result.chat || !result.message_id || !telegramId) return;
+  saveThread(result.chat.id, result.message_id, telegramId, type);
+  cleanupOldThreads(7);
 }
 
 const sendMediaGroupToReconciliationChat = (ctx, items) => forwardMediaGroup(ctx, items, 'reconciliation');
@@ -3549,6 +3556,7 @@ async function handleRouteSheetPhoto(ctx, state, fileId) {
 
   try {
     const forwarded = await sendPhotoToRouteSheetChat(ctx, fileId, buildRouteSheetCaption(state, routeSheetNumber, ctx.from.id));
+    savePhotoThread(forwarded, ctx.from.id, 'route_sheet');
 
     if (!forwarded) {
       await ctx.replyWithHTML('⚠️ Временные проблемы с отправкой.\nСообщите администратору.', routeSheetKeyboard());
@@ -3709,10 +3717,11 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
         { fileId, caption: '' }
       ]);
 
-      if (!forwarded) {
+      if (!forwarded || !Array.isArray(forwarded) || forwarded.length === 0) {
         await ctx.replyWithHTML('⚠️ Временные проблемы с отправкой.\nСообщите администратору.', routeSheetKeyboard());
         return;
       }
+      savePhotoThread(forwarded[0], ctx.from.id, 'reconciliation');
 
       clearState(telegramId);
       const ocrWarning = !state.reconciliationPhoto1TotalOrders && state.reconciliationPhoto1OcrReason
@@ -3793,6 +3802,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       await ctx.replyWithHTML('⚠️ Временные проблемы с отправкой.\nСообщите администратору.', routeSheetKeyboard());
       return;
     }
+    savePhotoThread(forwarded, telegramId, 'reconciliation');
 
     clearState(telegramId);
     const ocrWarning = shouldWarnAboutReconciliationOcr(cashInfo)
@@ -3832,9 +3842,12 @@ async function handleMileagePhoto(ctx, state, fileId) {
       recognizedMileage: null,
       ocrValue: null
     });
-    sendPhotoToWorkChat(ctx, fileId, buildPhotoCaption(state, telegramId)).catch((error) => {
+    try {
+      const forwarded = await sendPhotoToWorkChat(ctx, fileId, buildPhotoCaption(state, telegramId));
+      savePhotoThread(forwarded, telegramId, 'mileage');
+    } catch (error) {
       console.error('telegram send photo error', error);
-    });
+    }
     await ctx.replyWithHTML('⚠️ Авто-распознавание сейчас недоступно.\nВведите пробег вручную или нажмите «⏭️ Пропустить».', mileageConfirmKeyboard());
     return;
   }
@@ -3850,9 +3863,12 @@ async function handleMileagePhoto(ctx, state, fileId) {
       recognizedMileage: null,
       ocrValue: null
     });
-    sendPhotoToWorkChat(ctx, fileId, buildPhotoCaption(state, telegramId)).catch((error) => {
+    try {
+      const forwarded = await sendPhotoToWorkChat(ctx, fileId, buildPhotoCaption(state, telegramId));
+      savePhotoThread(forwarded, telegramId, 'mileage');
+    } catch (error) {
       console.error('telegram send photo error', error);
-    });
+    }
     await ctx.replyWithHTML('⚠️ Сервер распознавания недоступен.\nВведите пробег вручную или нажмите «⏭️ Пропустить».', mileageConfirmKeyboard());
     return;
   }
@@ -3890,12 +3906,14 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
   try {
     console.log('mileage bg: start processing', { telegramId, fileId });
 
-    const [recognitionOptions] = await Promise.all([
+    const [recognitionOptions, forwardedResult] = await Promise.all([
       buildMileageRecognitionOptions(originalState),
       forwardPhoto({ telegram }, fileId, buildPhotoCaption(originalState, telegramId), 'work').catch((error) => {
         console.error('telegram send photo error', error);
+        return null;
       })
     ]);
+    savePhotoThread(forwardedResult, telegramId, 'mileage');
     console.log('mileage bg: recognition options built', recognitionOptions);
 
     const sourceBuffer = await downloadTelegramFile({ telegram }, fileId);
@@ -4241,7 +4259,7 @@ const services = {
   handleRouteSheetPhoto, handleReconciliationPhoto, handleMileagePhoto,
   finalizeReconciliationPostSend, saveMileageFromState,
   getTodayText, getNextRouteSheetNumber, logRouteSheetPhoto,
-  buildRouteSheetCaption, sendPhotoToRouteSheetChat,
+  buildRouteSheetCaption, sendPhotoToRouteSheetChat, savePhotoThread,
   normalizeTimeValue, formatStage, formatMoneyRu,
   notifyLogistsAboutSelfClearance, sendFunReaction,
   courierMainMenu,
@@ -4266,7 +4284,7 @@ const services = {
   getChallenges, generateWeeklyChallenges,
   // sheets & ocr
   readCell, updateCell, flushSheetUpdates,
-  db, checkpoint,
+  db, checkpoint, saveThread, findThreadByGroupMessage, findThreadById, saveForwardedMessage, findForwardedMessage, cleanupOldThreads,
   isSheetAccessUser,
   WORKPLACES, LIMITS,
   getMileageStageCell, buildMileageRecognitionOptions, parseMileageNumber, getMaxShiftMileageDelta,
@@ -4284,6 +4302,7 @@ const services = {
 
 setupCommands(bot, services);
 setupAdmin(bot, services);
+setupReplyForwarding(bot, services);
 setupTextRouter(bot, services);
 setupCourier(bot, services);
 setupLogist(bot, services);

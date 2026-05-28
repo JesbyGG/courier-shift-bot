@@ -227,6 +227,30 @@ db.exec(`
     status TEXT,
     sizeMb REAL
   );
+
+  CREATE TABLE IF NOT EXISTS message_threads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_chat_id TEXT NOT NULL,
+    group_message_id INTEGER NOT NULL,
+    courier_telegram_id TEXT NOT NULL,
+    type TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_threads_group ON message_threads(group_chat_id, group_message_id);
+  CREATE INDEX IF NOT EXISTS idx_threads_courier ON message_threads(courier_telegram_id);
+
+  CREATE TABLE IF NOT EXISTS forwarded_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id TEXT NOT NULL,
+    message_id INTEGER NOT NULL,
+    thread_id INTEGER NOT NULL,
+    direction TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_fwd_chat_msg ON forwarded_messages(chat_id, message_id);
+  CREATE INDEX IF NOT EXISTS idx_fwd_thread ON forwarded_messages(thread_id);
 `);
 
 function checkpoint() {
@@ -234,6 +258,78 @@ function checkpoint() {
     db.pragma('wal_checkpoint(TRUNCATE)');
   } catch (e) {
     console.error('WAL checkpoint failed:', e.message);
+  }
+}
+
+// ─── Message threads (reply forwarding) ───
+
+function saveThread(groupChatId, groupMessageId, courierTelegramId, type) {
+  try {
+    db.prepare(`
+      INSERT INTO message_threads (group_chat_id, group_message_id, courier_telegram_id, type)
+      VALUES (?, ?, ?, ?)
+    `).run(String(groupChatId), Number(groupMessageId), String(courierTelegramId), type || null);
+  } catch (e) {
+    console.error('saveThread error:', e.message);
+  }
+}
+
+function findThreadByGroupMessage(groupChatId, groupMessageId) {
+  try {
+    return db.prepare(`
+      SELECT * FROM message_threads
+      WHERE group_chat_id = ? AND group_message_id = ?
+      ORDER BY id DESC LIMIT 1
+    `).get(String(groupChatId), Number(groupMessageId)) || null;
+  } catch (e) {
+    console.error('findThreadByGroupMessage error:', e.message);
+    return null;
+  }
+}
+
+function findThreadById(threadId) {
+  try {
+    return db.prepare(`
+      SELECT * FROM message_threads WHERE id = ?
+    `).get(Number(threadId)) || null;
+  } catch (e) {
+    console.error('findThreadById error:', e.message);
+    return null;
+  }
+}
+
+function saveForwardedMessage(chatId, messageId, threadId, direction) {
+  try {
+    db.prepare(`
+      INSERT INTO forwarded_messages (chat_id, message_id, thread_id, direction)
+      VALUES (?, ?, ?, ?)
+    `).run(String(chatId), Number(messageId), Number(threadId), direction);
+  } catch (e) {
+    console.error('saveForwardedMessage error:', e.message);
+  }
+}
+
+function findForwardedMessage(chatId, messageId) {
+  try {
+    return db.prepare(`
+      SELECT * FROM forwarded_messages
+      WHERE chat_id = ? AND message_id = ?
+      ORDER BY id DESC LIMIT 1
+    `).get(String(chatId), Number(messageId)) || null;
+  } catch (e) {
+    console.error('findForwardedMessage error:', e.message);
+    return null;
+  }
+}
+
+function cleanupOldThreads(days) {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  try {
+    db.prepare(`DELETE FROM forwarded_messages WHERE created_at < ?`).run(cutoff);
+    db.prepare(`DELETE FROM message_threads WHERE created_at < ?`).run(cutoff);
+    console.log(`cleaned up threads older than ${days} days`);
+  } catch (e) {
+    console.error('cleanupOldThreads error:', e.message);
   }
 }
 
@@ -248,3 +344,9 @@ const dbProxy = new Proxy(db, {
 module.exports = dbProxy;
 module.exports.checkpoint = checkpoint;
 module.exports.db = db;
+module.exports.saveThread = saveThread;
+module.exports.findThreadByGroupMessage = findThreadByGroupMessage;
+module.exports.findThreadById = findThreadById;
+module.exports.saveForwardedMessage = saveForwardedMessage;
+module.exports.findForwardedMessage = findForwardedMessage;
+module.exports.cleanupOldThreads = cleanupOldThreads;
