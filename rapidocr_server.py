@@ -498,8 +498,10 @@ def main():
         port = int(os.getenv('RAPIDOCR_PORT', '9527') or 9527)
         server = ThreadingHTTPServer(('127.0.0.1', port), OcrHandler)
         print(f'OCR server listening on 127.0.0.1:{port}', flush=True)
-        print(f'  Yandex Vision: {"ENABLED" if YANDEX_ENABLED else "DISABLED (set YANDEX_VISION_API_KEY)"}', flush=True)
+        print(f'  Gemini Flash 2.0: {"ENABLED" if GEMINI_ENABLED else "DISABLED (set GEMINI_API_KEY)"}', flush=True)
+        print(f'  Yandex Vision: {"ENABLED" if _YANDEX_ENABLED else "DISABLED"}', flush=True)
         print(f'  RapidOCR fallback: LOADED', flush=True)
+        print(f'  Image optimize: {GEMINI_MAX_DIM}px, JPEG q{GEMINI_JPEG_QUALITY}', flush=True)
         try:
             import pytesseract
             print(f'  Tesseract: AVAILABLE (rus+eng)', flush=True)
