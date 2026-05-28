@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-OCR server: Google Gemini Flash 2.0 (primary) + rapidocr_onnxruntime (fallback).
+OCR server: Gemini Flash 2.0 (primary) + rapidocr_onnxruntime (fallback) + Tesseract (text).
 Smart selection: prioritise lines with "km", ignore tachometer/speedometer noise.
 """
 
@@ -11,8 +11,6 @@ import time
 import base64
 import re
 import urllib.request
-import ssl
-import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from pathlib import Path
@@ -39,12 +37,6 @@ if not GEMINI_API_KEY:
     except Exception:
         pass
 GEMINI_ENABLED = bool(GEMINI_API_KEY)
-
-# Yandex — fallback, если Gemini не настроен
-_YANDEX_API_KEY = os.getenv('YANDEX_VISION_API_KEY', '')
-_YANDEX_ENABLED = bool(_YANDEX_API_KEY) and os.getenv('YANDEX_OCR_ENABLED', 'true').lower() != 'false'
-_yandex_lock = threading.Lock()
-_yandex_last_call = 0.0
 
 GEMINI_MAX_DIM = int(os.getenv('GEMINI_MAX_DIM', '1200') or 1200)
 GEMINI_JPEG_QUALITY = int(os.getenv('GEMINI_JPEG_QUALITY', '85') or 85)
@@ -182,56 +174,6 @@ def recognize_with_gemini(image_bytes):
     lines = [l.strip() for l in text.strip().split('\n') if l.strip()]
     print(f'Gemini raw lines: {lines}')
     return lines, None
-
-
-# ===== Yandex Vision OCR (fallback if Gemini not configured) =====
-
-def recognize_with_yandex(image_bytes):
-    global _yandex_last_call
-    with _yandex_lock:
-        now = time.time()
-        since_last = now - _yandex_last_call
-        if since_last < 1.1:
-            time.sleep(1.1 - since_last)
-        image_b64 = base64.b64encode(image_bytes).decode('utf-8')
-        url = 'https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText'
-        payload = {
-            'mimeType': 'image/jpeg',
-            'languageCodes': ['en', 'ru'],
-            'content': image_b64,
-            'model': 'page',
-        }
-        headers = {'Authorization': f'Api-Key {_YANDEX_API_KEY}', 'Content-Type': 'application/json'}
-        req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers, method='POST')
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        try:
-            with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
-                result = json.loads(resp.read().decode('utf-8'))
-            _yandex_last_call = time.time()
-        except urllib.error.HTTPError as e:
-            _yandex_last_call = time.time()
-            return None, f'Yandex HTTP {e.code}'
-        except Exception as e:
-            return None, f'Yandex error: {e}'
-
-    texts = []
-    blocks = result.get('result', {}).get('textAnnotation', {}).get('blocks', [])
-    for block in blocks:
-        for line in block.get('lines', []):
-            text = line.get('text', '').strip()
-            if text:
-                texts.append(text)
-    if not texts:
-        pages = result.get('result', {}).get('pages', [])
-        for page in pages:
-            for block in page.get('blocks', []):
-                for line in block.get('lines', []):
-                    text = line.get('text', '').strip()
-                    if text:
-                        texts.append(text)
-    return texts, None
 
 
 # ===== rapidocr_onnxruntime fallback =====
@@ -441,20 +383,8 @@ class OcrHandler(BaseHTTPRequestHandler):
                 print(f'Gemini no-valid ({err}): {elapsed:.2f}s lines={lines}')
             else:
                 print(f'Gemini fail: {err}')
-            # fall through to next engine
 
-        # 2. Yandex Vision (если Gemini не настроен или не сработал)
-        if _YANDEX_ENABLED:
-            y_lines, y_err = recognize_with_yandex(image_bytes)
-            if y_lines:
-                y_best, y_groups = smart_select_mileage(y_lines)
-                elapsed = time.time() - start
-                if y_best:
-                    print(f'Yandex OK: {y_best["mileage"]} {elapsed:.2f}s lines={y_lines}')
-                    return _format_gemini_result(y_best, y_groups, elapsed, y_lines, 'yandex')
-                print(f'Yandex no-valid: {elapsed:.2f}s lines={y_lines}')
-
-        # 3. RapidOCR ONNX (fallback)
+        # 2. RapidOCR ONNX (fallback)
         best, err, elapsed = recognize_with_rapidocr(image_bytes)
         if best:
             return _format_rapidocr_result(best, elapsed)
@@ -465,8 +395,6 @@ class OcrHandler(BaseHTTPRequestHandler):
             engines = []
             if GEMINI_ENABLED:
                 engines.append('gemini')
-            if _YANDEX_ENABLED:
-                engines.append('yandex')
             engines.append('rapidocr_onnxruntime_v2')
             try:
                 import pytesseract
@@ -499,7 +427,6 @@ def main():
         server = ThreadingHTTPServer(('127.0.0.1', port), OcrHandler)
         print(f'OCR server listening on 127.0.0.1:{port}', flush=True)
         print(f'  Gemini Flash 2.0: {"ENABLED" if GEMINI_ENABLED else "DISABLED (set GEMINI_API_KEY)"}', flush=True)
-        print(f'  Yandex Vision: {"ENABLED" if _YANDEX_ENABLED else "DISABLED"}', flush=True)
         print(f'  RapidOCR fallback: LOADED', flush=True)
         print(f'  Image optimize: {GEMINI_MAX_DIM}px, JPEG q{GEMINI_JPEG_QUALITY}', flush=True)
         try:
