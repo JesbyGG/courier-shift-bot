@@ -2357,7 +2357,6 @@ loadPendingUpdates();
 
 async function askAdminsAboutUpdate(version, changedFiles = [], updates = []) {
   const adminIds = getAdminIds();
-  console.log('askAdminsAboutUpdate: adminIds=', JSON.stringify(adminIds));
   if (adminIds.length === 0) {
     console.log('no admin IDs configured, skipping update approval');
     return;
@@ -4465,9 +4464,7 @@ async function startBot(retry = 0) {
 
     // Уведомление админам об обновлении — только при changed && первом запуске
     if (changed && retry === 0) {
-      console.log('update: scheduling admin notification in 3s');
       setTimeout(() => {
-        console.log('update: calling askAdminsAboutUpdate');
         askAdminsAboutUpdate(version, changedFiles, updates).catch((error) => {
           console.error('admin update ask fatal', error.message || error);
         });
