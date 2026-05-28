@@ -136,7 +136,7 @@ def recognize_with_gemini(image_bytes):
     optimized = optimize_image_for_ocr(image_bytes)
     image_b64 = base64.b64encode(optimized).decode('utf-8')
 
-    url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}'
+    url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent?key={api_key}'
     payload = {
         "contents": [{
             "parts": [
