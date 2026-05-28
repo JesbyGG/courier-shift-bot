@@ -17,9 +17,13 @@ module.exports = function setupReplyForwarding(bot, services) {
     // Must be reply
     if (!ctx.message?.reply_to_message) return next();
     // Must reply to our bot's message
-    if (ctx.message.reply_to_message.from?.id !== bot.botInfo?.id) return next();
+    const replyFromId = ctx.message.reply_to_message.from?.id;
+    const botId = bot.botInfo?.id;
+    console.log('reply forward check:', { chatType: ctx.chat?.type, replyFromId, botId, match: replyFromId === botId, replyMsgId: ctx.message.reply_to_message.message_id });
+    if (replyFromId !== botId) return next();
 
     const thread = findThreadByGroupMessage(ctx.chat.id, ctx.message.reply_to_message.message_id);
+    console.log('reply forward thread:', thread ? { id: thread.id, courierId: thread.courier_telegram_id } : 'NOT FOUND');
     if (!thread) return next();
 
     const courierId = Number(thread.courier_telegram_id);
