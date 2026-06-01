@@ -6,18 +6,18 @@ on:
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Deploy
-        run: |
-          cd /root/courier-shift-bot
-          git pull origin main
-          npm install --omit=dev
-          /root/ocr_venv/bin/pip install -q torch rapidocr_onnxruntime
-          pm2 restart ecosystem.config.js --update-env || pm2 restart courier-shift-bot rapidocr-server
-
-      - name: Check status
-        run: pm2 status
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 103.54.19.218
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /root/courier-shift-bot
+            git pull origin main
+            npm install --omit=dev
+            pm2 restart courier-shift-bot --update-env
