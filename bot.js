@@ -4345,7 +4345,7 @@ const services = {
   // text router flows
   punchTimeFlow, mileageFlow, routeSheetFlow, reconciliationFlow,
   showPendingCashStatus, showIssuesMenu, showLeaderboardMenu,
-  handleSwitchUser, handleSheetsInfo, handleMyId, showCashHistory,
+  handleSwitchUser, handleSheetsInfo, handleMyId, showCashHistory, showDebtorsList,
   saveCarNumber, saveWorkplace, saveDevice, authorizeFio,
   handleManualTime, handleUpdateEditText, handleManualMileageInput,
   requireFio, roleChoiceKeyboard, getSettingsMenuForRole, getProfileMenuForRole,

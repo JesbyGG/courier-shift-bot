@@ -20,6 +20,7 @@ module.exports = function setupTextRouter(bot, services) {
     handleSheetsInfo,
     handleMyId,
     showCashHistory,
+    showDebtorsList,
     openShopNotify,
     isLogist,
     requireFio,
@@ -102,9 +103,24 @@ module.exports = function setupTextRouter(bot, services) {
       if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
     }},
     { button: BUTTONS.cashCollect, handler: async (ctx) => {
+      const res = await showDebtorsList(ctx);
+      if (res.status === 'access_denied') {
+        await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(ctx.from.id));
+      } else if (res.status === 'no_workplace') {
+        await ctx.replyWithHTML('⚠️ Сначала выберите магазин в настройках.', getMenuForRole(ctx.from.id));
+      } else if (res.status === 'no_cash_collection') {
+        await ctx.replyWithHTML('❌ В этом магазине приём наличных не предусмотрен.', getMenuForRole(ctx.from.id));
+      } else if (res.status === 'no_debt') {
+        await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы.', getMenuForRole(ctx.from.id));
+      }
+    }},
+    { button: BUTTONS.cashHistory, handler: async (ctx) => {
       const res = await showCashHistory(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(ctx.from.id));
-      else if (res.status === 'no_cash_collection') await ctx.replyWithHTML('❌ В этом магазине приём наличных не предусмотрен.', getMenuForRole(ctx.from.id));
+      if (res.status === 'access_denied') {
+        await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(ctx.from.id));
+      } else if (res.status === 'no_cash_collection') {
+        await ctx.replyWithHTML('❌ В этом магазине приём наличных не предусмотрен.', getMenuForRole(ctx.from.id));
+      }
     }},
     { button: BUTTONS.openShop, handler: async (ctx) => {
       const res = await openShopNotify(ctx);
@@ -116,6 +132,7 @@ module.exports = function setupTextRouter(bot, services) {
     // 4) Меню настроек
     { button: BUTTONS.settings, legacy: ['Настройки'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ <b>Настройки</b>', getSettingsMenuForRole(id)) },
     { button: BUTTONS.profile, legacy: ['Профиль'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('✏️ <b>Профиль</b>', getProfileMenuForRole(ctx.from.id)) },
+    { button: BUTTONS.backToSettings, handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ <b>Настройки</b>', getSettingsMenuForRole(id)) },
     { button: BUTTONS.help, legacy: ['Помощь'], handler: (ctx) => sendHelp(ctx) },
 
     // 5) Профиль (требуют ФИО)
