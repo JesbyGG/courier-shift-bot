@@ -504,7 +504,7 @@ async function showCashHistory(ctx) {
   for (let i = 0; i < 7; i++) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = d.toLocaleDateString('sv-SE', { timeZone: timezone });
     const dayLabel = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: timezone });
     const prefix = i === 0 ? '📅 ' : '';
     buttons.push([Markup.button.callback(`${prefix}${dayLabel}`, `ch_${dateStr}`)]);
@@ -523,7 +523,6 @@ async function showCashHistoryForDate(ctx, dateStr) {
   const approvedRows = rows.filter(r => r.action === 'approved' || r.action === 'self_cleared' || r.action === 'logist_approved');
 
   if (approvedRows.length === 0) {
-    await ctx.answerCbQuery();
     await ctx.replyWithHTML(`📋 <b>История сборов за ${dateStr}</b>\n\nНет подтверждённых сдач за эту дату.`);
     return;
   }
