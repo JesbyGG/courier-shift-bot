@@ -509,7 +509,7 @@ async function showHistoryDatePicker(ctx) {
     const prefix = i === 0 ? '📅 ' : '';
     buttons.push([Markup.button.callback(`${prefix}${dayLabel}`, `ch_${dateStr}`)]);
   }
-  buttons.push([Markup.button.callback('🏠 В меню', 'back_to_menu')]);
+  buttons.push([Markup.button.callback('❌ Закрыть', 'close_message')]);
 
   await ctx.replyWithHTML('📋 <b>История сборов</b>\n\nВыберите дату:', Markup.inlineKeyboard(buttons));
   return { status: 'showing_history' };
@@ -2108,7 +2108,7 @@ async function sendHelp(ctx) {
       logistHelp,
       Markup.inlineKeyboard([
         [Markup.button.callback('📋 Команды', 'help_commands')],
-        [Markup.button.callback('🏠 В меню', 'back_to_menu')]
+        [Markup.button.callback('❌ Закрыть', 'close_message')]
       ])
     );
     return;
@@ -2130,7 +2130,7 @@ async function sendHelp(ctx) {
     '📋 Команды:',
     Markup.inlineKeyboard([
       [Markup.button.callback('📋 Команды', 'help_commands')],
-      [Markup.button.callback('🏠 В меню', 'back_to_menu')]
+      [Markup.button.callback('❌ Закрыть', 'close_message')]
     ])
   );
 }
@@ -2719,7 +2719,7 @@ async function showLeaderboardMenu(ctx, editMsg = false) {
     [Markup.button.callback('📈 Мой прогресс', 'lb_progress')],
     [Markup.button.callback('❓ Как работает XP', 'lb_xp_info')],
     [Markup.button.callback(`🔔 Уведомления рейтинга: ${notifStatus}`, 'lb_notifications')],
-    [Markup.button.callback('🏠 В меню', 'back_to_menu')]
+    [Markup.button.callback('❌ Закрыть', 'close_message')]
   ]);
   if (editMsg) {
     await ctx.editMessageText('🏆 <b>Рейтинг и достижения</b>\n\nВыберите раздел:', { parse_mode: 'HTML', ...keyboard });
@@ -2925,7 +2925,7 @@ async function showLeaderboardResultV2(ctx) {
 
   await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', ...Markup.inlineKeyboard([
     [Markup.button.callback('⬅️ Назад', 'lb_back_mode')],
-    [Markup.button.callback('🏠 В меню', 'back_to_menu')]
+    [Markup.button.callback('❌ Закрыть', 'close_message')]
   ]) });
 }
 

@@ -133,12 +133,9 @@ module.exports = function setupCommands(bot, services) {
     else if (res.status === 'back_to_menu') await ctx.replyWithHTML(res.message, getMenuForRole(ctx.from.id));
   });
 
-  bot.action('back_to_menu', async (ctx) => {
+  bot.action('close_message', async (ctx) => {
     await ctx.answerCbQuery();
     try { await ctx.deleteMessage(); } catch {}
-    const res = await backToMainMenu(ctx);
-    if (res.status === 'mileage_processing') await ctx.replyWithHTML('📸 Обработка фото пробега продолжается... результат придёт в новый чат.', getMenuForRole(ctx.from.id));
-    else if (res.status === 'back_to_menu') await ctx.replyWithHTML(res.message, getMenuForRole(ctx.from.id));
   });
 
   bot.action('show_my_id', async (ctx) => {

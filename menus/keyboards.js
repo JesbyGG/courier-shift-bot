@@ -126,7 +126,7 @@ function skipMileageKeyboard() {
     [Markup.button.callback('✏️ Ввести вручную', 'edit_mileage')],
     [
       Markup.button.callback('⏭️ Пропустить', 'skip_mileage'),
-      Markup.button.callback('🏠 В меню', 'back_to_menu')
+      Markup.button.callback('❌ Закрыть', 'close_message')
     ]
   ]);
 }
@@ -137,7 +137,7 @@ function mileageConfirmKeyboard() {
     [Markup.button.callback('✏️ Ввести вручную', 'edit_mileage')],
     [
       Markup.button.callback('⏭️ Пропустить', 'skip_mileage'),
-      Markup.button.callback('🏠 В меню', 'back_to_menu')
+      Markup.button.callback('❌ Закрыть', 'close_message')
     ]
   ]);
 }
@@ -145,7 +145,7 @@ function mileageConfirmKeyboard() {
 function mileageSavedKeyboard() {
   return Markup.inlineKeyboard([
     [Markup.button.callback('✏️ Изменить пробег', 'edit_mileage')],
-    [Markup.button.callback('🏠 В меню', 'back_to_menu')]
+    [Markup.button.callback('❌ Закрыть', 'close_message')]
   ]);
 }
 
@@ -153,7 +153,7 @@ function routeSheetKeyboard() {
   return Markup.inlineKeyboard([
     [
       Markup.button.callback('✅ Завершить', 'route_sheet_done'),
-      Markup.button.callback('🏠 В меню', 'back_to_menu')
+      Markup.button.callback('❌ Закрыть', 'close_message')
     ]
   ]);
 }
@@ -163,7 +163,7 @@ function manualMileageKeyboard() {
     [Markup.button.callback('📷 Загрузить фото повторно', 'retry_mileage_photo')],
     [
       Markup.button.callback('⏭️ Пропустить', 'skip_mileage'),
-      Markup.button.callback('🏠 В меню', 'back_to_menu')
+      Markup.button.callback('❌ Закрыть', 'close_message')
     ]
   ]);
 }
@@ -172,14 +172,14 @@ function replaceKeyboard() {
   return Markup.inlineKeyboard([
     [Markup.button.callback('🟢 Изменить начало', 'replace_start')],
     [Markup.button.callback('🔴 Изменить конец', 'replace_end')],
-    [Markup.button.callback('❌ Отмена', 'back_to_menu')]
+    [Markup.button.callback('❌ Отмена', 'close_message')]
   ]);
 }
 
 function timeChangeKeyboard() {
   return Markup.inlineKeyboard([
     [Markup.button.callback('✏️ Изменить время', 'edit_time')],
-    [Markup.button.callback('🏠 В меню', 'back_to_menu')]
+    [Markup.button.callback('❌ Закрыть', 'close_message')]
   ]);
 }
 
@@ -187,14 +187,14 @@ function mileageReplaceKeyboard() {
   return Markup.inlineKeyboard([
     [Markup.button.callback('🟢 Изменить пробег начала', 'replace_mileage_start')],
     [Markup.button.callback('🔴 Изменить пробег конца', 'replace_mileage_end')],
-    [Markup.button.callback('❌ Отмена', 'back_to_menu')]
+    [Markup.button.callback('❌ Отмена', 'close_message')]
   ]);
 }
 
 function switchUserKeyboard() {
   return Markup.inlineKeyboard([
     [Markup.button.callback('✅ Да, сменить', 'confirm_switch_user')],
-    [Markup.button.callback('❌ Отмена', 'back_to_menu')]
+    [Markup.button.callback('❌ Отмена', 'close_message')]
   ]);
 }
 
@@ -202,7 +202,7 @@ function cashSubmitConfirmKeyboard() {
   return Markup.inlineKeyboard([
     [Markup.button.callback('✅ Да, сдал', 'cash_submit_yes')],
     [Markup.button.callback('❌ Нет, не сдал', 'cash_submit_no')],
-    [Markup.button.callback('🏠 В меню', 'back_to_menu')]
+    [Markup.button.callback('❌ Закрыть', 'close_message')]
   ]);
 }
 
@@ -224,7 +224,7 @@ function debtorListKeyboard(debtors, logistWorkplace) {
   if (buttons.length === 0) {
     return null;
   }
-  buttons.push([Markup.button.callback('🏠 В меню', 'back_to_menu')]);
+  buttons.push([Markup.button.callback('❌ Закрыть', 'close_message')]);
   return Markup.inlineKeyboard(buttons);
 }
 
