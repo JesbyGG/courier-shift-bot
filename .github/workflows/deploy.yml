@@ -17,7 +17,23 @@ jobs:
           username: root
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            set -e
             cd /root/courier-shift-bot
+            echo '=== git pull ==='
             git pull origin main
+            echo '=== npm install ==='
             npm install --omit=dev
-            pm2 restart courier-shift-bot --update-env
+            echo '=== pm2 reload ecosystem ==='
+            pm2 delete ecosystem.config.js 2>/dev/null || true
+            pm2 start ecosystem.config.js
+            pm2 save
+            echo '=== health check ==='
+            sleep 5
+            pm2 list
+            STATUS=$(pm2 jlist 2>/dev/null | node -e "let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{try{const a=JSON.parse(d); const b=a.find(x=>x.name==='courier-shift-bot'); process.exit(b&&b.pm2_env&&b.pm2_env.status==='online'?0:1)}catch(e){process.exit(2)}})")
+            if [ $? -ne 0 ]; then
+              echo 'HEALTH CHECK FAILED: courier-shift-bot is not online'
+              pm2 logs courier-shift-bot --lines 30 --nostream --raw
+              exit 1
+            fi
+            echo '=== deploy complete ==='
