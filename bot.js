@@ -486,7 +486,7 @@ async function pokeCourier(ctx, courierId) {
   }
 }
 
-async function showCashHistory(ctx) {
+async function showHistoryDatePicker(ctx) {
   const telegramId = ctx.from.id;
   const role = getUserRole(telegramId);
   if (role !== 'logist') {
@@ -4344,7 +4344,7 @@ const services = {
   // text router flows
   punchTimeFlow, mileageFlow, routeSheetFlow, reconciliationFlow,
   showPendingCashStatus, showIssuesMenu, showLeaderboardMenu,
-  handleSwitchUser, handleSheetsInfo, handleMyId, showCashHistory, showDebtorsList,
+  handleSwitchUser, handleSheetsInfo, handleMyId, showHistoryDatePicker, showDebtorsList,
   saveCarNumber, saveWorkplace, saveDevice, authorizeFio,
   handleManualTime, handleUpdateEditText, handleManualMileageInput,
   requireFio, roleChoiceKeyboard, getSettingsMenuForRole, getProfileMenuForRole,

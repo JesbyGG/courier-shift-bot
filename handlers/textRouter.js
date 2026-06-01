@@ -19,7 +19,7 @@ module.exports = function setupTextRouter(bot, services) {
     handleSwitchUser,
     handleSheetsInfo,
     handleMyId,
-    showCashHistory,
+    showHistoryDatePicker,
     showDebtorsList,
     openShopNotify,
     isLogist,
@@ -115,7 +115,7 @@ module.exports = function setupTextRouter(bot, services) {
       }
     }},
     { button: BUTTONS.cashHistory, handler: async (ctx) => {
-      const res = await showCashHistory(ctx);
+      const res = await showHistoryDatePicker(ctx);
       if (res.status === 'access_denied') {
         await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(ctx.from.id));
       } else if (res.status === 'no_cash_collection') {
