@@ -1610,7 +1610,7 @@ function isMenuText(text) {
     'Сотрудник',
     'Таблицы',
     'Мой ID',
-    'Управление'
+
   ].includes(text) || WORKPLACES.includes(text) || DEVICES.includes(text);
 }
 
@@ -2107,7 +2107,8 @@ async function sendHelp(ctx) {
     await ctx.replyWithHTML(
       logistHelp,
       Markup.inlineKeyboard([
-        [Markup.button.callback('📋 Команды', 'help_commands')]
+        [Markup.button.callback('📋 Команды', 'help_commands')],
+        [Markup.button.callback('🏠 В меню', 'back_to_menu')]
       ])
     );
     return;
@@ -2128,7 +2129,8 @@ async function sendHelp(ctx) {
     `9️⃣ <b>Настройки</b> — «${BUTTONS.settings}» номер машины, магазин, устройство, сотрудник.\n\n` +
     '📋 Команды:',
     Markup.inlineKeyboard([
-      [Markup.button.callback('📋 Команды', 'help_commands')]
+      [Markup.button.callback('📋 Команды', 'help_commands')],
+      [Markup.button.callback('🏠 В меню', 'back_to_menu')]
     ])
   );
 }
@@ -2703,37 +2705,39 @@ async function backToMainMenu(ctx) {
   return { status: 'back_to_menu', message };
 }
 
-async function showLeaderboardMenu(ctx) {
+async function showLeaderboardMenu(ctx, editMsg = false) {
   if (isLogist(ctx.from.id)) {
     return { status: 'access_denied' };
   }
   setState(ctx.from.id, { lb_step: 'menu' });
   const settings = getNotificationSettings(ctx.from.id);
   const notifStatus = Object.values(settings).some(v => v) ? 'ВКЛ ✅' : 'ВЫКЛ ❌';
-  await ctx.replyWithHTML(
-    '🏆 <b>Рейтинг и достижения</b>\n\nВыберите раздел:',
-    Markup.inlineKeyboard([
-      [Markup.button.callback('📊 Таблица рейтинга', 'lb_table')],
-      [Markup.button.callback('🔥 Челленджи недели', 'lb_challenges')],
-      [Markup.button.callback('🏆 Мои достижения', 'lb_achievements')],
-      [Markup.button.callback('📈 Мой прогресс', 'lb_progress')],
-      [Markup.button.callback('❓ Как работает XP', 'lb_xp_info')],
-      [Markup.button.callback(`🔔 Уведомления рейтинга: ${notifStatus}`, 'lb_notifications')],
-      [Markup.button.callback('🏠 В меню', 'back_to_menu')]
-    ])
-  );
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('📊 Таблица рейтинга', 'lb_table')],
+    [Markup.button.callback('🔥 Челленджи недели', 'lb_challenges')],
+    [Markup.button.callback('🏆 Мои достижения', 'lb_achievements')],
+    [Markup.button.callback('📈 Мой прогресс', 'lb_progress')],
+    [Markup.button.callback('❓ Как работает XP', 'lb_xp_info')],
+    [Markup.button.callback(`🔔 Уведомления рейтинга: ${notifStatus}`, 'lb_notifications')],
+    [Markup.button.callback('🏠 В меню', 'back_to_menu')]
+  ]);
+  if (editMsg) {
+    await ctx.editMessageText('🏆 <b>Рейтинг и достижения</b>\n\nВыберите раздел:', { parse_mode: 'HTML', ...keyboard });
+  } else {
+    await ctx.replyWithHTML('🏆 <b>Рейтинг и достижения</b>\n\nВыберите раздел:', keyboard);
+  }
   return { status: 'showing_leaderboard' };
 }
 
 async function showLeaderboardFilter(ctx) {
   setState(ctx.from.id, { lb_step: 'filter' });
-  await ctx.replyWithHTML(
+  await ctx.editMessageText(
     '🏆 <b>Лидерборд 2.0</b>\n\nВыберите тип курьеров:',
-    Markup.inlineKeyboard([
+    { parse_mode: 'HTML', ...Markup.inlineKeyboard([
       [Markup.button.callback('🚗 Авто', 'lb_filter_auto'), Markup.button.callback('🚶 Пешие', 'lb_filter_pedestrian')],
       [Markup.button.callback('🏁 Все', 'lb_filter_all')],
       [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
-    ])
+    ]) }
   );
 }
 
@@ -2759,9 +2763,9 @@ async function showMyAchievements(ctx) {
 
   text += '\n<i>Достижения разблокируются автоматически при выполнении условий.</i>';
 
-  await ctx.replyWithHTML(text, Markup.inlineKeyboard([
+  await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
     [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
-  ]));
+  ]) });
 }
 
 async function showMyProgress(ctx) {
@@ -2778,9 +2782,9 @@ async function showMyProgress(ctx) {
   text += `🔥 Стрик: ${streak.currentStreak} смен (рекорд: ${streak.maxStreak})\n`;
   text += `💰 Всего XP: ${xp.toLocaleString('ru-RU')}\n`;
 
-  await ctx.replyWithHTML(text, Markup.inlineKeyboard([
+  await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
     [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
-  ]));
+  ]) });
 }
 
 async function showXpInfo(ctx) {
@@ -2799,9 +2803,9 @@ async function showXpInfo(ctx) {
     '🔥 <b>Стрик:</b> каждые 5 смен подряд — <b>+50 XP</b>\n\n' +
     'С накоплением XP растёт ваш ранг — от Новичка до Короля рейтинга! 👑';
 
-  await ctx.replyWithHTML(text, Markup.inlineKeyboard([
+  await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
     [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
-  ]));
+  ]) });
 }
 
 async function showNotificationSettings(ctx) {
@@ -2813,19 +2817,19 @@ async function showNotificationSettings(ctx) {
     return Markup.button.callback(`${isOn ? '✅' : '❌'} ${label}`, `notif_${key}`);
   };
 
-  await ctx.replyWithHTML(
+  await ctx.editMessageText(
     '🔔 <b>Настройки уведомлений рейтинга</b>\n\n' +
     'Нажмите, чтобы включить или выключить:\n\n' +
     '✅ — включено\n' +
     '❌ — выключено',
-    Markup.inlineKeyboard([
+    { parse_mode: 'HTML', ...Markup.inlineKeyboard([
       [toggle('personalRecord', 'Личный рекорд')],
       [toggle('overtake', 'Обгоны в рейтинге')],
       [toggle('workplaceRecord', 'Рекорд точки')],
       [toggle('dailyLeader', 'Лидер дня / сброс')],
       [toggle('top3Change', 'Изменение топ-3')],
       [Markup.button.callback('⬅️ Назад к рейтингу', 'lb_back_menu')]
-    ])
+    ]) }
   );
 }
 
@@ -2846,9 +2850,9 @@ async function showWeeklyChallenges(ctx) {
   }
   text += '<i>Челленджи обновляются каждый понедельник.</i>';
 
-  await ctx.replyWithHTML(text, Markup.inlineKeyboard([
+  await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
     [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
-  ]));
+  ]) });
 }
 
 async function showLeaderboardWorkplace(ctx, filter) {
@@ -2857,21 +2861,21 @@ async function showLeaderboardWorkplace(ctx, filter) {
     const key = WORKPLACE_KEY_MAP[wp] || wp;
     return Markup.button.callback(`🏬 ${wp}`, `lb_wp_${key}`);
   });
-  await ctx.replyWithHTML(
+  await ctx.editMessageText(
     '🏆 <b>Лидерборд</b>\n\nВыберите магазин:',
-    Markup.inlineKeyboard([
+    { parse_mode: 'HTML', ...Markup.inlineKeyboard([
       wpButtons,
       [Markup.button.callback('🏁 Все магазины', 'lb_wp_all')],
       [Markup.button.callback('⬅️ Назад', 'lb_back_filter')]
-    ])
+    ]) }
   );
 }
 
 async function showLeaderboardPeriod(ctx, filter, workplace) {
   setState(ctx.from.id, { lb_step: 'period', lb_filter: filter, lb_workplace: workplace });
-  await ctx.replyWithHTML(
+  await ctx.editMessageText(
     '🏆 <b>Лидерборд</b>\n\nВыберите период:',
-    Markup.inlineKeyboard([
+    { parse_mode: 'HTML', ...Markup.inlineKeyboard([
       [
         Markup.button.callback('📅 Неделя', `lb_p_7`),
         Markup.button.callback('📅 Месяц', `lb_p_30`)
@@ -2881,20 +2885,20 @@ async function showLeaderboardPeriod(ctx, filter, workplace) {
         Markup.button.callback('📅 Всё время', `lb_p_0`)
       ],
       [Markup.button.callback('⬅️ Назад', 'lb_back_workplace')]
-    ])
+    ]) }
   );
 }
 
 async function showLeaderboardMode(ctx, filter, workplace, periodDays) {
   setState(ctx.from.id, { lb_step: 'mode', lb_filter: filter, lb_workplace: workplace, lb_period: periodDays });
   const periodLabel = periodDays === 0 ? 'за всё время' : periodDays === 7 ? 'за неделю' : periodDays === 30 ? 'за месяц' : periodDays === 365 ? 'за год' : `за ${periodDays} дней`;
-  await ctx.replyWithHTML(
+  await ctx.editMessageText(
     `🏆 <b>Лидерборд</b>\n${esc(periodLabel)}\n\nВыберите режим:`,
-    Markup.inlineKeyboard([
+    { parse_mode: 'HTML', ...Markup.inlineKeyboard([
       [Markup.button.callback('📊 По сумме заказов', 'lb_mode_sum')],
       [Markup.button.callback('🔥 Лучший день', 'lb_mode_max')],
       [Markup.button.callback('⬅️ Назад', 'lb_back_period')]
-    ])
+    ]) }
   );
 }
 
@@ -2919,10 +2923,10 @@ async function showLeaderboardResultV2(ctx) {
   lines.push(formatLeaderboard(entries, telegramId, showWorkplace));
   lines.push(`\n⬅️ <i>Нажмите «Назад» или «В меню».</i>`);
 
-  await ctx.replyWithHTML(lines.join('\n'), Markup.inlineKeyboard([
+  await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', ...Markup.inlineKeyboard([
     [Markup.button.callback('⬅️ Назад', 'lb_back_mode')],
     [Markup.button.callback('🏠 В меню', 'back_to_menu')]
-  ]));
+  ]) });
 }
 
 async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, ordersCount, oldOrders = 0) {
@@ -3437,74 +3441,63 @@ const _workplaceKeys = Object.values(WORKPLACE_KEY_MAP).concat(['all']).join('|'
 
 bot.action('lb_table', async (ctx) => {
   await ctx.answerCbQuery();
-  try { await ctx.deleteMessage(); } catch {}
   await showLeaderboardFilter(ctx);
 });
 
 bot.action('lb_challenges', async (ctx) => {
   await ctx.answerCbQuery();
-  try { await ctx.deleteMessage(); } catch {}
   await showWeeklyChallenges(ctx);
 });
 
 bot.action('lb_achievements', async (ctx) => {
   await ctx.answerCbQuery();
-  try { await ctx.deleteMessage(); } catch {}
   await showMyAchievements(ctx);
 });
 
 bot.action('lb_progress', async (ctx) => {
   await ctx.answerCbQuery();
-  try { await ctx.deleteMessage(); } catch {}
   await showMyProgress(ctx);
 });
 
 bot.action('lb_xp_info', async (ctx) => {
   await ctx.answerCbQuery();
-  try { await ctx.deleteMessage(); } catch {}
   await showXpInfo(ctx);
 });
 
 bot.action('lb_back_menu', async (ctx) => {
   await ctx.answerCbQuery();
-  try { await ctx.deleteMessage(); } catch {}
-  await showLeaderboardMenu(ctx);
+  await showLeaderboardMenu(ctx, true);
 });
 
 bot.action('lb_notifications', async (ctx) => {
   await ctx.answerCbQuery();
-  try { await ctx.deleteMessage(); } catch {}
   await showNotificationSettings(ctx);
 });
 
 const NOTIFICATION_KEYS = ['personalRecord', 'overtake', 'workplaceRecord', 'dailyLeader', 'top3Change'];
 for (const key of NOTIFICATION_KEYS) {
-  bot.action(`notif_${key}`, async (ctx) => {
-    await ctx.answerCbQuery();
-    const telegramId = ctx.from.id;
-    const current = getNotificationSettings(telegramId);
-    current[key] = !current[key];
-    setUserField(telegramId, 'notificationSettings', JSON.stringify(current));
-    try { await ctx.deleteMessage(); } catch {}
-    await showNotificationSettings(ctx);
-  });
-}
+    bot.action(`notif_${key}`, async (ctx) => {
+      await ctx.answerCbQuery();
+      const telegramId = ctx.from.id;
+      const current = getNotificationSettings(telegramId);
+      current[key] = !current[key];
+      setUserField(telegramId, 'notificationSettings', JSON.stringify(current));
+      await showNotificationSettings(ctx);
+    });
+  }
 
 bot.action('lb_filter_auto', async (ctx) => {
   await ctx.answerCbQuery();
-  try { await ctx.deleteMessage(); } catch {}
   await showLeaderboardWorkplace(ctx, 'auto');
 });
 
 bot.action('lb_filter_pedestrian', async (ctx) => {
   await ctx.answerCbQuery();
-  try { await ctx.deleteMessage(); } catch {}
   await showLeaderboardWorkplace(ctx, 'pedestrian');
 });
 
 bot.action('lb_filter_all', async (ctx) => {
   await ctx.answerCbQuery();
-  try { await ctx.deleteMessage(); } catch {}
   await showLeaderboardWorkplace(ctx, 'all');
 });
 
@@ -3513,7 +3506,6 @@ bot.action(new RegExp(`^lb_wp_(${_workplaceKeys})$`), async (ctx) => {
   const workplace = ctx.match[1];
   const state = getState(ctx.from.id);
   const filter = state?.lb_filter || 'all';
-  try { await ctx.deleteMessage(); } catch {}
   await showLeaderboardPeriod(ctx, filter, workplace);
 });
 
@@ -3521,7 +3513,6 @@ bot.action('lb_wp_all', async (ctx) => {
   await ctx.answerCbQuery();
   const state = getState(ctx.from.id);
   const filter = state?.lb_filter || 'all';
-  try { await ctx.deleteMessage(); } catch {}
   await showLeaderboardPeriod(ctx, filter, 'all');
 });
 
@@ -3531,35 +3522,30 @@ bot.action(/^lb_p_(\d+)$/, async (ctx) => {
   const state = getState(ctx.from.id);
   const filter = state?.lb_filter || 'all';
   const workplace = state?.lb_workplace || 'all';
-  try { await ctx.deleteMessage(); } catch {}
   await showLeaderboardMode(ctx, filter, workplace, days);
 });
 
 bot.action('lb_mode_sum', async (ctx) => {
   await ctx.answerCbQuery();
   setState(ctx.from.id, { ...getState(ctx.from.id), lb_mode: 'sum' });
-  try { await ctx.deleteMessage(); } catch {}
   await showLeaderboardResultV2(ctx);
 });
 
 bot.action('lb_mode_max', async (ctx) => {
   await ctx.answerCbQuery();
   setState(ctx.from.id, { ...getState(ctx.from.id), lb_mode: 'max' });
-  try { await ctx.deleteMessage(); } catch {}
   await showLeaderboardResultV2(ctx);
 });
 
 bot.action('lb_back_filter', async (ctx) => {
   await ctx.answerCbQuery();
-  try { await ctx.deleteMessage(); } catch {}
-  await showLeaderboardMenu(ctx);
+  await showLeaderboardMenu(ctx, true);
 });
 
 bot.action('lb_back_workplace', async (ctx) => {
   await ctx.answerCbQuery();
   const state = getState(ctx.from.id);
   const filter = state?.lb_filter || 'all';
-  try { await ctx.deleteMessage(); } catch {}
   await showLeaderboardWorkplace(ctx, filter);
 });
 
@@ -3568,7 +3554,6 @@ bot.action('lb_back_period', async (ctx) => {
   const state = getState(ctx.from.id);
   const filter = state?.lb_filter || 'all';
   const workplace = state?.lb_workplace || 'all';
-  try { await ctx.deleteMessage(); } catch {}
   await showLeaderboardPeriod(ctx, filter, workplace);
 });
 
@@ -3578,7 +3563,6 @@ bot.action('lb_back_mode', async (ctx) => {
   const filter = state?.lb_filter || 'all';
   const workplace = state?.lb_workplace || 'all';
   const periodDays = state?.lb_period ?? 0;
-  try { await ctx.deleteMessage(); } catch {}
   await showLeaderboardMode(ctx, filter, workplace, periodDays);
 });
 

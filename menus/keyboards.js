@@ -144,7 +144,8 @@ function mileageConfirmKeyboard() {
 
 function mileageSavedKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('✏️ Изменить пробег', 'edit_mileage')]
+    [Markup.button.callback('✏️ Изменить пробег', 'edit_mileage')],
+    [Markup.button.callback('🏠 В меню', 'back_to_menu')]
   ]);
 }
 
@@ -177,7 +178,8 @@ function replaceKeyboard() {
 
 function timeChangeKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('✏️ Изменить время', 'edit_time')]
+    [Markup.button.callback('✏️ Изменить время', 'edit_time')],
+    [Markup.button.callback('🏠 В меню', 'back_to_menu')]
   ]);
 }
 
