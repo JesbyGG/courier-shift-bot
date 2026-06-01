@@ -210,7 +210,9 @@ db.exec(`
     spreadsheetId TEXT NOT NULL,
     range TEXT NOT NULL,
     value TEXT NOT NULL,
-    createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+    createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    lastAttemptAt TEXT
   );
 
   CREATE TABLE IF NOT EXISTS ocr_debug (

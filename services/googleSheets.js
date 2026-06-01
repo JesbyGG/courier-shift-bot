@@ -56,15 +56,35 @@ function setNotifyAdminCallback(cb) {
   notifyAdminCallback = cb;
 }
 
+function migratePendingSheetUpdatesSchema() {
+  try {
+    const cols = db.prepare('PRAGMA table_info(pending_sheet_updates)').all();
+    const colNames = new Set(cols.map(c => c.name));
+    if (!colNames.has('attempts')) {
+      db.prepare('ALTER TABLE pending_sheet_updates ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0').run();
+      console.log('migrated pending_sheet_updates: added attempts column');
+    }
+    if (!colNames.has('lastAttemptAt')) {
+      db.prepare('ALTER TABLE pending_sheet_updates ADD COLUMN lastAttemptAt TEXT').run();
+      console.log('migrated pending_sheet_updates: added lastAttemptAt column');
+    }
+  } catch (e) {
+    console.error('failed to migrate pending_sheet_updates schema', e.message);
+  }
+}
+
 function loadPendingUpdatesFromDb() {
   try {
-    const rows = db.prepare('SELECT id, spreadsheetId, range, value FROM pending_sheet_updates').all();
+    migratePendingSheetUpdatesSchema();
+    const rows = db.prepare('SELECT id, spreadsheetId, range, value, createdAt, attempts, lastAttemptAt FROM pending_sheet_updates').all();
     for (const row of rows) {
       pendingUpdates.push({
         _dbId: row.id,
         spreadsheetId: row.spreadsheetId,
         range: row.range,
-        values: [[row.value]]
+        values: [[row.value]],
+        createdAt: row.createdAt,
+        attempts: row.attempts || 0
       });
     }
     if (rows.length > 0) {
@@ -93,6 +113,16 @@ function deletePendingUpdatesFromDb(ids) {
     db.prepare(`DELETE FROM pending_sheet_updates WHERE id IN (${placeholders})`).run(...ids);
   } catch (e) {
     console.error('failed to delete pending sheet updates from db', e.message);
+  }
+}
+
+function updatePendingUpdateAttempt(id, attempts, lastAttemptAt) {
+  if (!id) return;
+  try {
+    db.prepare('UPDATE pending_sheet_updates SET attempts = ?, lastAttemptAt = ? WHERE id = ?')
+      .run(attempts, lastAttemptAt, id);
+  } catch (e) {
+    console.error('failed to update pending sheet update attempt', e.message);
   }
 }
 
@@ -308,6 +338,7 @@ async function flushSheetUpdates() {
 
   let hadError = false;
   let errorMessage = '';
+  const failedItems = [];
 
   for (const [spreadsheetId, data] of Object.entries(bySheet)) {
     try {
@@ -323,19 +354,85 @@ async function flushSheetUpdates() {
       hadError = true;
       errorMessage = error.message || String(error);
       console.error('Ошибка Batch Update Google Sheets:', errorMessage);
+      for (const item of dataToUpdate) {
+        if (item.spreadsheetId === spreadsheetId) {
+          failedItems.push(item);
+        }
+      }
     }
   }
 
   if (!hadError) {
     deletePendingUpdatesFromDb(dbIds);
-  } else {
-    // Notify admins about critical failure
+    return;
+  }
+
+  // Process failed items: increment attempts, abandon records older than 24h
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  const now = new Date().toISOString();
+  const nowMs = Date.now();
+  const abandoned = [];
+  const retryable = [];
+
+  for (const item of failedItems) {
+    const newAttempts = (item.attempts || 0) + 1;
+    updatePendingUpdateAttempt(item._dbId, newAttempts, now);
+
+    const createdMs = item.createdAt ? new Date(item.createdAt).getTime() : nowMs;
+    const ageMs = nowMs - createdMs;
+    const isStale = ageMs > ONE_DAY_MS;
+
+    const updatedItem = { ...item, attempts: newAttempts };
+    if (isStale) {
+      abandoned.push(updatedItem);
+    } else {
+      retryable.push(updatedItem);
+    }
+  }
+
+  // Delete abandoned records from DB and notify admin
+  if (abandoned.length > 0) {
+    deletePendingUpdatesFromDb(abandoned.map(a => a._dbId));
+    const details = abandoned
+      .map(a => {
+        const hours = Math.round((nowMs - new Date(a.createdAt).getTime()) / 3600000);
+        const val = Array.isArray(a.values?.[0]) ? a.values[0][0] : '';
+        return `• ${a.range} = "${val}" (возраст: ${hours}ч, попыток: ${a.attempts})`;
+      })
+      .join('\n');
+    console.warn(`abandoned ${abandoned.length} pending sheet update(s) older than 24h:\n${details}`);
     if (notifyAdminCallback) {
       try {
-        notifyAdminCallback(`⚠️ <b>Критическая ошибка Google Sheets</b>\n\nBatch update не удалось: <code>${errorMessage}</code>\n\n${dbIds.length} запись(ей) останется в очереди и будет повторена при следующем запуске.`);
+        notifyAdminCallback(
+          `⚠️ <b>Google Sheets: ${abandoned.length} записей отклонены</b>\n\n` +
+          `Записи старше 24ч не удалось записать (защищённая ячейка или нет прав):\n\n` +
+          `${details}\n\n` +
+          `<i>Записи удалены из очереди. Внесите данные вручную или разблокируйте ячейки.</i>`
+        );
       } catch (e) {
-        console.error('failed to notify admins about sheets error', e.message);
+        console.error('failed to notify admins about abandoned updates', e.message);
       }
+    }
+  }
+
+  // Re-add retryable items and schedule another attempt
+  if (retryable.length > 0) {
+    pendingUpdates.push(...retryable);
+    if (!updateTimer) {
+      updateTimer = setTimeout(flushSheetUpdates, 30000);
+    }
+  }
+
+  // Notify admins about the failure
+  if (notifyAdminCallback) {
+    try {
+      const msg = `⚠️ <b>Критическая ошибка Google Sheets</b>\n\n` +
+        `Batch update не удалось: <code>${errorMessage}</code>\n\n` +
+        `• ${abandoned.length} записей отклонено (старше 24ч)\n` +
+        `• ${retryable.length} записей будет повторено через 30с`;
+      notifyAdminCallback(msg);
+    } catch (e) {
+      console.error('failed to notify admins about sheets error', e.message);
     }
   }
 }
