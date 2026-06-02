@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const OCR_CONCURRENCY = 5;
+const OCR_CONCURRENCY = 15;
 let activeOcrRequests = 0;
 const ocrQueue = [];
 
