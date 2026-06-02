@@ -23,9 +23,21 @@ jobs:
             git pull origin main
             echo '=== npm install ==='
             npm install --omit=dev
+            echo '=== python venv bootstrap ==='
+            if [ ! -x /root/ocr_venv/bin/python3 ]; then
+              echo 'Creating /root/ocr_venv ...'
+              apt-get update -qq
+              apt-get install -y -qq python3-venv tesseract-ocr tesseract-ocr-rus >/dev/null
+              python3 -m venv /root/ocr_venv
+              /root/ocr_venv/bin/pip install --quiet --upgrade pip
+            fi
+            echo '=== python deps install ==='
+            /root/ocr_venv/bin/pip install --quiet \
+              torch --index-url https://download.pytorch.org/whl/cpu \
+              rapidocr_onnxruntime pytesseract opencv-python-headless
             echo '=== pm2 reload ecosystem ==='
-            pm2 delete ecosystem.config.js 2>/dev/null || true
-            pm2 start ecosystem.config.js
+            pm2 delete all 2>/dev/null || true
+            pm2 start ecosystem.config.js --update-env
             pm2 save
             echo '=== health check ==='
             sleep 5
@@ -36,4 +48,6 @@ jobs:
               pm2 logs courier-shift-bot --lines 30 --nostream --raw
               exit 1
             fi
+            OCR_STATUS=$(curl -fsS --max-time 5 http://127.0.0.1:9527/health || echo 'UNREACHABLE')
+            echo "OCR health: $OCR_STATUS"
             echo '=== deploy complete ==='

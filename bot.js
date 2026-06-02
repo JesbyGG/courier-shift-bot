@@ -59,7 +59,7 @@ const {
   getSelfClearanceRequest,
   cleanupStaleReminders
 } = require('./services/storage');
-const { recognizeMileage, downloadTelegramFile, isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold, checkRapidOcrHealth } = require('./services/mileageOcr');
+const { recognizeMileage, downloadTelegramFile, isGeminiOcrEnabled, recognizeTextWithGemini, getMinMileageThreshold, checkGeminiOcrHealth } = require('./services/mileageOcr');
 const { saveOcrDebugImage, updateOcrDebugStatus } = require('./services/ocrDebug');
 const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, getDayOrders: getLbDayOrders, getWorkplaceRecord, setWorkplaceRecord, getDailyTop3, findOvertakenCouriers, getTodayKey: getLbTodayKey, _getAllRecords } = require('./services/leaderboard');
 const { addXp, getTotalXp, formatRankInfo, getXpForAction } = require('./services/xp');
@@ -196,8 +196,8 @@ const _EN_TO_RU = {
   'ignore': 'игнорируется', 'time': 'время', 'temperature': 'температура',
   'fuel': 'топливо', 'speed': 'скорость', 'rpm': 'RPM', 'trip': 'поездка',
   'reply': 'ответ', 'only': 'только', 'analyze': 'анализ', 'find': 'поиск',
-  'total': 'общий', 'yandex': 'Yandex', 'rapidocr': 'RapidOCR',
-  'tesseract': 'Tesseract', 'vision': 'Vision', 'initialize': 'загрузка',
+  'total': 'общий',
+  'initialize': 'загрузка',
   'support': 'поддержка', 'configured': 'настроен', 'version': 'версия',
   'startup': 'запуск', 'health': 'проверка', 'endpoint': 'эндпоинт',
   'sheet': 'таблица', 'log': 'лог', 'change': 'изменение', 'update': 'обновление',
@@ -1473,30 +1473,30 @@ async function recognizeReconciliationCash(ctx, fileId) {
     const response = await axios.get(link.href, { responseType: 'arraybuffer', timeout: 30000 });
     const imageBuffer = Buffer.from(response.data);
 
-    let totalOrdersFromRapid = null;
+    let totalOrdersFromGemini = null;
 
-    if (isRapidOcrEnabled()) {
-      const rapidText = await recognizeTextWithRapidOcr(imageBuffer);
-      if (rapidText) {
-        const parsed = extractCashFromOcrText(rapidText);
-        const ordersParsed = extractOrdersCountFromOcrText(rapidText);
-        totalOrdersFromRapid = ordersParsed.totalOrders;
-        console.log('сверка OCR:', JSON.stringify({ cashValid: parsed.valid, cashReason: parsed.reason, cashOrders: parsed.orders, cashAmount: parsed.amount, totalOrders: ordersParsed.totalOrders, ordersReason: ordersParsed.reason, source: 'rapidocr' }));
+    if (isGeminiOcrEnabled()) {
+      const geminiText = await recognizeTextWithGemini(imageBuffer);
+      if (geminiText) {
+        const parsed = extractCashFromOcrText(geminiText);
+        const ordersParsed = extractOrdersCountFromOcrText(geminiText);
+        totalOrdersFromGemini = ordersParsed.totalOrders;
+        console.log('сверка OCR:', JSON.stringify({ cashValid: parsed.valid, cashReason: parsed.reason, cashOrders: parsed.orders, cashAmount: parsed.amount, totalOrders: ordersParsed.totalOrders, ordersReason: ordersParsed.reason, source: 'gemini' }));
 
         if (parsed.valid) {
-          return { ...parsed, totalOrders: ordersParsed.totalOrders, source: 'rapidocr' };
+          return { ...parsed, totalOrders: ordersParsed.totalOrders, source: 'gemini' };
         }
 
         if (parsed.reason === 'cash_line_empty') {
-          return { ...parsed, totalOrders: ordersParsed.totalOrders, source: 'rapidocr' };
+          return { ...parsed, totalOrders: ordersParsed.totalOrders, source: 'gemini' };
         }
       } else {
-        console.log('сверка OCR: RapidOCR вернул пустой текст');
+        console.log('сверка OCR: Gemini OCR вернул пустой текст');
       }
     }
 
-    console.log('сверка OCR: RapidOCR не дал результата, fallback-OCR не подключён');
-    return { orders: null, amount: null, totalOrders: totalOrdersFromRapid, valid: false, reason: 'no_ocr_result', source: 'none' };
+    console.log('сверка OCR: Gemini OCR не дал результата, fallback-OCR не подключён');
+    return { orders: null, amount: null, totalOrders: totalOrdersFromGemini, valid: false, reason: 'no_ocr_result', source: 'none' };
   } catch (error) {
     console.error('reconciliation cash recognition error', error.message || error);
     return { orders: null, amount: null, totalOrders: null, valid: false, reason: 'error', source: 'none' };
@@ -2231,8 +2231,8 @@ function buildUpdateHighlights(changedFiles = [], version, updates = []) {
   const includesAny = (targets) => targets.some((target) => files.has(target.toLowerCase()));
   const highlights = [];
 
-  if (includesAny(['rapidocr_server.py'])) {
-    highlights.push('📸 Полностью обновлён движок OCR: Gemini распознаёт и пробег, и сверки, Tesseract как запасной.');
+  if (includesAny(['gemini_ocr_server.py'])) {
+    highlights.push('📸 Полностью обновлён движок OCR: Gemini 2.5 Flash Lite распознаёт и пробег, и сверки.');
   }
 
   if (includesAny(['bot.js'])) {
@@ -3912,7 +3912,7 @@ async function handleMileagePhoto(ctx, state, fileId) {
   };
   setState(telegramId, photoState);
 
-  const ocrAvailable = isRapidOcrEnabled();
+  const ocrAvailable = isGeminiOcrEnabled();
   if (!ocrAvailable) {
     setState(telegramId, {
       ...photoState,
@@ -3932,9 +3932,9 @@ async function handleMileagePhoto(ctx, state, fileId) {
     return;
   }
 
-  const ocrHealthy = await checkRapidOcrHealth();
+  const ocrHealthy = await checkGeminiOcrHealth();
   if (!ocrHealthy) {
-    console.warn('RapidOCR health check failed, falling back to manual input');
+    console.warn('Gemini OCR health check failed, falling back to manual input');
     setState(telegramId, {
       ...photoState,
       mileageProcessing: false,
@@ -4367,8 +4367,8 @@ const services = {
   isSheetAccessUser,
   WORKPLACES, LIMITS,
   getMileageStageCell, buildMileageRecognitionOptions, parseMileageNumber, getMaxShiftMileageDelta,
-  checkRapidOcrHealth, recognizeMileage, downloadTelegramFile,
-  isRapidOcrEnabled, recognizeTextWithRapidOcr, getMinMileageThreshold,
+  checkGeminiOcrHealth, recognizeMileage, downloadTelegramFile,
+  isGeminiOcrEnabled, recognizeTextWithGemini, getMinMileageThreshold,
   logOcrFeedback, isEmptyCell, isScheduleMarker, getMileageColumns: getMileageColumnsByDay,
   roundTimeToHalfHour, getColumnLetter, getCourierColumnsByDay, manualMileageKeyboard,
   prepareMileage, replaceTime, punchTime,

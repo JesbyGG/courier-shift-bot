@@ -29,8 +29,8 @@ function processNextOcrRequest() {
   );
 }
 
-function isRapidOcrEnabled() {
-  return process.env.RAPIDOCR_ENABLED !== 'false';
+function isGeminiOcrEnabled() {
+  return process.env.GEMINI_OCR_ENABLED !== 'false';
 }
 
 function getMinMileageThreshold() {
@@ -167,29 +167,29 @@ function smartPickFromGroups(groups, options = {}) {
 
 // OCR-only mode
 
-async function recognizeMileageWithRapidOcr(imageBuffer, options = {}) {
-  const rapidOcrUrl = process.env.RAPIDOCR_URL || '';
+async function recognizeMileageWithGemini(imageBuffer, options = {}) {
+  const geminiOcrUrl = process.env.GEMINI_OCR_URL || '';
 
-  if (!rapidOcrUrl) {
-    console.error('RapidOCR: RAPIDOCR_URL not configured');
-    return { engine: 'rapidocr', mileage: null, groups: [], best: null, raw: null, reason: 'no_url' };
+  if (!geminiOcrUrl) {
+    console.error('Gemini OCR: GEMINI_OCR_URL not configured');
+    return { engine: 'gemini', mileage: null, groups: [], best: null, raw: null, reason: 'no_url' };
   }
 
   try {
-    const response = await enqueueOcrRequest(() => axios.post(rapidOcrUrl, imageBuffer, {
+    const response = await enqueueOcrRequest(() => axios.post(geminiOcrUrl, imageBuffer, {
       timeout: 120000,
       headers: { 'Content-Type': 'application/octet-stream' }
     }));
     const parsed = response.data;
-    console.log('RapidOCR HTTP result', JSON.stringify(parsed).substring(0, 500));
-    return mapRapidOcrResult(parsed, options);
+    console.log('Gemini OCR HTTP result', JSON.stringify(parsed).substring(0, 500));
+    return mapGeminiOcrResult(parsed, options);
   } catch (error) {
-    console.error('RapidOCR HTTP error:', error.message);
-    return { engine: 'rapidocr', mileage: null, groups: [], best: null, raw: null, reason: 'error' };
+    console.error('Gemini OCR HTTP error:', error.message);
+    return { engine: 'gemini', mileage: null, groups: [], best: null, raw: null, reason: 'error' };
   }
 }
 
-function mapRapidOcrResult(parsed, options) {
+function mapGeminiOcrResult(parsed, options) {
   const groups = Array.isArray(parsed.groups)
     ? parsed.groups
         .map((group) => ({
@@ -207,7 +207,7 @@ function mapRapidOcrResult(parsed, options) {
   const pick = smartPickFromGroups(groups, options);
 
   return {
-    engine: 'rapidocr',
+    engine: 'gemini',
     mileage: pick.mileage,
     groups,
     best,
@@ -268,17 +268,17 @@ async function recognizeMileage(ctx, fileId, options = {}) {
 
   try {
     const ocrStartTime = Date.now();
-    const rapidResult = await recognizeMileageWithRapidOcr(sourceBuffer, options);
-    console.log('OCR timing: RapidOCR', Date.now() - ocrStartTime, 'ms');
+    const geminiResult = await recognizeMileageWithGemini(sourceBuffer, options);
+    console.log('OCR timing: Gemini OCR', Date.now() - ocrStartTime, 'ms');
 
-    const ocrMileage = rapidResult.mileage;
-    const groups = rapidResult.groups || [];
-    const ocrCandidates = rapidResult.candidates || [];
+    const ocrMileage = geminiResult.mileage;
+    const groups = geminiResult.groups || [];
+    const ocrCandidates = geminiResult.candidates || [];
 
     if (ocrMileage) {
       console.log('OCR accepted', {
         mileage: ocrMileage,
-        source: rapidResult.reason,
+        source: geminiResult.reason,
         groups: groups.map((g) => `${g.mileage}(×${g.count} avg=${g.avgConfidence.toFixed(2)} max=${g.maxConfidence.toFixed(2)})`).join(', '),
         minMileage: options.minMileage,
         maxMileage: options.maxMileage
@@ -288,9 +288,9 @@ async function recognizeMileage(ctx, fileId, options = {}) {
     }
 
     console.log('OCR rejected', {
-      reason: rapidResult.reason,
+      reason: geminiResult.reason,
       groups: groups.map((g) => `${g.mileage}(×${g.count} avg=${g.avgConfidence.toFixed(2)})`).join(', '),
-      best: rapidResult.best ? `${rapidResult.best.mileage}(×${rapidResult.best.count})` : null
+      best: geminiResult.best ? `${geminiResult.best.mileage}(×${geminiResult.best.count})` : null
     });
     console.log('OCR timing: total', Date.now() - startTime, 'ms');
     return { mileage: null, candidates: ocrCandidates };
@@ -300,15 +300,15 @@ async function recognizeMileage(ctx, fileId, options = {}) {
   }
 }
 
-async function recognizeTextWithRapidOcr(imageBuffer) {
-  const rapidOcrUrl = process.env.RAPIDOCR_URL || '';
+async function recognizeTextWithGemini(imageBuffer) {
+  const geminiOcrUrl = process.env.GEMINI_OCR_URL || '';
 
-  if (!rapidOcrUrl) {
+  if (!geminiOcrUrl) {
     return null;
   }
 
   try {
-    const url = rapidOcrUrl.replace(/\/+$/, '') + '/text';
+    const url = geminiOcrUrl.replace(/\/+$/, '') + '/text';
     const response = await enqueueOcrRequest(() => axios.post(url, imageBuffer, {
       timeout: 120000,
       headers: { 'Content-Type': 'application/octet-stream' }
@@ -319,23 +319,23 @@ async function recognizeTextWithRapidOcr(imageBuffer) {
     }
 
     const combined = items.map((item) => item.text || '').join('\n');
-    console.log('RapidOCR text recognition', items.length, 'items, text:', combined.substring(0, 500));
+    console.log('Gemini OCR text recognition', items.length, 'items, text:', combined.substring(0, 500));
     return combined;
   } catch (error) {
-    console.error('RapidOCR text recognition error:', error.message);
+    console.error('Gemini OCR text recognition error:', error.message);
     return null;
   }
 }
 
-async function checkRapidOcrHealth() {
-  const rapidOcrUrl = process.env.RAPIDOCR_URL || '';
-  if (!rapidOcrUrl) return false;
+async function checkGeminiOcrHealth() {
+  const geminiOcrUrl = process.env.GEMINI_OCR_URL || '';
+  if (!geminiOcrUrl) return false;
 
   try {
-    const response = await axios.get(`${rapidOcrUrl.replace(/\/+$/, '')}/health`, { timeout: 5000 });
+    const response = await axios.get(`${geminiOcrUrl.replace(/\/+$/, '')}/health`, { timeout: 5000 });
     return response.status === 200 && response.data?.status === 'ok';
   } catch (error) {
-    console.error('RapidOCR health check failed:', error.message);
+    console.error('Gemini OCR health check failed:', error.message);
     return false;
   }
 }
@@ -343,8 +343,8 @@ async function checkRapidOcrHealth() {
 module.exports = {
   recognizeMileage,
   downloadTelegramFile,
-  recognizeTextWithRapidOcr,
-  isRapidOcrEnabled,
+  recognizeTextWithGemini,
+  isGeminiOcrEnabled,
   getMinMileageThreshold,
-  checkRapidOcrHealth
+  checkGeminiOcrHealth
 };
