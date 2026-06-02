@@ -17,6 +17,7 @@ module.exports = {
     {
       name: 'gemini-ocr-server',
       script: 'gemini_ocr_server.py',
+      args: '--server',
       cwd: __dirname,
       interpreter: '/root/ocr_venv/bin/python3',
       interpreter_args: ['-u'],
