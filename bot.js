@@ -73,7 +73,7 @@ const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeade
 const { addXp, getTotalXp, formatRankInfo, getXpForAction } = require('./services/xp');
 const { getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements, formatAchievementsWithProgress } = require('./services/achievements');
 const { updateStreak, getStreak, getStreakBonusesDescription, formatStreakInfo } = require('./services/streak');
-const { updateChallengeProgress, generateWeeklyChallenges, getChallenges, cleanupOldChallenges, notifyChallengeCompleted } = require('./services/challenges');
+const { updateChallengeProgress, generateWeeklyChallenges, getChallenges, cleanupOldChallenges, notifyChallengeCompleted, formatProgressBar } = require('./services/challenges');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, getCourierColumnsByDay, roundMinutesToHalfHour, roundTimeToHalfHour, isEmptyCell, isScheduleMarker } = require('./utils');
 const { registerSheetCommand } = require('./sheetCommand');
 const { WORKPLACES, DEVICES, ROLES, LIMITS, WORKPLACE_FEATURES, WORKPLACE_KEY_MAP, BUTTONS } = require('./config');
