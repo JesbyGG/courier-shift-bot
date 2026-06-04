@@ -4085,7 +4085,7 @@ const services = {
   checkNotifications: checkLeaderboardNotifications, getWorkplaceRecord, setWorkplaceRecord,
   getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements, formatAchievementsWithProgress,
   updateStreak, getStreak, getStreakBonusesDescription, formatStreakInfo,
-  getChallenges, generateWeeklyChallenges, cleanupOldChallenges, notifyChallengeCompleted, formatProgressBar,
+  getChallenges, generateWeeklyChallenges, cleanupOldChallenges, notifyChallengeCompleted,
   // sheets & ocr
   readCell, updateCell, flushSheetUpdates,
   db, checkpoint, saveThread, findThreadByGroupMessage, findThreadById, saveForwardedMessage, findForwardedMessage, cleanupOldThreads,
