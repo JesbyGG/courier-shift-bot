@@ -1,0 +1,31 @@
+{
+  "2.4.14": {
+    "changedFiles": [
+      "bot.js",
+      "config.js",
+      "db.js"
+    ],
+    "updates": [
+      "🎨 Оформление: Compact achievements layout",
+      "🔧 Исправлено: Back button from challenges works now",
+      "✨ Добавлено: Добавлено 20 новый trackable achievements with counters",
+      "♻️ Переработано: Очистка up achievements - удалён impossible ones, compact UI",
+      "🔧 Исправлено: Silently игнорируется duplicate leaderboard button presses",
+      "🔧 Исправлено: Cleanup invalid challenges from DB on запуск",
+      "🔧 Исправлено: Export formatProgressBar from challenges module",
+      "🔧 Исправлено: Импорт formatProgressBar from challenges for weekly display",
+      "🔧 Исправлено: Удалён undefined formatProgressBar from exports",
+      "🔧 Исправлено: Импорт formatAchievementsWithProgress in bot.js",
+      "✨ Добавлено: Simplify leaderboard, добавлено progress bars, rework streak",
+      "⚡ Оптимизация: Increase OCR_CONCURRENCY 5→15 для Free tier Gemini (15 RPM)"
+    ],
+    "message": "🆕 <b><i>Обновление бота v2.4.14</i></b>\n\n<b>Коротко, что изменили:</b>\n• 🤖 Обновлена логика бота, улучшена стабильность.\n\n<b>Подробности:</b>\n• 🎨 Оформление: Compact achievements layout\n• 🔧 Исправлено: Back button from challenges works now\n• ✨ Добавлено: Добавлено 20 новый trackable achievements with counters\n\n💙 Хорошей смены!"
+  },
+  "2.4.15": {
+    "changedFiles": [
+      "bot.js"
+    ],
+    "updates": [],
+    "message": "🆕 <b><i>Обновление бота v2.4.15</i></b>\n\n<b>Коротко, что изменили:</b>\n• 🤖 Обновлена логика бота, улучшена стабильность.\n\n💙 Хорошей смены!"
+  }
+}

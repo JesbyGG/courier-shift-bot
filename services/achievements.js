@@ -1,5 +1,37 @@
 const db = require('../db');
 
+const CATEGORY_MAP = {
+  orders: { emoji: '🛒', label: 'Заказы', hasSubcategories: true },
+  cash: { emoji: '💰', label: 'Выручка', hasSubcategories: false },
+  shifts: { emoji: '⏱', label: 'Смены', hasSubcategories: true },
+  docs: { emoji: '📄', label: 'Документы', hasSubcategories: true },
+  special: { emoji: '⭐', label: 'Особые', hasSubcategories: false }
+};
+
+const SUBCATEGORY_MAP = {
+  orders_quantity: { emoji: '📦', label: 'Количество' },
+  orders_records: { emoji: '⚡', label: 'Рекорды' },
+  shifts_quantity: { emoji: '🔢', label: 'Количество' },
+  shifts_schedule: { emoji: '🕐', label: 'Расписание' },
+  docs_route: { emoji: '📸', label: 'Маршрутники' },
+  docs_recon: { emoji: '📊', label: 'Сверки' },
+  docs_cash: { emoji: '💵', label: 'Наличные' },
+  docs_mileage: { emoji: '🚗', label: 'Пробег' }
+};
+
+const ACHIEVEMENT_ORDER = {
+  orders_quantity: ['orders_50', 'orders_300', 'orders_1000', 'orders_5000'],
+  orders_records: ['orders_25', 'express_30', 'express_35', 'express_40'],
+  cash: ['cash_10k', 'cash_500k', 'cash_1m'],
+  shifts_quantity: ['first_shift', 'shifts_30', 'shifts_200', 'shifts_500'],
+  shifts_schedule: ['early_start_50', 'late_finish_50'],
+  docs_route: ['first_route', 'route_50', 'route_100', 'route_200'],
+  docs_recon: ['first_rec', 'rec_30', 'rec_50', 'rec_100'],
+  docs_cash: ['first_cash', 'cash_submit_50', 'cash_submit_100'],
+  docs_mileage: ['first_mileage', 'mileage_50', 'mileage_100', 'mileage_200'],
+  special: ['top1_day', 'early_bird', 'night_owl', 'perfect_shift', 'streak_7', 'streak_14', 'streak_30', 'top1_5', 'top1_10', 'top1_20']
+};
+
 const ACHIEVEMENTS = [
   // Заказы
   { id: 'orders_50', name: 'Новичок', desc: '50 заказов', condition: { type: 'orders', value: 50 }, reward: 100 },
@@ -304,6 +336,135 @@ async function notifyAchievements(ctx, telegramId, unlocked) {
   }
 }
 
+function _formatChainItem(ach, stats, unlockedIds) {
+  const isBlocked = ach.condition.courierType && ach.condition.courierType !== stats.courierType;
+  if (isBlocked) return null;
+
+  const isDone = unlockedIds.has(ach.id);
+  const progress = getConditionProgress(stats, ach.condition);
+
+  if (isDone) {
+    return `✅ <b>${ach.name}</b>`;
+  }
+
+  if (!progress.isBoolean && progress.target > 0) {
+    const bar = formatProgressBar(progress.current, progress.target);
+    return `⏳ <b>${ach.name}</b> ${bar} ${progress.current.toLocaleString('ru-RU')}/${progress.target.toLocaleString('ru-RU')}`;
+  }
+
+  return `⏳ <b>${ach.name}</b>`;
+}
+
+function _getChainForSubcategory(telegramId, subcategory) {
+  const stats = getAchievementStats(telegramId);
+  const unlocked = getUnlockedAchievements(telegramId);
+  const unlockedIds = new Set(unlocked.map(a => a.id));
+
+  const order = ACHIEVEMENT_ORDER[subcategory];
+  if (!order) return [];
+
+  const items = [];
+  for (const achId of order) {
+    const ach = ACHIEVEMENTS.find(a => a.id === achId);
+    if (!ach) continue;
+    const item = _formatChainItem(ach, stats, unlockedIds);
+    if (item) items.push(item);
+  }
+
+  return items;
+}
+
+function formatAchievementsMenu(telegramId) {
+  const stats = getAchievementStats(telegramId);
+  const unlocked = getUnlockedAchievements(telegramId);
+  const unlockedIds = new Set(unlocked.map(a => a.id));
+
+  let text = '🏆 <b>Мои достижения</b>\n\n';
+
+  for (const [catKey, catInfo] of Object.entries(CATEGORY_MAP)) {
+    let total = 0;
+    let done = 0;
+
+    if (catInfo.hasSubcategories) {
+      for (const [subKey, subOrder] of Object.entries(ACHIEVEMENT_ORDER)) {
+        if (!subKey.startsWith(catKey + '_')) continue;
+        for (const achId of subOrder) {
+          const ach = ACHIEVEMENTS.find(a => a.id === achId);
+          if (!ach) continue;
+          if (ach.condition.courierType && ach.condition.courierType !== stats.courierType) continue;
+          total++;
+          if (unlockedIds.has(ach.id)) done++;
+        }
+      }
+    } else {
+      const order = ACHIEVEMENT_ORDER[catKey] || [];
+      for (const achId of order) {
+        const ach = ACHIEVEMENTS.find(a => a.id === achId);
+        if (!ach) continue;
+        if (ach.condition.courierType && ach.condition.courierType !== stats.courierType) continue;
+        total++;
+        if (unlockedIds.has(ach.id)) done++;
+      }
+    }
+
+    text += `${catInfo.emoji} <b>${catInfo.label}</b> — ${done}/${total}\n`;
+  }
+
+  return text.trim();
+}
+
+function formatAchievementsSubmenu(telegramId, category) {
+  const stats = getAchievementStats(telegramId);
+  const unlocked = getUnlockedAchievements(telegramId);
+  const unlockedIds = new Set(unlocked.map(a => a.id));
+  const catInfo = CATEGORY_MAP[category];
+
+  let text = `${catInfo.emoji} <b>${catInfo.label}</b>\n\n`;
+
+  for (const [subKey, subInfo] of Object.entries(SUBCATEGORY_MAP)) {
+    if (!subKey.startsWith(category + '_')) continue;
+
+    let total = 0;
+    let done = 0;
+    const order = ACHIEVEMENT_ORDER[subKey] || [];
+    for (const achId of order) {
+      const ach = ACHIEVEMENTS.find(a => a.id === achId);
+      if (!ach) continue;
+      if (ach.condition.courierType && ach.condition.courierType !== stats.courierType) continue;
+      total++;
+      if (unlockedIds.has(ach.id)) done++;
+    }
+
+    if (total > 0) {
+      text += `${subInfo.emoji} <b>${subInfo.label}</b> — ${done}/${total}\n`;
+    }
+  }
+
+  return text.trim();
+}
+
+function formatAchievementsChain(telegramId, category, subcategory) {
+  const subInfo = SUBCATEGORY_MAP[subcategory];
+  const catInfo = CATEGORY_MAP[category];
+  const items = _getChainForSubcategory(telegramId, subcategory);
+
+  if (items.length === 0) {
+    return `${subInfo?.emoji || catInfo.emoji} <b>${subInfo?.label || catInfo.label}</b>\n\n<i>Нет доступных достижений</i>`;
+  }
+
+  let text = `${subInfo?.emoji || catInfo.emoji} <b>${subInfo?.label || catInfo.label}</b>\n\n`;
+
+  // Собираем цепочку с переносами каждые 4 элемента
+  const lines = [];
+  for (let i = 0; i < items.length; i += 4) {
+    const chunk = items.slice(i, i + 4);
+    lines.push(chunk.join(' → '));
+  }
+
+  text += lines.join('\n→ …\n') + '\n';
+  return text.trim();
+}
+
 module.exports = {
   getAllAchievements,
   getUnlockedAchievements,
@@ -313,5 +474,11 @@ module.exports = {
   getAchievementStats,
   notifyAchievements,
   formatAchievementsWithProgress,
-  formatProgressBar
+  formatProgressBar,
+  formatAchievementsMenu,
+  formatAchievementsSubmenu,
+  formatAchievementsChain,
+  CATEGORY_MAP,
+  SUBCATEGORY_MAP,
+  ACHIEVEMENT_ORDER
 };
