@@ -2663,9 +2663,7 @@ async function showWeeklyChallenges(ctx) {
 
 async function showLeaderboardResult(ctx, periodDays = 7, mode = 'sum') {
   const telegramId = ctx.from.id;
-  const state = getState(telegramId);
-  if (state?.lb_period === periodDays && state?.lb_mode === mode) return;
-  setState(telegramId, { ...state, lb_period: periodDays, lb_mode: mode });
+  setState(telegramId, { ...getState(telegramId), lb_period: periodDays, lb_mode: mode });
 
   const profile = getFullProfile(telegramId);
   const courierType = profile?.courierType || 'auto';
@@ -3287,21 +3285,29 @@ for (const key of NOTIFICATION_KEYS) {
 
 bot.action('lb_p_day', async (ctx) => {
   await ctx.answerCbQuery();
+  const state = getState(ctx.from.id);
+  if (state?.lb_period === 1 && state?.lb_mode === 'sum') return;
   await showLeaderboardResult(ctx, 1, 'sum');
 });
 
 bot.action('lb_p_week', async (ctx) => {
   await ctx.answerCbQuery();
+  const state = getState(ctx.from.id);
+  if (state?.lb_period === 7 && state?.lb_mode === 'sum') return;
   await showLeaderboardResult(ctx, 7, 'sum');
 });
 
 bot.action('lb_p_alltime', async (ctx) => {
   await ctx.answerCbQuery();
+  const state = getState(ctx.from.id);
+  if (state?.lb_period === 0 && state?.lb_mode === 'sum') return;
   await showLeaderboardResult(ctx, 0, 'sum');
 });
 
 bot.action('lb_alltime_max', async (ctx) => {
   await ctx.answerCbQuery();
+  const state = getState(ctx.from.id);
+  if (state?.lb_period === 0 && state?.lb_mode === 'max') return;
   await showLeaderboardResult(ctx, 0, 'max');
 });
 
