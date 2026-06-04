@@ -218,11 +218,10 @@ function formatAchievementsWithProgress(telegramId) {
 
     let progressLine = '';
     if (!isDone && !progress.isBoolean && progress.target > 0) {
-      const bar = formatProgressBar(progress.current, progress.target);
-      progressLine = ` ${bar} ${progress.current.toLocaleString('ru-RU')}/${progress.target.toLocaleString('ru-RU')}`;
+      progressLine = ` — ${progress.current.toLocaleString('ru-RU')}/${progress.target.toLocaleString('ru-RU')}`;
     }
 
-    const line = `${statusIcon} <b>${ach.name}</b> — ${ach.desc}${ach.reward > 0 ? ` (+${ach.reward} XP)` : ''}${progressLine}`;
+    const line = `${statusIcon} ${ach.name}${progressLine}`;
 
     // Определяем категорию
     const type = ach.condition.type;
@@ -233,17 +232,16 @@ function formatAchievementsWithProgress(telegramId) {
     else categories.special.achievements.push(line);
   }
 
-  let text = '🏆 <b>Мои достижения</b>\n';
-  text += `<i>Разблокировано: ${unlocked.length} / ${ACHIEVEMENTS.length}</i>\n\n`;
+  let text = `🏆 Мои достижения (${unlocked.length}/${ACHIEVEMENTS.length})\n\n`;
 
   for (const key of ['orders', 'cash', 'shifts', 'docs', 'special']) {
     const cat = categories[key];
     if (cat.achievements.length === 0) continue;
-    text += `${cat.emoji} <b>${cat.label}</b>\n`;
+    text += `${cat.emoji} ${cat.label}\n`;
     text += cat.achievements.join('\n') + '\n\n';
   }
 
-  return text;
+  return text.trim();
 }
 
 function checkMilestoneAchievements(telegramId, stats) {
