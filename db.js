@@ -253,6 +253,10 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_fwd_chat_msg ON forwarded_messages(chat_id, message_id);
   CREATE INDEX IF NOT EXISTS idx_fwd_thread ON forwarded_messages(thread_id);
+
+  CREATE INDEX IF NOT EXISTS idx_xp_log_telegramId_createdAt ON xp_log(telegramId, createdAt);
+  CREATE INDEX IF NOT EXISTS idx_cash_audit_timestamp ON cash_audit(timestamp);
+  CREATE INDEX IF NOT EXISTS idx_daily_orders_telegramId_date ON daily_orders(telegramId, date);
 `);
 
 function checkpoint() {

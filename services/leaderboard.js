@@ -76,6 +76,11 @@ function recordOrders(telegramId, fio, workplace, ordersCount, courierType) {
   return record;
 }
 
+function getTodayDate() {
+  const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
+  return _formatLocalDate(new Date(), timezone);
+}
+
 function getDaysAgo(days) {
   const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
   const msPerDay = 24 * 60 * 60 * 1000;
@@ -89,7 +94,12 @@ const WORKPLACE_SHORT = {
 };
 
 function calculateLeaderboard(type, periodDays, workplace, courierTypeFilter) {
-  const cutoff = periodDays ? getDaysAgo(periodDays) : null;
+  let cutoff = null;
+  if (periodDays === 1) {
+    cutoff = getTodayDate();
+  } else if (periodDays) {
+    cutoff = getDaysAgo(periodDays);
+  }
 
   const wpMapping = { east: 'ИМ Восток', center: 'ИМ Центр' };
   const filterWorkplace = workplace && workplace !== 'all' ? (wpMapping[workplace] || workplace) : null;
@@ -103,7 +113,11 @@ function calculateLeaderboard(type, periodDays, workplace, courierTypeFilter) {
   }
 
   if (cutoff) {
-    sql += ' WHERE date >= ?';
+    if (periodDays === 1) {
+      sql += ' WHERE date = ?';
+    } else {
+      sql += ' WHERE date >= ?';
+    }
     params.push(cutoff);
   }
 

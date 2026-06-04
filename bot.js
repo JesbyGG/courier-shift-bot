@@ -61,11 +61,19 @@ const {
 } = require('./services/storage');
 const { recognizeMileage, downloadTelegramFile, isGeminiOcrEnabled, recognizeTextWithGemini, getMinMileageThreshold, checkGeminiOcrHealth } = require('./services/mileageOcr');
 const { saveOcrDebugImage, updateOcrDebugStatus } = require('./services/ocrDebug');
+const {
+  getReconciliationOcrTimeoutMs,
+  roundMoney,
+  emptyReconciliationCash,
+  recognizeReconciliationCashSafe,
+  shouldWarnAboutReconciliationOcr,
+  recognizeReconciliationCash
+} = require('./services/reconciliationOcr');
 const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, getDayOrders: getLbDayOrders, getWorkplaceRecord, setWorkplaceRecord, getDailyTop3, findOvertakenCouriers, getTodayKey: getLbTodayKey, _getAllRecords } = require('./services/leaderboard');
 const { addXp, getTotalXp, formatRankInfo, getXpForAction } = require('./services/xp');
 const { getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements } = require('./services/achievements');
-const { updateStreak, getStreak, getStreakBonus } = require('./services/streak');
-const { updateChallengeProgress, generateWeeklyChallenges, getChallenges } = require('./services/challenges');
+const { updateStreak, getStreak, getStreakBonusesDescription, formatStreakInfo } = require('./services/streak');
+const { updateChallengeProgress, generateWeeklyChallenges, getChallenges, cleanupOldChallenges, notifyChallengeCompleted } = require('./services/challenges');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, getCourierColumnsByDay, roundMinutesToHalfHour, roundTimeToHalfHour, isEmptyCell, isScheduleMarker } = require('./utils');
 const { registerSheetCommand } = require('./sheetCommand');
 const { WORKPLACES, DEVICES, ROLES, LIMITS, WORKPLACE_FEATURES, WORKPLACE_KEY_MAP, BUTTONS } = require('./config');
@@ -118,10 +126,6 @@ function setState(telegramId, state) {
 
 function clearState(telegramId) {
   db.prepare('DELETE FROM states WHERE telegramId = ?').run(String(telegramId));
-}
-
-function flushStateNow() {
-  // SQLite WAL is persistent.
 }
 
 const versionPath = path.join(__dirname, 'version.json');
@@ -1312,16 +1316,6 @@ function logReconciliationPhoto(telegramId, fileId, state, label) {
   });
 }
 
-function parseMoneyRu(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return null;
-  const cleaned = raw.replace(/[\s\u00A0]/g, '').replace(/₽/g, '').replace(/,/g, '.').replace(/[^0-9.]/g, '');
-  if (!cleaned) return null;
-  const number = Number(cleaned);
-  if (!Number.isFinite(number) || number < 0) return null;
-  return number;
-}
-
 function formatMoneyRu(value) {
   const number = Number(value || 0);
   if (!Number.isFinite(number) || number < 0) return null;
@@ -1338,170 +1332,7 @@ function formatMoneyRuNumber(value) {
   return withCurrency.replace(/\s*₽$/, '');
 }
 
-function extractOrdersCountFromOcrText(text) {
-  const raw = String(text || '')
-    .replace(/\u00A0/g, ' ')
-    .trim();
-
-  if (!raw) {
-    return { totalOrders: null, reason: 'empty_text' };
-  }
-
-  const normalized = raw.replace(/\s+/g, ' ');
-
-  const strictPatterns = [
-    /заказо[кв]\s+за\s*(?:сегодня|сутки)\s*:?\s*(\d{1,5})/i,
-    /за\s*(?:сегодня|сутки)\s*:?\s*(\d{1,5})/i,
-  ];
-
-  for (const pattern of strictPatterns) {
-    const match = normalized.match(pattern);
-    if (match && Number.isFinite(Number(match[1])) && Number(match[1]) > 0) {
-      return { totalOrders: Number(match[1]), reason: 'ok' };
-    }
-  }
-
-  const lines = raw.split(/\n/);
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i].trim();
-    if (/заказо[кв]/i.test(line)) {
-      for (let j = i + 1; j < Math.min(lines.length, i + 5); j += 1) {
-        const candidate = lines[j].trim();
-        const numMatch = candidate.match(/^(\d{1,5})$/);
-        if (numMatch && Number.isFinite(Number(numMatch[1])) && Number(numMatch[1]) > 0) {
-          return { totalOrders: Number(numMatch[1]), reason: 'ok' };
-        }
-      }
-    }
-  }
-
-  const fallbackPatterns = [
-    /заказо[кв]\s*:?\s*(\d{1,5})(?:\s|$)/i,
-    /(\d{1,5})\s*заказо[кв]/i,
-  ];
-
-  for (const pattern of fallbackPatterns) {
-    const match = normalized.match(pattern);
-    if (match && Number.isFinite(Number(match[1])) && Number(match[1]) > 0) {
-      return { totalOrders: Number(match[1]), reason: 'ok' };
-    }
-  }
-
-  return { totalOrders: null, reason: 'no_orders_line' };
-}
-
-function extractCashFromOcrText(text) {
-  const normalized = String(text || '')
-    .replace(/\u00A0/g, ' ')
-    .replace(/[|¦]/g, '/')
-    .replace(/₽/g, ' ₽')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  if (!normalized) {
-    return { orders: null, amount: null, valid: false, reason: 'empty_text' };
-  }
-
-  const cashWordSource = 'налич[а-яa-z]*|[Hh]a[нn][лnM][иiч4][нn][ыb][еe]|[Hh]a[лn][иiч][нh][bл][еe]';
-  const cashLineRegex = new RegExp(`(?:${cashWordSource})\\s*([0-9]{1,3})?\\s*/\\s*([0-9\\s.,]{1,20})?[P₽]?`, 'i');
-  const cashMatch = normalized.match(cashLineRegex);
-
-  if (cashMatch) {
-    const ordersRaw = cashMatch[1] || '';
-    const amountRaw = cashMatch[2] || '';
-    const orders = Number(String(ordersRaw).replace(/\D/g, ''));
-    const amount = parseMoneyRu(amountRaw);
-    const hasOrders = Number.isFinite(orders) && orders > 0;
-    const hasAmount = Number.isFinite(amount) && amount >= 1;
-
-    return {
-      orders: Number.isFinite(orders) ? orders : 0,
-      amount: Number.isFinite(amount) ? amount : null,
-      valid: hasOrders && hasAmount,
-      reason: hasOrders && hasAmount ? 'ok' : 'insufficient'
-    };
-  }
-
-  const hasCashWord = new RegExp(`(?:${cashWordSource})`, 'i').test(normalized);
-  if (hasCashWord) {
-    return { orders: 0, amount: null, valid: false, reason: 'cash_line_empty' };
-  }
-
-  return { orders: null, amount: null, valid: false, reason: 'no_cash_line' };
-}
-
-function getReconciliationOcrTimeoutMs() {
-  const value = Number(process.env.RECONCILIATION_OCR_TIMEOUT_MS || 30000);
-  return Number.isFinite(value) && value >= 5000 ? value : 30000;
-}
-
 const MAX_REASONABLE_CASH_AMOUNT = 500000;
-
-function roundMoney(value) {
-  return Math.round(Number(value || 0) * 100) / 100;
-}
-
-
-
-function emptyReconciliationCash(reason, source = 'none') {
-  return { orders: null, amount: null, totalOrders: null, valid: false, reason, source };
-}
-
-async function recognizeReconciliationCashSafe(ctx, fileId, label) {
-  try {
-    return await withTimeout(
-      recognizeReconciliationCash(ctx, fileId),
-      getReconciliationOcrTimeoutMs(),
-      `reconciliation OCR ${label || ''}`.trim()
-    );
-  } catch (error) {
-    console.error('reconciliation OCR safe fallback', label || '', error.message || error);
-    return emptyReconciliationCash('ocr_timeout', 'none');
-  }
-}
-
-function shouldWarnAboutReconciliationOcr(cashInfo) {
-  if (!cashInfo) return true;
-  if (cashInfo.valid) return false;
-  if (cashInfo.totalOrders && cashInfo.totalOrders > 0) return false;
-  return ['ocr_timeout', 'error', 'local_ocr_error', 'local_ocr_timeout', 'no_ocr_result'].includes(cashInfo.reason);
-}
-
-async function recognizeReconciliationCash(ctx, fileId) {
-  try {
-    const link = await ctx.telegram.getFileLink(fileId);
-    const response = await axios.get(link.href, { responseType: 'arraybuffer', timeout: 30000 });
-    const imageBuffer = Buffer.from(response.data);
-
-    let totalOrdersFromGemini = null;
-
-    if (isGeminiOcrEnabled()) {
-      const geminiText = await recognizeTextWithGemini(imageBuffer);
-      if (geminiText) {
-        const parsed = extractCashFromOcrText(geminiText);
-        const ordersParsed = extractOrdersCountFromOcrText(geminiText);
-        totalOrdersFromGemini = ordersParsed.totalOrders;
-        console.log('сверка OCR:', JSON.stringify({ cashValid: parsed.valid, cashReason: parsed.reason, cashOrders: parsed.orders, cashAmount: parsed.amount, totalOrders: ordersParsed.totalOrders, ordersReason: ordersParsed.reason, source: 'gemini' }));
-
-        if (parsed.valid) {
-          return { ...parsed, totalOrders: ordersParsed.totalOrders, source: 'gemini' };
-        }
-
-        if (parsed.reason === 'cash_line_empty') {
-          return { ...parsed, totalOrders: ordersParsed.totalOrders, source: 'gemini' };
-        }
-      } else {
-        console.log('сверка OCR: Gemini OCR вернул пустой текст');
-      }
-    }
-
-    console.log('сверка OCR: Gemini OCR не дал результата, fallback-OCR не подключён');
-    return { orders: null, amount: null, totalOrders: totalOrdersFromGemini, valid: false, reason: 'no_ocr_result', source: 'none' };
-  } catch (error) {
-    console.error('reconciliation cash recognition error', error.message || error);
-    return { orders: null, amount: null, totalOrders: null, valid: false, reason: 'error', source: 'none' };
-  }
-}
 
 function makeMileageState(telegramId, baseState, extra = {}) {
   return {
@@ -1875,20 +1706,27 @@ async function punchTimeFlow(ctx, explicitStage = null) {
     addXp(telegramId, getXpForAction(xpKey), `${xpLabel} смены`);
     const todayIso = new Date().toISOString().split('T')[0];
     const streak = updateStreak(telegramId, todayIso);
-    const streakBonus = getStreakBonus(streak.currentStreak);
-    if (streakBonus > 0) {
-      addXp(telegramId, streakBonus, `Бонус за стрик ${streak.currentStreak} смен`);
+    if (streak.bonuses && streak.bonuses.length > 0) {
+      for (const b of streak.bonuses) {
+        addXp(telegramId, b.xp, `Бонус за стрик ${b.threshold} смен`);
+      }
     }
     // Считаем количество смен
     if (result.stage === 'start') {
       const cur = Number(getUserField(telegramId, 'shiftCount') || 0);
       setUserField(telegramId, 'shiftCount', cur + 1);
-      updateChallengeProgress(telegramId, 'shifts');
+      const challengeCompleted = updateChallengeProgress(telegramId, 'shifts');
+      for (const ch of challengeCompleted) {
+        addXp(telegramId, ch.reward, `Челлендж: ${ch.name}`);
+        if (getNotificationSettings(telegramId).challengeCompleted) {
+          notifyChallengeCompleted(ctx, telegramId, ch);
+        }
+      }
     }
     try {
       const stats = getAchievementStats(telegramId);
       const unlocked = checkMilestoneAchievements(telegramId, stats);
-      if (unlocked.length > 0) notifyAchievements(ctx, telegramId, unlocked);
+      if (unlocked.length > 0) await notifyAchievements(ctx, telegramId, unlocked);
     } catch (_) {}
 
     const icon = result.stage === 'start' ? '🟢' : '🔴';
@@ -2501,11 +2339,17 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
     await updateMileage(state.mileageRow, state.day, state.stage, mileageValue, state.workplace);
     console.log('пробег записан');
     addXp(telegramId, getXpForAction('mileage'), 'Запись пробега');
-    updateChallengeProgress(telegramId, 'mileages');
+    const mileageChallengeCompleted = updateChallengeProgress(telegramId, 'mileages');
+    for (const ch of mileageChallengeCompleted) {
+      addXp(telegramId, ch.reward, `Челлендж: ${ch.name}`);
+      if (getNotificationSettings(telegramId).challengeCompleted) {
+        notifyChallengeCompleted(ctx, telegramId, ch);
+      }
+    }
     try {
       const stats = getAchievementStats(telegramId);
       const unlocked = checkMilestoneAchievements(telegramId, stats);
-      if (unlocked.length > 0) notifyAchievements(ctx, telegramId, unlocked);
+      if (unlocked.length > 0) await notifyAchievements(ctx, telegramId, unlocked);
     } catch (_) {}
     logOcrFeedback(telegramId, state.ocrValue || null, mileageValue, sourceBuffer, {
       stage: state.stage,
@@ -2705,64 +2549,18 @@ async function backToMainMenu(ctx) {
   return { status: 'back_to_menu', message };
 }
 
-async function showLeaderboardMenu(ctx, editMsg = false) {
+async function showLeaderboardMenu(ctx) {
   if (isLogist(ctx.from.id)) {
     return { status: 'access_denied' };
   }
-  setState(ctx.from.id, { lb_step: 'menu' });
-  const settings = getNotificationSettings(ctx.from.id);
-  const notifStatus = Object.values(settings).some(v => v) ? 'ВКЛ ✅' : 'ВЫКЛ ❌';
-  const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('📊 Таблица рейтинга', 'lb_table')],
-    [Markup.button.callback('🔥 Челленджи недели', 'lb_challenges')],
-    [Markup.button.callback('🏆 Мои достижения', 'lb_achievements')],
-    [Markup.button.callback('📈 Мой прогресс', 'lb_progress')],
-    [Markup.button.callback('❓ Как работает XP', 'lb_xp_info')],
-    [Markup.button.callback(`🔔 Уведомления рейтинга: ${notifStatus}`, 'lb_notifications')],
-    [Markup.button.callback('❌ Закрыть', 'close_message')]
-  ]);
-  if (editMsg) {
-    await ctx.editMessageText('🏆 <b>Рейтинг и достижения</b>\n\nВыберите раздел:', { parse_mode: 'HTML', ...keyboard });
-  } else {
-    await ctx.replyWithHTML('🏆 <b>Рейтинг и достижения</b>\n\nВыберите раздел:', keyboard);
-  }
+  // Сразу показываем рейтинг за неделю
+  await showLeaderboardResult(ctx, 7, 'sum');
   return { status: 'showing_leaderboard' };
-}
-
-async function showLeaderboardFilter(ctx) {
-  setState(ctx.from.id, { lb_step: 'filter' });
-  await ctx.editMessageText(
-    '🏆 <b>Лидерборд 2.0</b>\n\nВыберите тип курьеров:',
-    { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-      [Markup.button.callback('🚗 Авто', 'lb_filter_auto'), Markup.button.callback('🚶 Пешие', 'lb_filter_pedestrian')],
-      [Markup.button.callback('🏁 Все', 'lb_filter_all')],
-      [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
-    ]) }
-  );
 }
 
 async function showMyAchievements(ctx) {
   const telegramId = ctx.from.id;
-  const profile = getFullProfile(telegramId);
-  const unlocked = getUnlockedAchievements(telegramId);
-  const allAchievements = getAllAchievements();
-
-  let text = '🏆 <b>Мои достижения</b>\n\n';
-  if (unlocked.length === 0) {
-    text += 'Пока нет разблокированных достижений.\nПродолжайте работать — они появятся!\n\n';
-  } else {
-    text += `<b>Разблокировано: ${unlocked.length} / ${allAchievements.length}</b>\n\n`;
-    for (const ach of unlocked.slice(0, 15)) {
-      text += `✅ ${ach.name} — ${ach.desc} (+${ach.reward} XP)\n`;
-    }
-    if (unlocked.length > 15) {
-      text += `\n... и ещё ${unlocked.length - 15} достижений.`;
-    }
-    text += '\n';
-  }
-
-  text += '\n<i>Достижения разблокируются автоматически при выполнении условий.</i>';
-
+  const text = formatAchievementsWithProgress(telegramId);
   await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
     [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
   ]) });
@@ -2773,13 +2571,13 @@ async function showMyProgress(ctx) {
   const profile = getFullProfile(telegramId);
   const xp = getTotalXp(telegramId);
   const rankInfo = formatRankInfo(telegramId, profile.courierType);
-  const streak = getStreak(telegramId);
+  const streakInfo = formatStreakInfo(telegramId);
 
   let text = '📈 <b>Мой прогресс</b>\n\n';
   text += `👤 <b>${esc(profile.fio || 'Курьер')}</b>\n`;
   text += `🚗 Тип: ${profile.courierType === 'pedestrian' ? '🚶 Пеший' : '🚗 Авто'}\n\n`;
   text += `⭐ ${rankInfo}\n\n`;
-  text += `🔥 Стрик: ${streak.currentStreak} смен (рекорд: ${streak.maxStreak})\n`;
+  text += `${streakInfo}\n`;
   text += `💰 Всего XP: ${xp.toLocaleString('ru-RU')}\n`;
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
@@ -2828,6 +2626,7 @@ async function showNotificationSettings(ctx) {
       [toggle('workplaceRecord', 'Рекорд точки')],
       [toggle('dailyLeader', 'Лидер дня / сброс')],
       [toggle('top3Change', 'Изменение топ-3')],
+      [toggle('challengeCompleted', 'Выполнение челленджа')],
       [Markup.button.callback('⬅️ Назад к рейтингу', 'lb_back_menu')]
     ]) }
   );
@@ -2845,7 +2644,12 @@ async function showWeeklyChallenges(ctx) {
   } else {
     for (const ch of challenges) {
       const status = ch.completed ? '✅ Выполнено' : `⏳ ${ch.current} / ${ch.target}`;
-      text += `• <b>${ch.name}</b>\n  ${ch.desc}\n  Награда: <b>${ch.reward} XP</b> — ${status}\n\n`;
+      let progressLine = '';
+      if (!ch.completed) {
+        const bar = formatProgressBar(ch.current, ch.target);
+        progressLine = `\n  ${bar}`;
+      }
+      text += `• <b>${ch.name}</b>\n  ${ch.desc}${progressLine}\n  Награда: <b>${ch.reward} XP</b> — ${status}\n\n`;
     }
   }
   text += '<i>Челленджи обновляются каждый понедельник.</i>';
@@ -2855,78 +2659,50 @@ async function showWeeklyChallenges(ctx) {
   ]) });
 }
 
-async function showLeaderboardWorkplace(ctx, filter) {
-  setState(ctx.from.id, { lb_step: 'workplace', lb_filter: filter });
-  const wpButtons = WORKPLACES.map((wp) => {
-    const key = WORKPLACE_KEY_MAP[wp] || wp;
-    return Markup.button.callback(`🏬 ${wp}`, `lb_wp_${key}`);
-  });
-  await ctx.editMessageText(
-    '🏆 <b>Лидерборд</b>\n\nВыберите магазин:',
-    { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-      wpButtons,
-      [Markup.button.callback('🏁 Все магазины', 'lb_wp_all')],
-      [Markup.button.callback('⬅️ Назад', 'lb_back_filter')]
-    ]) }
-  );
-}
-
-async function showLeaderboardPeriod(ctx, filter, workplace) {
-  setState(ctx.from.id, { lb_step: 'period', lb_filter: filter, lb_workplace: workplace });
-  await ctx.editMessageText(
-    '🏆 <b>Лидерборд</b>\n\nВыберите период:',
-    { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-      [
-        Markup.button.callback('📅 Неделя', `lb_p_7`),
-        Markup.button.callback('📅 Месяц', `lb_p_30`)
-      ],
-      [
-        Markup.button.callback('📅 Год', `lb_p_365`),
-        Markup.button.callback('📅 Всё время', `lb_p_0`)
-      ],
-      [Markup.button.callback('⬅️ Назад', 'lb_back_workplace')]
-    ]) }
-  );
-}
-
-async function showLeaderboardMode(ctx, filter, workplace, periodDays) {
-  setState(ctx.from.id, { lb_step: 'mode', lb_filter: filter, lb_workplace: workplace, lb_period: periodDays });
-  const periodLabel = periodDays === 0 ? 'за всё время' : periodDays === 7 ? 'за неделю' : periodDays === 30 ? 'за месяц' : periodDays === 365 ? 'за год' : `за ${periodDays} дней`;
-  await ctx.editMessageText(
-    `🏆 <b>Лидерборд</b>\n${esc(periodLabel)}\n\nВыберите режим:`,
-    { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-      [Markup.button.callback('📊 По сумме заказов', 'lb_mode_sum')],
-      [Markup.button.callback('🔥 Лучший день', 'lb_mode_max')],
-      [Markup.button.callback('⬅️ Назад', 'lb_back_period')]
-    ]) }
-  );
-}
-
-async function showLeaderboardResultV2(ctx) {
+async function showLeaderboardResult(ctx, periodDays = 7, mode = 'sum') {
   const telegramId = ctx.from.id;
-  const state = getState(telegramId);
-  const filter = state?.lb_filter || 'all';
-  const workplace = state?.lb_workplace || 'all';
-  const periodDays = state?.lb_period ?? 0;
-  const mode = state?.lb_mode || 'sum';
+  const profile = getFullProfile(telegramId);
+  const courierType = profile?.courierType || 'auto';
+  const workplace = profile?.workplace || 'ИМ Восток';
 
-  const showWorkplace = workplace === 'all';
-  const entries = calculateLeaderboard(mode, periodDays, workplace, filter);
+  const entries = calculateLeaderboard(mode, periodDays, workplace, courierType);
 
-  const wpLabels = { east: 'ИМ Восток', center: 'ИМ Центр', all: 'Все магазины' };
-  const wpLabel = wpLabels[workplace] || workplace;
-  const filterLabel = filter === 'auto' ? '🚗 Авто' : filter === 'pedestrian' ? '🚶 Пешие' : '🏁 Все';
-  const periodLabel = periodDays === 0 ? 'всё время' : periodDays === 7 ? 'неделя' : periodDays === 30 ? 'месяц' : periodDays === 365 ? 'год' : `${periodDays} дней`;
-  const modeLabel = mode === 'max' ? '🔥 Лучший день' : '📊 По сумме';
+  const typeLabel = courierType === 'pedestrian' ? 'Пеших курьеров' : 'Авто-курьеров';
+  const periodLabel = periodDays === 0 ? 'Всё время' : periodDays === 1 ? 'День' : 'Неделя';
+  const modeLabel = mode === 'max' ? '🔥 Лучший день' : '';
 
-  const lines = [`🏆 <b>Рейтинг</b>\n${filterLabel} | ${esc(wpLabel)} | ${esc(periodLabel)} | ${modeLabel}\n`];
-  lines.push(formatLeaderboard(entries, telegramId, showWorkplace));
-  lines.push(`\n⬅️ <i>Нажмите «Назад» или «В меню».</i>`);
+  const lines = [`🏆 <b>Рейтинг ${typeLabel}</b>\n🏬 ${esc(workplace)} | 📅 ${periodLabel}${modeLabel ? ' | ' + modeLabel : ''}\n`];
+  lines.push(formatLeaderboard(entries, telegramId, false));
+  if (entries.length === 0) {
+    lines.push('\n<i>Пока нет данных за выбранный период.</i>');
+  }
 
-  await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-    [Markup.button.callback('⬅️ Назад', 'lb_back_mode')],
-    [Markup.button.callback('❌ Закрыть', 'close_message')]
-  ]) });
+  const buttons = [];
+  const dayBtn = Markup.button.callback(periodDays === 1 ? '✅ День' : '📅 День', 'lb_p_day');
+  const weekBtn = Markup.button.callback(periodDays === 7 ? '✅ Неделя' : '📅 Неделя', 'lb_p_week');
+  const allBtn = Markup.button.callback(periodDays === 0 ? '✅ Всё время' : '📅 Всё время', 'lb_p_alltime');
+  buttons.push([dayBtn, weekBtn, allBtn]);
+
+  if (periodDays === 0) {
+    const maxBtn = Markup.button.callback(mode === 'max' ? '✅ Лучший день' : '🔥 Лучший день', 'lb_alltime_max');
+    const sumBtn = Markup.button.callback(mode === 'sum' ? '✅ По сумме' : '📊 По сумме', 'lb_p_alltime');
+    buttons.push([sumBtn, maxBtn]);
+  }
+
+  buttons.push([
+    Markup.button.callback('🔥 Челленджи', 'lb_challenges'),
+    Markup.button.callback('🏆 Достижения', 'lb_achievements')
+  ]);
+  buttons.push([
+    Markup.button.callback('⬅️ Назад', 'lb_back_menu'),
+    Markup.button.callback('❌ Закрыть', 'close_message')
+  ]);
+
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  } else {
+    await ctx.replyWithHTML(lines.join('\n'), Markup.inlineKeyboard(buttons));
+  }
 }
 
 async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, ordersCount, oldOrders = 0) {
@@ -3047,7 +2823,8 @@ function getNotificationSettings(telegramId) {
     overtake: true,
     workplaceRecord: true,
     dailyLeader: true,
-    top3Change: true
+    top3Change: true,
+    challengeCompleted: true
   };
   const record = getUserField(telegramId, 'notificationSettings');
   if (!record) return defaults;
@@ -3441,7 +3218,7 @@ const _workplaceKeys = Object.values(WORKPLACE_KEY_MAP).concat(['all']).join('|'
 
 bot.action('lb_table', async (ctx) => {
   await ctx.answerCbQuery();
-  await showLeaderboardFilter(ctx);
+  await showLeaderboardResult(ctx, 7, 'sum');
 });
 
 bot.action('lb_challenges', async (ctx) => {
@@ -3466,7 +3243,7 @@ bot.action('lb_xp_info', async (ctx) => {
 
 bot.action('lb_back_menu', async (ctx) => {
   await ctx.answerCbQuery();
-  await showLeaderboardMenu(ctx, true);
+  await showLeaderboardMenu(ctx);
 });
 
 bot.action('lb_notifications', async (ctx) => {
@@ -3474,7 +3251,7 @@ bot.action('lb_notifications', async (ctx) => {
   await showNotificationSettings(ctx);
 });
 
-const NOTIFICATION_KEYS = ['personalRecord', 'overtake', 'workplaceRecord', 'dailyLeader', 'top3Change'];
+const NOTIFICATION_KEYS = ['personalRecord', 'overtake', 'workplaceRecord', 'dailyLeader', 'top3Change', 'challengeCompleted'];
 for (const key of NOTIFICATION_KEYS) {
     bot.action(`notif_${key}`, async (ctx) => {
       await ctx.answerCbQuery();
@@ -3486,84 +3263,24 @@ for (const key of NOTIFICATION_KEYS) {
     });
   }
 
-bot.action('lb_filter_auto', async (ctx) => {
+bot.action('lb_p_day', async (ctx) => {
   await ctx.answerCbQuery();
-  await showLeaderboardWorkplace(ctx, 'auto');
+  await showLeaderboardResult(ctx, 1, 'sum');
 });
 
-bot.action('lb_filter_pedestrian', async (ctx) => {
+bot.action('lb_p_week', async (ctx) => {
   await ctx.answerCbQuery();
-  await showLeaderboardWorkplace(ctx, 'pedestrian');
+  await showLeaderboardResult(ctx, 7, 'sum');
 });
 
-bot.action('lb_filter_all', async (ctx) => {
+bot.action('lb_p_alltime', async (ctx) => {
   await ctx.answerCbQuery();
-  await showLeaderboardWorkplace(ctx, 'all');
+  await showLeaderboardResult(ctx, 0, 'sum');
 });
 
-bot.action(new RegExp(`^lb_wp_(${_workplaceKeys})$`), async (ctx) => {
+bot.action('lb_alltime_max', async (ctx) => {
   await ctx.answerCbQuery();
-  const workplace = ctx.match[1];
-  const state = getState(ctx.from.id);
-  const filter = state?.lb_filter || 'all';
-  await showLeaderboardPeriod(ctx, filter, workplace);
-});
-
-bot.action('lb_wp_all', async (ctx) => {
-  await ctx.answerCbQuery();
-  const state = getState(ctx.from.id);
-  const filter = state?.lb_filter || 'all';
-  await showLeaderboardPeriod(ctx, filter, 'all');
-});
-
-bot.action(/^lb_p_(\d+)$/, async (ctx) => {
-  await ctx.answerCbQuery();
-  const days = Number(ctx.match[1]);
-  const state = getState(ctx.from.id);
-  const filter = state?.lb_filter || 'all';
-  const workplace = state?.lb_workplace || 'all';
-  await showLeaderboardMode(ctx, filter, workplace, days);
-});
-
-bot.action('lb_mode_sum', async (ctx) => {
-  await ctx.answerCbQuery();
-  setState(ctx.from.id, { ...getState(ctx.from.id), lb_mode: 'sum' });
-  await showLeaderboardResultV2(ctx);
-});
-
-bot.action('lb_mode_max', async (ctx) => {
-  await ctx.answerCbQuery();
-  setState(ctx.from.id, { ...getState(ctx.from.id), lb_mode: 'max' });
-  await showLeaderboardResultV2(ctx);
-});
-
-bot.action('lb_back_filter', async (ctx) => {
-  await ctx.answerCbQuery();
-  await showLeaderboardMenu(ctx, true);
-});
-
-bot.action('lb_back_workplace', async (ctx) => {
-  await ctx.answerCbQuery();
-  const state = getState(ctx.from.id);
-  const filter = state?.lb_filter || 'all';
-  await showLeaderboardWorkplace(ctx, filter);
-});
-
-bot.action('lb_back_period', async (ctx) => {
-  await ctx.answerCbQuery();
-  const state = getState(ctx.from.id);
-  const filter = state?.lb_filter || 'all';
-  const workplace = state?.lb_workplace || 'all';
-  await showLeaderboardPeriod(ctx, filter, workplace);
-});
-
-bot.action('lb_back_mode', async (ctx) => {
-  await ctx.answerCbQuery();
-  const state = getState(ctx.from.id);
-  const filter = state?.lb_filter || 'all';
-  const workplace = state?.lb_workplace || 'all';
-  const periodDays = state?.lb_period ?? 0;
-  await showLeaderboardMode(ctx, filter, workplace, periodDays);
+  await showLeaderboardResult(ctx, 0, 'max');
 });
 
 
@@ -3640,9 +3357,15 @@ async function finalizeReconciliationPostSend(ctx, state, telegramId, totalOrder
   // Всегда начисляем XP и прогресс челленджа за отправку сверки
   try {
     addXp(telegramId, getXpForAction('reconciliation'), 'Сверка');
-    updateChallengeProgress(telegramId, 'reconciliations');
+    const recChallengeCompleted = updateChallengeProgress(telegramId, 'reconciliations');
+    for (const ch of recChallengeCompleted) {
+      addXp(telegramId, ch.reward, `Челлендж: ${ch.name}`);
+      if (getNotificationSettings(telegramId).challengeCompleted) {
+        notifyChallengeCompleted(ctx, telegramId, ch);
+      }
+    }
   } catch (lbErr) {
-    console.error('reconciliation xp error', lbErr.message || lbErr);
+    console.error('reconciliation xp/challenge error', lbErr.message || lbErr);
   }
 
   if (totalOrders && totalOrders > 0 && state.fio && state.workplace) {
@@ -4229,11 +3952,10 @@ async function handleManualMileageInput(ctx, state, text) {
 let _shutdownInProgress = false;
 
 function flushAllSync() {
-  try { flushStateNow(); } catch (e) { console.error('flushStateNow failed', e.message); }
   try { flushFunReactionsNow(); } catch (e) { console.error('flushFunReactionsNow failed', e.message); }
 }
 
-function shutdown(signal) {
+async function shutdown(signal) {
   if (_shutdownInProgress) return;
   _shutdownInProgress = true;
 
@@ -4244,7 +3966,7 @@ function shutdown(signal) {
   flushAllSync();
 
   try {
-    makeBackupSync('pre-shutdown');
+    await makeBackup('pre-shutdown');
   } catch (e) {
     console.error('pre-shutdown backup failed', e.message);
   }
@@ -4255,10 +3977,15 @@ function shutdown(signal) {
   }
 
   try {
-    bot.stop(signal);
+    await bot.stop(signal);
   } catch (e) {
     console.error('bot.stop failed', e.message);
   }
+
+  setTimeout(() => {
+    console.log('forced exit after shutdown timeout');
+    process.exit(1);
+  }, 5000);
 }
 
 bot.catch(async (error, ctx) => {
@@ -4273,13 +4000,11 @@ bot.catch(async (error, ctx) => {
 process.on('uncaughtException', (error) => {
   console.error('uncaught exception:', error);
   shutdown('uncaughtException');
-  process.exit(1);
 });
 
 process.on('unhandledRejection', (reason) => {
   console.error('unhandled rejection:', reason);
   shutdown('unhandledRejection');
-  process.exit(1);
 });
 
 const LAUNCH_RETRIES = LIMITS.LAUNCH_RETRIES;
@@ -4347,7 +4072,7 @@ const services = {
   // common business
   getPendingCash, setCashConfirmationStatus, clearPendingCashAndReminders,
   logCashAction, deleteUser,
-  addXp, getXpForAction, updateChallengeProgress,
+  addXp, getXpForAction, updateChallengeProgress, getNotificationSettings,
   saveOcrDebugImage, updateOcrDebugStatus,
   recordLeaderboardOrders, getLbDayOrders, getLbTodayKey,
   getFullProfile,
@@ -4358,9 +4083,9 @@ const services = {
   // leaderboard & achievements
   calculateLeaderboard, formatLeaderboard, getDailyTop3, findOvertakenCouriers,
   checkNotifications: checkLeaderboardNotifications, getWorkplaceRecord, setWorkplaceRecord,
-  getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements,
-  updateStreak, getStreak, getStreakBonus,
-  getChallenges, generateWeeklyChallenges,
+  getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements, formatAchievementsWithProgress,
+  updateStreak, getStreak, getStreakBonusesDescription, formatStreakInfo,
+  getChallenges, generateWeeklyChallenges, cleanupOldChallenges, notifyChallengeCompleted, formatProgressBar,
   // sheets & ocr
   readCell, updateCell, flushSheetUpdates,
   db, checkpoint, saveThread, findThreadByGroupMessage, findThreadById, saveForwardedMessage, findForwardedMessage, cleanupOldThreads,
@@ -4375,7 +4100,7 @@ const services = {
   updateCourierTime, updateMileage,
   // misc
   openShopNotify,
-  showLeaderboardFilter, showWeeklyChallenges, showMyAchievements,
+  showLeaderboardMenu, showWeeklyChallenges, showMyAchievements,
   showMyProgress, showXpInfo, showNotificationSettings, sendCommandsList
 };
 
@@ -4400,6 +4125,7 @@ async function startBot(retry = 0) {
     if (removedMonths > 0) {
       console.log(`cleaned up ${removedMonths} old month(s) from storage`);
     }
+    cleanupOldChallenges();
 
     // Автоматическая генерация челленджей для всех курьеров
     try {
@@ -4473,26 +4199,6 @@ async function startBot(retry = 0) {
 }
 
 startBot();
-
-function makeBackupSync(reason = 'auto') {
-  const now = new Date();
-  const ts = now.toISOString().replace(/[.:]/g, '-');
-  if (!fs.existsSync(BACKUP_DIR)) {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
-  }
-  try {
-    checkpoint();
-  } catch (_) {}
-  for (const filename of BACKUP_FILES) {
-    const src = path.join(__dirname, filename);
-    const dst = path.join(BACKUP_DIR, `${filename.replace('.json', '')}-${reason}-${ts}.json`);
-    try {
-      if (fs.existsSync(src)) {
-        fs.copyFileSync(src, dst);
-      }
-    } catch (_) {}
-  }
-}
 
 process.once('SIGINT', () => shutdown('SIGINT'));
 process.once('SIGTERM', () => shutdown('SIGTERM'));

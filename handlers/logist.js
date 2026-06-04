@@ -5,7 +5,7 @@ module.exports = function setupLogist(bot, services) {
     getPendingCash, getUserField, getUserRole,
     logCashAction, clearPendingCashAndReminders,
     setCashConfirmationStatus,
-    addXp, getXpForAction, updateChallengeProgress,
+    addXp, getXpForAction, updateChallengeProgress, notifyChallengeCompleted, getNotificationSettings,
     checkMilestoneAchievements, getAchievementStats, notifyAchievements,
     esc, formatMoneyRu, getMenuForRole,
     Markup, sendFunReaction
@@ -139,11 +139,17 @@ module.exports = function setupLogist(bot, services) {
     });
 
     addXp(reminder.courierId, getXpForAction('cashSubmit'), 'Сдача наличных (подтверждено)');
-    updateChallengeProgress(reminder.courierId, 'cashSubmits');
+    const cashChallengeCompleted1 = updateChallengeProgress(reminder.courierId, 'cashSubmits');
+    for (const ch of cashChallengeCompleted1) {
+      addXp(reminder.courierId, ch.reward, `Челлендж: ${ch.name}`);
+      if (getNotificationSettings(reminder.courierId).challengeCompleted) {
+        notifyChallengeCompleted(ctx, reminder.courierId, ch);
+      }
+    }
     try {
       const stats = getAchievementStats(reminder.courierId);
       const unlocked = checkMilestoneAchievements(reminder.courierId, stats);
-      if (unlocked.length > 0) notifyAchievements(ctx, reminder.courierId, unlocked);
+      if (unlocked.length > 0) await notifyAchievements(ctx, reminder.courierId, unlocked);
     } catch (_) {}
 
     deleteReminder(shortId);
@@ -242,11 +248,17 @@ module.exports = function setupLogist(bot, services) {
     clearPendingCashAndReminders(courierId);
 
     addXp(courierId, getXpForAction('cashSubmit'), 'Сдача наличных (self-clearance)');
-    updateChallengeProgress(courierId, 'cashSubmits');
+    const cashChallengeCompleted2 = updateChallengeProgress(courierId, 'cashSubmits');
+    for (const ch of cashChallengeCompleted2) {
+      addXp(courierId, ch.reward, `Челлендж: ${ch.name}`);
+      if (getNotificationSettings(courierId).challengeCompleted) {
+        notifyChallengeCompleted(ctx, courierId, ch);
+      }
+    }
     try {
       const stats = getAchievementStats(courierId);
       const unlocked = checkMilestoneAchievements(courierId, stats);
-      if (unlocked.length > 0) notifyAchievements(ctx, courierId, unlocked);
+      if (unlocked.length > 0) await notifyAchievements(ctx, courierId, unlocked);
     } catch (_) {}
 
     logCashAction({

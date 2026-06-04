@@ -1,5 +1,29 @@
 const db = require('../db');
 
+function _formatLocalDate(date, timezone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+  const v = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  return `${v.year}-${v.month}-${v.day}`;
+}
+
+function _daysBetween(dateA, dateB) {
+  const a = new Date(dateA + 'T00:00:00');
+  const b = new Date(dateB + 'T00:00:00');
+  return Math.round((b - a) / (1000 * 60 * 60 * 24));
+}
+
+const STREAK_BONUSES = [
+  { threshold: 10, xp: 50 },
+  { threshold: 25, xp: 100 },
+  { threshold: 50, xp: 200 },
+  { threshold: 100, xp: 500 }
+];
+
 function getStreak(telegramId) {
   const row = db.prepare('SELECT currentStreak, maxStreak, lastShiftDate FROM streaks WHERE telegramId = ?').get(String(telegramId));
   if (!row) {
@@ -16,19 +40,22 @@ function updateStreak(telegramId, shiftDateStr) {
   const record = getStreak(telegramId);
   let current = record.currentStreak;
   let max = record.maxStreak;
+  const oldCurrent = current;
+  const oldMax = max;
 
   if (record.lastShiftDate) {
-    const last = new Date(record.lastShiftDate);
-    const today = new Date(shiftDateStr);
-    const diffMs = today - last;
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffDays = _daysBetween(record.lastShiftDate, shiftDateStr);
 
     if (diffDays === 0) {
-      // та же дата — не увеличиваем стрик
-    } else if (diffDays <= 2) {
-      current += 1;
+      // Та же дата — стрик не меняем
+    } else if (diffDays < 0) {
+      // Дата в прошлом (маловероятно, но защита) — ничего не делаем
+      console.warn('streak: shift date is in the past', { telegramId, lastDate: record.lastShiftDate, shiftDate: shiftDateStr });
     } else {
-      current = 1;
+      // За каждый пропущенный день -1, потом +1 за текущий день
+      const missedDays = diffDays - 1;
+      current = Math.max(0, current - missedDays);
+      current += 1;
     }
   } else {
     current = 1;
@@ -43,18 +70,49 @@ function updateStreak(telegramId, shiftDateStr) {
   );
   stmt.run(String(telegramId), current, max, shiftDateStr);
 
-  return { currentStreak: current, maxStreak: max, lastShiftDate: shiftDateStr };
+  // Вычисляем бонусы XP за пороги
+  const bonuses = [];
+  for (const { threshold, xp } of STREAK_BONUSES) {
+    if (current >= threshold && oldCurrent < threshold && oldMax < threshold) {
+      bonuses.push({ threshold, xp });
+    }
+  }
+
+  return {
+    currentStreak: current,
+    maxStreak: max,
+    lastShiftDate: shiftDateStr,
+    bonuses
+  };
 }
 
-function getStreakBonus(currentStreak) {
-  if (currentStreak > 0 && currentStreak % 5 === 0) {
-    return 50;
+function getStreakBonusesDescription(bonuses) {
+  if (!bonuses || bonuses.length === 0) return '';
+  const lines = bonuses.map(b => `🔥 Стрик ${b.threshold}! +${b.xp} XP`);
+  return '\n' + lines.join('\n');
+}
+
+function formatStreakInfo(telegramId) {
+  const streak = getStreak(telegramId);
+  if (streak.currentStreak === 0) {
+    return '🔥 Стрик: нет активного (рекорд: ' + streak.maxStreak + ')';
   }
-  return 0;
+  let text = `🔥 Стрик: <b>${streak.currentStreak}</b> смен (рекорд: ${streak.maxStreak})`;
+  // Показываем ближайший бонус
+  for (const { threshold, xp } of STREAK_BONUSES) {
+    if (streak.currentStreak < threshold) {
+      const remaining = threshold - streak.currentStreak;
+      text += `\n💪 Ещё ${remaining} смен до +${xp} XP`;
+      break;
+    }
+  }
+  return text;
 }
 
 module.exports = {
   getStreak,
   updateStreak,
-  getStreakBonus
+  getStreakBonusesDescription,
+  formatStreakInfo,
+  STREAK_BONUSES
 };

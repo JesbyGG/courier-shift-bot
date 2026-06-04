@@ -17,15 +17,8 @@ const ACHIEVEMENTS = [
   { id: 'shifts_200', name: '⏱ Вахта', desc: '200 смен', condition: { type: 'shifts', value: 200 }, reward: 1000 },
   { id: 'shifts_500', name: '⏱ Ветеран', desc: '500 смен', condition: { type: 'shifts', value: 500 }, reward: 3000 },
 
-  // Streak
-  { id: 'streak_3', name: '🔥 Воин', desc: '3 смены подряд', condition: { type: 'streak', value: 3 }, reward: 150 },
-  { id: 'streak_7', name: '🔥 Железный', desc: '7 смен подряд', condition: { type: 'streak', value: 7 }, reward: 500 },
-  { id: 'streak_14', name: '🔥 Несгибаемый', desc: '14 смен подряд', condition: { type: 'streak', value: 14 }, reward: 1500 },
-  { id: 'streak_30', name: '🔥 Бог стрика', desc: '30 смен подряд', condition: { type: 'streak', value: 30 }, reward: 5000 },
-
   // Performance
   { id: 'top1_day', name: '🥇 День в шляпе', desc: 'Топ-1 дня', condition: { type: 'top1_day' }, reward: 500 },
-  { id: 'rank_jump', name: '📈 Рывок', desc: 'Подняться на 3+ ранга за неделю', condition: { type: 'rank_jump' }, reward: 1000 },
   { id: 'orders_25', name: '⚡ Рекордсмен', desc: '25+ заказов за смену', condition: { type: 'orders_single', value: 25 }, reward: 500 },
 
   // Special
@@ -65,6 +58,166 @@ function unlockAchievement(telegramId, achievementId) {
   const stmt = db.prepare('INSERT INTO user_achievements (telegramId, achievementId, unlockedAt) VALUES (?, ?, ?)');
   stmt.run(String(telegramId), achievementId, new Date().toISOString());
   return ach;
+}
+
+function getAchievementStats(telegramId) {
+  const allTimeOrders = db.prepare('SELECT COALESCE(SUM(orders), 0) as total FROM daily_orders WHERE telegramId = ?').get(String(telegramId));
+  const streakRow = db.prepare('SELECT currentStreak, maxStreak FROM streaks WHERE telegramId = ?').get(String(telegramId));
+  const userRow = db.prepare('SELECT data FROM users WHERE telegramId = ?').get(String(telegramId));
+  let totalShifts = 0;
+  let totalCash = 0;
+  let earlyStarts = 0;
+  let lateFinishes = 0;
+  let courierType = 'auto';
+  let totalPhotos = 0;
+  let daysWorked = 0;
+  let shiftsWithoutIssues = 0;
+  let perfectStreak = 0;
+  let earlyBird = false;
+  let nightOwl = false;
+  let perfectShift = false;
+  let top1Day = false;
+  let rankJump = false;
+  let totalSteps = 0;
+
+  if (userRow) {
+    try {
+      const ud = JSON.parse(userRow.data);
+      totalShifts = ud.shiftCount || 0;
+      totalCash = ud.totalCashRecorded || 0;
+      earlyStarts = ud.earlyStarts || 0;
+      lateFinishes = ud.lateFinishes || 0;
+      courierType = ud.courierType || 'auto';
+      totalPhotos = ud.totalPhotos || 0;
+      daysWorked = ud.daysWorked || 0;
+      shiftsWithoutIssues = ud.shiftsWithoutIssues || 0;
+      perfectStreak = ud.perfectStreak || 0;
+      earlyBird = ud.earlyBird || false;
+      nightOwl = ud.nightOwl || false;
+      perfectShift = ud.perfectShift || false;
+      top1Day = ud.top1Day || false;
+      rankJump = ud.rankJump || false;
+      totalSteps = ud.totalSteps || 0;
+    } catch (_) {}
+  }
+
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayRow = db.prepare('SELECT orders FROM daily_orders WHERE telegramId = ? AND date = ?').get(String(telegramId), todayKey);
+  const singleDayOrders = todayRow ? Number(todayRow.orders) || 0 : 0;
+
+  return {
+    totalOrders: allTimeOrders ? Number(allTimeOrders.total) || 0 : 0,
+    totalCash,
+    totalShifts,
+    currentStreak: streakRow ? Number(streakRow.currentStreak) || 0 : 0,
+    maxStreak: streakRow ? Number(streakRow.maxStreak) || 0 : 0,
+    courierType,
+    earlyStarts,
+    lateFinishes,
+    singleDayOrders,
+    totalPhotos,
+    daysWorked,
+    shiftsWithoutIssues,
+    perfectStreak,
+    earlyBird,
+    nightOwl,
+    perfectShift,
+    top1Day,
+    rankJump,
+    totalSteps
+  };
+}
+
+function formatProgressBar(current, target) {
+  if (!Number.isFinite(target) || target <= 0) return '';
+  const pct = Math.min(1, Math.max(0, current / target));
+  const filled = Math.round(pct * 10);
+  const empty = 10 - filled;
+  return '█'.repeat(filled) + '░'.repeat(empty);
+}
+
+function getConditionProgress(stats, condition) {
+  const type = condition.type;
+  const value = condition.value || 0;
+  let current = 0;
+  let isBoolean = false;
+
+  switch (type) {
+    case 'orders': current = stats.totalOrders; break;
+    case 'cash': current = stats.totalCash; break;
+    case 'shifts': current = stats.totalShifts; break;
+    case 'photos': current = stats.totalPhotos; break;
+    case 'steps': current = stats.totalSteps; break;
+    case 'streak': current = stats.currentStreak; break;
+    case 'early_start': current = stats.earlyStarts; break;
+    case 'late_finish': current = stats.lateFinishes; break;
+    case 'no_issues': current = stats.shiftsWithoutIssues; break;
+    case 'perfect_streak': current = stats.perfectStreak; break;
+    case 'orders_single': current = stats.singleDayOrders; break;
+    case 'month_no_skip': current = stats.daysWorked; break;
+    case 'top1_day': current = stats.top1Day ? 1 : 0; isBoolean = true; break;
+    case 'early_bird': current = stats.earlyBird ? 1 : 0; isBoolean = true; break;
+    case 'night_owl': current = stats.nightOwl ? 1 : 0; isBoolean = true; break;
+    case 'perfect_shift': current = stats.perfectShift ? 1 : 0; isBoolean = true; break;
+    case 'rank_jump': current = stats.rankJump ? 1 : 0; isBoolean = true; break;
+    default: current = 0;
+  }
+
+  return { current, target: value, isBoolean };
+}
+
+function formatAchievementsWithProgress(telegramId) {
+  const stats = getAchievementStats(telegramId);
+  const unlocked = getUnlockedAchievements(telegramId);
+  const unlockedIds = new Set(unlocked.map(a => a.id));
+
+  const categories = {
+    orders: { emoji: '🛒', label: 'Заказы', achievements: [] },
+    cash: { emoji: '💰', label: 'Выручка', achievements: [] },
+    shifts: { emoji: '⏱', label: 'Смены', achievements: [] },
+    special: { emoji: '🏆', label: 'Особые', achievements: [] }
+  };
+
+  for (const ach of ACHIEVEMENTS) {
+    const isDone = unlockedIds.has(ach.id);
+    const isBlocked = ach.condition.courierType && ach.condition.courierType !== stats.courierType;
+    const progress = getConditionProgress(stats, ach.condition);
+
+    let statusIcon = '⏳';
+    if (isDone) statusIcon = '✅';
+    else if (isBlocked) statusIcon = '🔒';
+    else if (ach.condition.type === 'top1_day' || ach.condition.type === 'early_bird' || ach.condition.type === 'night_owl' || ach.condition.type === 'perfect_shift' || ach.condition.type === 'rank_jump') {
+      statusIcon = '⏳';
+    }
+
+    let progressLine = '';
+    if (!isDone && !isBlocked && !progress.isBoolean && progress.target > 0) {
+      const bar = formatProgressBar(progress.current, progress.target);
+      progressLine = `\n   ${bar} ${progress.current.toLocaleString('ru-RU')}/${progress.target.toLocaleString('ru-RU')}`;
+    }
+
+    const line = `${statusIcon} <b>${ach.name}</b> — ${ach.desc}${ach.reward > 0 ? ` (+${ach.reward} XP)` : ''}${progressLine}`;
+
+    // Определяем категорию
+    const type = ach.condition.type;
+    if (type === 'orders' || type === 'orders_single') categories.orders.achievements.push(line);
+    else if (type === 'cash') categories.cash.achievements.push(line);
+    else if (type === 'shifts' || type === 'streak' || type === 'early_start' || type === 'late_finish' || type === 'no_issues' || type === 'perfect_streak' || type === 'month_no_skip') categories.shifts.achievements.push(line);
+    else categories.special.achievements.push(line);
+  }
+
+  let text = '🏆 <b>Все достижения</b>\n';
+  text += `<i>Разблокировано: ${unlocked.length} / ${ACHIEVEMENTS.length}</i>\n\n`;
+
+  for (const key of ['orders', 'cash', 'shifts', 'special']) {
+    const cat = categories[key];
+    if (cat.achievements.length === 0) continue;
+    text += `${cat.emoji} <b>${cat.label}</b>\n`;
+    text += cat.achievements.join('\n') + '\n\n';
+  }
+
+  text += '<i>✅ — выполнено, ⏳ — в процессе, 🔒 — не для вашего типа курьера</i>';
+  return text;
 }
 
 function checkMilestoneAchievements(telegramId, stats) {
@@ -111,52 +264,18 @@ function checkMilestoneAchievements(telegramId, stats) {
   return unlocked;
 }
 
-function getAchievementStats(telegramId) {
-  const allTimeOrders = db.prepare('SELECT COALESCE(SUM(orders), 0) as total FROM daily_orders WHERE telegramId = ?').get(String(telegramId));
-  const streakRow = db.prepare('SELECT currentStreak, maxStreak FROM streaks WHERE telegramId = ?').get(String(telegramId));
-  const userRow = db.prepare('SELECT data FROM users WHERE telegramId = ?').get(String(telegramId));
-  let totalShifts = 0;
-  let totalCash = 0;
-  let earlyStarts = 0;
-  let lateFinishes = 0;
-  let courierType = 'auto';
-  if (userRow) {
-    try {
-      const ud = JSON.parse(userRow.data);
-      totalShifts = ud.shiftCount || 0;
-      totalCash = ud.totalCashRecorded || 0;
-      earlyStarts = ud.earlyStarts || 0;
-      lateFinishes = ud.lateFinishes || 0;
-      courierType = ud.courierType || 'auto';
-    } catch (_) {}
-  }
-
-  const todayKey = new Date().toISOString().slice(0, 10);
-  const todayRow = db.prepare('SELECT orders FROM daily_orders WHERE telegramId = ? AND date = ?').get(String(telegramId), todayKey);
-  const singleDayOrders = todayRow ? Number(todayRow.orders) || 0 : 0;
-
-  return {
-    totalOrders: allTimeOrders ? Number(allTimeOrders.total) || 0 : 0,
-    totalCash,
-    totalShifts,
-    currentStreak: streakRow ? Number(streakRow.currentStreak) || 0 : 0,
-    maxStreak: streakRow ? Number(streakRow.maxStreak) || 0 : 0,
-    courierType,
-    earlyStarts,
-    lateFinishes,
-    singleDayOrders
-  };
-}
-
-function notifyAchievements(ctx, telegramId, unlocked) {
+async function notifyAchievements(ctx, telegramId, unlocked) {
   if (!unlocked || unlocked.length === 0) return;
-  const sendMsg = ctx.sendMessage ? ctx.sendMessage.bind(ctx) : (id, msg) => {
-    const tg = ctx.telegram || ctx;
-    tg.sendMessage(id, msg, { parse_mode: 'HTML' }).catch(() => {});
+  const sendMsg = async (id, msg) => {
+    try {
+      await ctx.telegram.sendMessage(id, msg, { parse_mode: 'HTML' });
+    } catch (e) {
+      console.error('notifyAchievements send error', e.message);
+    }
   };
   for (const ach of unlocked) {
-    const msg = `🏆 Достижение разблокировано: ${ach.name}\n${ach.desc}${ach.reward > 0 ? `\n+${ach.reward} XP` : ''}`;
-    sendMsg(telegramId, msg);
+    const msg = `🏆 <b>Достижение разблокировано!</b>\n\n${ach.name}\n<i>${ach.desc}</i>${ach.reward > 0 ? `\n\n+${ach.reward} XP` : ''}`;
+    await sendMsg(telegramId, msg);
   }
 }
 
@@ -167,5 +286,7 @@ module.exports = {
   unlockAchievement,
   checkMilestoneAchievements,
   getAchievementStats,
-  notifyAchievements
+  notifyAchievements,
+  formatAchievementsWithProgress,
+  formatProgressBar
 };

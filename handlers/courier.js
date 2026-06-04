@@ -10,7 +10,7 @@ module.exports = function setupCourier(bot, services) {
     getUserField, getPendingCash, setCashConfirmationStatus,
     clearPendingCashAndReminders, logCashAction,
     deleteUser,
-    addXp, getXpForAction, updateChallengeProgress,
+    addXp, getXpForAction, updateChallengeProgress, notifyChallengeCompleted, getNotificationSettings,
     checkMilestoneAchievements, getAchievementStats, notifyAchievements,
     backToMainMenu,
     replaceTimeAction,
@@ -104,11 +104,17 @@ module.exports = function setupCourier(bot, services) {
       return;
     }
     addXp(ctx.from.id, getXpForAction('routeSheet'), 'Маршрутник');
-    updateChallengeProgress(ctx.from.id, 'routeSheets');
+    const routeChallengeCompleted = updateChallengeProgress(ctx.from.id, 'routeSheets');
+    for (const ch of routeChallengeCompleted) {
+      addXp(ctx.from.id, ch.reward, `Челлендж: ${ch.name}`);
+      if (getNotificationSettings(ctx.from.id).challengeCompleted) {
+        notifyChallengeCompleted(ctx, ctx.from.id, ch);
+      }
+    }
     try {
       const stats = getAchievementStats(ctx.from.id);
       const unlocked = checkMilestoneAchievements(ctx.from.id, stats);
-      if (unlocked.length > 0) notifyAchievements(ctx, ctx.from.id, unlocked);
+      if (unlocked.length > 0) await notifyAchievements(ctx, ctx.from.id, unlocked);
     } catch (_) {}
     await ctx.replyWithHTML('✅ Завершено. Спасибо.', courierMainMenu(ctx.from.id));
   });
@@ -137,11 +143,17 @@ module.exports = function setupCourier(bot, services) {
         workplace, amount, action: 'self_cleared'
       });
       addXp(telegramId, getXpForAction('cashSubmit'), 'Сдача наличных');
-      updateChallengeProgress(telegramId, 'cashSubmits');
+      const cashChallengeCompleted = updateChallengeProgress(telegramId, 'cashSubmits');
+      for (const ch of cashChallengeCompleted) {
+        addXp(telegramId, ch.reward, `Челлендж: ${ch.name}`);
+        if (getNotificationSettings(telegramId).challengeCompleted) {
+          notifyChallengeCompleted(ctx, telegramId, ch);
+        }
+      }
       try {
         const stats = getAchievementStats(telegramId);
         const unlocked = checkMilestoneAchievements(telegramId, stats);
-        if (unlocked.length > 0) notifyAchievements(ctx, telegramId, unlocked);
+        if (unlocked.length > 0) await notifyAchievements(ctx, telegramId, unlocked);
       } catch (_) {}
       try {
         await ctx.editMessageText(`✅ <b>${esc(courierFio)}</b>, сдача <code>${esc(formatted)}</code> ₽ подтверждена.`);

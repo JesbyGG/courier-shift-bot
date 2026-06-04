@@ -8,20 +8,35 @@ const CHALLENGE_POOL = {
     { id: 'shifts_5', name: '⏱ Трудяга', desc: '5 смен за неделю', target: 5, reward: 300, metric: 'shifts' }
   ],
   auto: [
-    { id: 'mile_5', name: '🚗 Одометр', desc: 'Записать пробег 5 раз за неделю', target: 5, reward: 100, metric: 'mileages' },
-    { id: 'eco', name: '🚗 Эконом', desc: 'Средний пробег ≤ 15 км/заказ (мин. 30 заказов)', target: 30, reward: 500, metric: 'ecoMileage' }
+    { id: 'mile_5', name: '🚗 Одометр', desc: 'Записать пробег 5 раз за неделю', target: 5, reward: 100, metric: 'mileages' }
   ],
   pedestrian: [
-    { id: 'sprint', name: '🚶 Спиринт', desc: '30+ заказов за 1 смену', target: 1, reward: 500, metric: 'sprintDay' },
-    { id: 'light_feet', name: '🚶 Лёгкие ноги', desc: '20+ заказов за смену 3 раза за неделю', target: 3, reward: 300, metric: 'highOrderDays' }
+    // Пешие курьеры получают только common челленджи (у них нет пробега)
   ]
 };
 
+function _formatLocalDate(date, timezone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+  const v = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  return `${v.year}-${v.month}-${v.day}`;
+}
+
 function getWeekId(date = new Date()) {
+  const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
   const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - d.getDay() + 1); // понедельник
-  return d.toISOString().split('T')[0];
+  // Переводим в локальную дату (без времени), чтобы понедельник всегда был понедельником
+  const localDateStr = _formatLocalDate(d, timezone);
+  const localDate = new Date(localDateStr + 'T00:00:00');
+  const dayOfWeek = localDate.getDay(); // 0 = Воскресенье, 1 = Понедельник
+  // Вычисляем понедельник текущей недели
+  const diff = localDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+  localDate.setDate(diff);
+  return localDate.toISOString().split('T')[0];
 }
 
 function generateWeeklyChallenges(telegramId, courierType) {
@@ -32,8 +47,6 @@ function generateWeeklyChallenges(telegramId, courierType) {
   const pool = [...CHALLENGE_POOL.common];
   if (courierType === 'auto') {
     pool.push(...CHALLENGE_POOL.auto);
-  } else {
-    pool.push(...CHALLENGE_POOL.pedestrian);
   }
 
   const shuffled = pool.sort(() => Math.random() - 0.5);
@@ -67,8 +80,16 @@ function getChallenges(telegramId) {
   });
 }
 
+function formatProgressBar(current, target) {
+  if (!Number.isFinite(target) || target <= 0) return '';
+  const pct = Math.min(1, Math.max(0, current / target));
+  const filled = Math.round(pct * 10);
+  const empty = 10 - filled;
+  return '█'.repeat(filled) + '░'.repeat(empty);
+}
+
 function findChallengeTemplate(type) {
-  const all = [...CHALLENGE_POOL.common, ...CHALLENGE_POOL.auto, ...CHALLENGE_POOL.pedestrian];
+  const all = [...CHALLENGE_POOL.common, ...CHALLENGE_POOL.auto];
   return all.find(c => c.id === type) || { id: type, name: type, desc: '', metric: type };
 }
 
@@ -92,9 +113,48 @@ function updateChallengeProgress(telegramId, metric, value = 1) {
   return completed;
 }
 
+function cleanupOldChallenges(retentionWeeks = 4) {
+  try {
+    const currentWeekId = getWeekId();
+    const currentDate = new Date(currentWeekId + 'T00:00:00');
+    const cutoffDate = new Date(currentDate);
+    cutoffDate.setDate(cutoffDate.getDate() - retentionWeeks * 7);
+    const cutoff = cutoffDate.toISOString().split('T')[0];
+
+    const result = db.prepare('DELETE FROM challenges WHERE weekId < ?').run(cutoff);
+    if (result.changes > 0) {
+      console.log(`cleaned up ${result.changes} old challenge record(s) older than ${cutoff}`);
+    }
+  } catch (e) {
+    console.error('cleanupOldChallenges error', e.message);
+  }
+}
+
+function notifyChallengeCompleted(ctx, telegramId, challenge) {
+  if (!challenge) return;
+  const sendMsg = async (id, msg) => {
+    try {
+      await ctx.telegram.sendMessage(id, msg, { parse_mode: 'HTML' });
+    } catch (e) {
+      console.error('notifyChallengeCompleted send error', e.message);
+    }
+  };
+  const msg = (
+    `🔥 <b>Челлендж выполнен!</b>\n\n` +
+    `${challenge.name}\n` +
+    `<i>${challenge.desc}</i>\n\n` +
+    `Награда: <b>+${challenge.reward} XP</b>\n\n` +
+    `💪 Так держать! Ты настоящий профи! 🚀`
+  );
+  sendMsg(telegramId, msg);
+}
+
 module.exports = {
   generateWeeklyChallenges,
   getChallenges,
   updateChallengeProgress,
-  getWeekId
+  getWeekId,
+  cleanupOldChallenges,
+  findChallengeTemplate,
+  notifyChallengeCompleted
 };

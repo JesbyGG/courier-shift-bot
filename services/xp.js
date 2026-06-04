@@ -98,13 +98,20 @@ function getRankProgress(xp, courierType) {
   };
 }
 
+function formatProgressBar(percent) {
+  const filled = Math.round((percent / 100) * 10);
+  const empty = 10 - filled;
+  return '█'.repeat(filled) + '░'.repeat(empty);
+}
+
 function formatRankInfo(telegramId, courierType) {
   const xp = getTotalXp(telegramId);
   const prog = getRankProgress(xp, courierType);
   if (!prog.next) {
     return `${prog.current.name} — ${xp.toLocaleString('ru-RU')} XP (максимальный ранг!)`;
   }
-  return `${prog.current.name} — ${xp.toLocaleString('ru-RU')} / ${prog.next.threshold.toLocaleString('ru-RU')} XP (${prog.percent}%)`;
+  const bar = formatProgressBar(prog.percent);
+  return `${prog.current.name} — ${xp.toLocaleString('ru-RU')} / ${prog.next.threshold.toLocaleString('ru-RU')} XP\n${bar} ${prog.percent}%`;
 }
 
 function getXpForAction(actionKey) {
