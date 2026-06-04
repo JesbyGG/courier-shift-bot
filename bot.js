@@ -71,7 +71,7 @@ const {
 } = require('./services/reconciliationOcr');
 const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, getDayOrders: getLbDayOrders, getWorkplaceRecord, setWorkplaceRecord, getDailyTop3, findOvertakenCouriers, getTodayKey: getLbTodayKey, _getAllRecords } = require('./services/leaderboard');
 const { addXp, getTotalXp, formatRankInfo, getXpForAction } = require('./services/xp');
-const { getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements } = require('./services/achievements');
+const { getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements, formatAchievementsWithProgress } = require('./services/achievements');
 const { updateStreak, getStreak, getStreakBonusesDescription, formatStreakInfo } = require('./services/streak');
 const { updateChallengeProgress, generateWeeklyChallenges, getChallenges, cleanupOldChallenges, notifyChallengeCompleted } = require('./services/challenges');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, getCourierColumnsByDay, roundMinutesToHalfHour, roundTimeToHalfHour, isEmptyCell, isScheduleMarker } = require('./utils');
