@@ -2661,6 +2661,10 @@ async function showWeeklyChallenges(ctx) {
 
 async function showLeaderboardResult(ctx, periodDays = 7, mode = 'sum') {
   const telegramId = ctx.from.id;
+  const state = getState(telegramId);
+  if (state?.lb_period === periodDays && state?.lb_mode === mode) return;
+  setState(telegramId, { ...state, lb_period: periodDays, lb_mode: mode });
+
   const profile = getFullProfile(telegramId);
   const courierType = profile?.courierType || 'auto';
   const workplace = profile?.workplace || 'ИМ Восток';
