@@ -156,5 +156,6 @@ module.exports = {
   getWeekId,
   cleanupOldChallenges,
   findChallengeTemplate,
-  notifyChallengeCompleted
+  notifyChallengeCompleted,
+  formatProgressBar
 };
