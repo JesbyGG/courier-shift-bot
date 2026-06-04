@@ -130,6 +130,25 @@ function cleanupOldChallenges(retentionWeeks = 4) {
   }
 }
 
+function cleanupInvalidChallenges() {
+  try {
+    const validIds = new Set([...CHALLENGE_POOL.common, ...CHALLENGE_POOL.auto].map(c => c.id));
+    const rows = db.prepare('SELECT DISTINCT type FROM challenges').all();
+    let removed = 0;
+    for (const row of rows) {
+      if (!validIds.has(row.type)) {
+        const result = db.prepare('DELETE FROM challenges WHERE type = ?').run(row.type);
+        removed += result.changes;
+      }
+    }
+    if (removed > 0) {
+      console.log(`cleaned up ${removed} invalid challenge record(s)`);
+    }
+  } catch (e) {
+    console.error('cleanupInvalidChallenges error', e.message);
+  }
+}
+
 function notifyChallengeCompleted(ctx, telegramId, challenge) {
   if (!challenge) return;
   const sendMsg = async (id, msg) => {
@@ -155,6 +174,7 @@ module.exports = {
   updateChallengeProgress,
   getWeekId,
   cleanupOldChallenges,
+  cleanupInvalidChallenges,
   findChallengeTemplate,
   notifyChallengeCompleted,
   formatProgressBar
