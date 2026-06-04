@@ -443,6 +443,38 @@ function markUserSeen(telegramId) {
   _setRecord(telegramId, record);
 }
 
+function _todayKey() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: process.env.APP_TIMEZONE || 'Europe/Moscow'
+  }).format(new Date());
+}
+
+function getShiftStatus(telegramId, type) {
+  const record = _getRecord(telegramId) || {};
+  const statusObj = record.shiftStatus || {};
+  if (statusObj.date !== _todayKey()) {
+    return 'none';
+  }
+  const val = statusObj[type];
+  return val === 'start' || val === 'end' || val === 'both' ? val : 'none';
+}
+
+function setShiftStatus(telegramId, type, status) {
+  const record = _getRecord(telegramId) || {};
+  if (!record.shiftStatus) record.shiftStatus = {};
+  record.shiftStatus.date = _todayKey();
+  record.shiftStatus[type] = status;
+  _setRecord(telegramId, record);
+}
+
+function clearShiftStatus(telegramId) {
+  const record = _getRecord(telegramId) || {};
+  if (record.shiftStatus) {
+    delete record.shiftStatus;
+    _setRecord(telegramId, record);
+  }
+}
+
 module.exports = {
   getUserField,
   setUserField,
@@ -473,6 +505,10 @@ module.exports = {
 
   markUserSeen,
   cleanupOldMonths,
+
+  getShiftStatus,
+  setShiftStatus,
+  clearShiftStatus,
 
   logCashAction,
   getCashHistory,

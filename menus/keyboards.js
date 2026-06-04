@@ -5,17 +5,50 @@ const {
   getUserRole,
   getActiveRemindersForCourier,
   getSelfClearanceRequest,
-  isSheetAccessUser
+  isSheetAccessUser,
+  getShiftStatus
 } = require('../services/storage');
 const { isAdminUser } = require('../services/auth');
+
+function getTimeButtonLabel(telegramId) {
+  const status = getShiftStatus(telegramId, 'time');
+  if (status === 'none') return BUTTONS.punchTimeStart;
+  if (status === 'start') return BUTTONS.punchTimeEnd;
+  return BUTTONS.punchTimeReplace;
+}
+
+function getMileageButtonLabel(telegramId) {
+  const status = getShiftStatus(telegramId, 'mileage');
+  if (status === 'none') return BUTTONS.mileageStart;
+  if (status === 'start') return BUTTONS.mileageEnd;
+  return BUTTONS.mileageReplace;
+}
+
+function isTimeButton(text) {
+  return [
+    BUTTONS.punchTime,
+    BUTTONS.punchTimeStart,
+    BUTTONS.punchTimeEnd,
+    BUTTONS.punchTimeReplace
+  ].includes(text);
+}
+
+function isMileageButton(text) {
+  return [
+    BUTTONS.mileage,
+    BUTTONS.mileageStart,
+    BUTTONS.mileageEnd,
+    BUTTONS.mileageReplace
+  ].includes(text);
+}
 
 function courierMainMenu(telegramId) {
   const courierType = getUserField(telegramId, 'courierType') || 'auto';
   const rows = [
-    [BUTTONS.punchTime]
+    [getTimeButtonLabel(telegramId)]
   ];
   if (courierType !== 'pedestrian') {
-    rows.push([BUTTONS.mileage]);
+    rows.push([getMileageButtonLabel(telegramId)]);
   }
   rows.push([BUTTONS.routeSheet, BUTTONS.reconciliation]);
   rows.push([BUTTONS.cashCheck, BUTTONS.issues]);
@@ -54,7 +87,7 @@ function logistMainMenu(telegramId) {
   const workplace = getUserField(telegramId, 'workplace');
   const features = WORKPLACE_FEATURES[workplace] || {};
   const rows = [
-    [BUTTONS.punchTime, BUTTONS.openShop]
+    [getTimeButtonLabel(telegramId), BUTTONS.openShop]
   ];
   if (features.cashCollection) {
     rows.push([BUTTONS.cashCollect, BUTTONS.cashHistory]);
@@ -239,6 +272,10 @@ module.exports = {
   getMenuForRole,
   getSettingsMenuForRole,
   getProfileMenuForRole,
+  getTimeButtonLabel,
+  getMileageButtonLabel,
+  isTimeButton,
+  isMileageButton,
   roleChoiceKeyboard,
   skipMileageKeyboard,
   mileageConfirmKeyboard,

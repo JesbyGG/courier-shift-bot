@@ -31,6 +31,8 @@ module.exports = function setupTextRouter(bot, services) {
     getSettingsMenuForRole,
     getProfileMenuForRole,
     roleChoiceKeyboard,
+    isTimeButton,
+    isMileageButton,
     sendHelp,
     getState,
     formatNoSheetMessage,
@@ -71,8 +73,8 @@ module.exports = function setupTextRouter(bot, services) {
     }},
 
     // 3) Кнопки главного меню
-    { button: BUTTONS.punchTime, legacy: ['Время смены', 'Внести время смены', '⏱ Время'], handler: (ctx) => punchTimeFlow(ctx) },
-    { button: BUTTONS.mileage, legacy: ['Внести пробег', '🚗 Пробег'], handler: async (ctx) => {
+    { match: isTimeButton, handler: (ctx) => punchTimeFlow(ctx) },
+    { match: isMileageButton, handler: async (ctx) => {
       const res = await mileageFlow(ctx);
       if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
       else if (res.status === 'pedestrian_no_mileage') await ctx.replyWithHTML('🚶 Пешим курьерам пробег не требуется.', getMenuForRole(ctx.from.id));

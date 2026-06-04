@@ -71,7 +71,13 @@ const SHEET_TEMPLATE = {
 
 const BUTTONS = {
   punchTime: '⏱ Записать время',
+  punchTimeStart: '⏱ Старт смены',
+  punchTimeEnd: '⏱ Конец смены',
+  punchTimeReplace: '⏱ Заменить время',
   mileage: '🚗 Фото пробега',
+  mileageStart: '🚗 Пробег старт',
+  mileageEnd: '🚗 Пробег конец',
+  mileageReplace: '🚗 Заменить пробег',
   routeSheet: '📄 Отправить маршрутник',
   reconciliation: '📊 Отправить сверку',
   cashCheck: '💵 Сдать наличные',

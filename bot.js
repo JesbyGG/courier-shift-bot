@@ -57,7 +57,9 @@ const {
   updateReminder,
   deleteReminder,
   getSelfClearanceRequest,
-  cleanupStaleReminders
+  cleanupStaleReminders,
+  getShiftStatus,
+  setShiftStatus
 } = require('./services/storage');
 const { recognizeMileage, downloadTelegramFile, isGeminiOcrEnabled, recognizeTextWithGemini, getMinMileageThreshold, checkGeminiOcrHealth } = require('./services/mileageOcr');
 const { saveOcrDebugImage, updateOcrDebugStatus } = require('./services/ocrDebug');
@@ -91,6 +93,10 @@ const {
   getMenuForRole,
   getSettingsMenuForRole,
   getProfileMenuForRole,
+  getTimeButtonLabel,
+  getMileageButtonLabel,
+  isTimeButton,
+  isMileageButton,
   roleChoiceKeyboard,
   skipMileageKeyboard,
   mileageConfirmKeyboard,
@@ -1398,7 +1404,13 @@ function normalizeTimeValue(value) {
 function isMenuText(text) {
   return [
     BUTTONS.punchTime,
+    BUTTONS.punchTimeStart,
+    BUTTONS.punchTimeEnd,
+    BUTTONS.punchTimeReplace,
     BUTTONS.mileage,
+    BUTTONS.mileageStart,
+    BUTTONS.mileageEnd,
+    BUTTONS.mileageReplace,
     BUTTONS.routeSheet,
     BUTTONS.reconciliation,
     BUTTONS.cashCheck,
@@ -1700,6 +1712,12 @@ async function punchTimeFlow(ctx, explicitStage = null) {
     }
 
     console.log('время записано', result.stage);
+    const currentTimeStatus = getShiftStatus(telegramId, 'time');
+    if (result.stage === 'start') {
+      setShiftStatus(telegramId, 'time', currentTimeStatus === 'end' || currentTimeStatus === 'both' ? 'both' : 'start');
+    } else {
+      setShiftStatus(telegramId, 'time', currentTimeStatus === 'start' || currentTimeStatus === 'both' ? 'both' : 'end');
+    }
 
     const xpKey = result.stage === 'start' ? 'punchStart' : 'punchEnd';
     const xpLabel = result.stage === 'start' ? 'Старт' : 'Конец';
@@ -2338,6 +2356,12 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
 
     await updateMileage(state.mileageRow, state.day, state.stage, mileageValue, state.workplace);
     console.log('пробег записан');
+    const currentMileageStatus = getShiftStatus(telegramId, 'mileage');
+    if (state.stage === 'start') {
+      setShiftStatus(telegramId, 'mileage', currentMileageStatus === 'end' || currentMileageStatus === 'both' ? 'both' : 'start');
+    } else {
+      setShiftStatus(telegramId, 'mileage', currentMileageStatus === 'start' || currentMileageStatus === 'both' ? 'both' : 'end');
+    }
     addXp(telegramId, getXpForAction('mileage'), 'Запись пробега');
     const curMileage = Number(getUserField(telegramId, 'mileageRecords') || 0);
     setUserField(telegramId, 'mileageRecords', curMileage + 1);
@@ -4077,6 +4101,7 @@ const services = {
   esc, getEmployeeDisplayName, askForFio, logistMainMenu,
   getMenuForRole, isLogist, askForCarNumber, askForWorkplace,
   askForDevice, sendHelp, backToMainMenu,
+  isTimeButton, isMileageButton,
   isAdminUser, getSheetAccessUsers, addSheetAccessUser, removeSheetAccessUser,
   _pendingUpdates, savePendingUpdates, notifyUsersAboutUpdate,
   setState, getState, clearState,

@@ -9,6 +9,7 @@ module.exports = function setupCommands(bot, services) {
     getUserRole,
     getTimeGreeting,
     esc,
+    clearShiftStatus,
     getEmployeeDisplayName,
     askForFio,
     logistMainMenu,
@@ -29,6 +30,7 @@ module.exports = function setupCommands(bot, services) {
 
     if (!getUserField(ctx.from.id, 'fio')) {
       setUserField(ctx.from.id, 'version', getVersion());
+      clearShiftStatus(ctx.from.id);
       const isNew = markUserSeen(ctx.from.id);
       if (isNew) {
         const firstName = ctx.from.first_name || '';
@@ -53,6 +55,7 @@ module.exports = function setupCommands(bot, services) {
     }
 
     setUserField(ctx.from.id, 'version', getVersion());
+    clearShiftStatus(ctx.from.id);
 
     const profile = await ensureProfile(ctx);
 
