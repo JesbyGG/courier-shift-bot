@@ -14,11 +14,50 @@ const ACHIEVEMENTS = [
   { id: 'cash_1m', name: 'Миллионер', desc: '1 000 000 ₽ выручки', condition: { type: 'cash', value: 1000000 }, reward: 2000 },
 
   // Смены
+  { id: 'first_shift', name: 'Первый шаг', desc: 'Первая смена', condition: { type: 'shifts', value: 1 }, reward: 50 },
   { id: 'shifts_30', name: 'Трудоголик', desc: '30 смен', condition: { type: 'shifts', value: 30 }, reward: 200 },
   { id: 'shifts_200', name: 'Вахта', desc: '200 смен', condition: { type: 'shifts', value: 200 }, reward: 1000 },
   { id: 'shifts_500', name: 'Ветеран', desc: '500 смен', condition: { type: 'shifts', value: 500 }, reward: 3000 },
   { id: 'early_start_50', name: 'Ранний старт', desc: '50 смен начаты до 09:00', condition: { type: 'early_start', value: 50 }, reward: 500 },
   { id: 'late_finish_50', name: 'Поздний финиш', desc: '50 смен закончены после 22:00', condition: { type: 'late_finish', value: 50 }, reward: 500 },
+
+  // Маршрутники
+  { id: 'first_route', name: 'Первый маршрутник', desc: 'Отправить первый маршрутник', condition: { type: 'route_sheets', value: 1 }, reward: 50 },
+  { id: 'route_50', name: 'Бумажный волк', desc: '50 маршрутников', condition: { type: 'route_sheets', value: 50 }, reward: 200 },
+  { id: 'route_100', name: 'Бумажный тигр', desc: '100 маршрутников', condition: { type: 'route_sheets', value: 100 }, reward: 400 },
+  { id: 'route_200', name: 'Бумажный лев', desc: '200 маршрутников', condition: { type: 'route_sheets', value: 200 }, reward: 800 },
+
+  // Сверки
+  { id: 'first_rec', name: 'Первый сверщик', desc: 'Первая сверка', condition: { type: 'reconciliations', value: 1 }, reward: 50 },
+  { id: 'rec_30', name: 'Сверщик-эксперт', desc: '30 сверок', condition: { type: 'reconciliations', value: 30 }, reward: 200 },
+  { id: 'rec_50', name: 'Сверщик-мастер', desc: '50 сверок', condition: { type: 'reconciliations', value: 50 }, reward: 400 },
+  { id: 'rec_100', name: 'Сверщик-легенда', desc: '100 сверок', condition: { type: 'reconciliations', value: 100 }, reward: 800 },
+
+  // Наличные
+  { id: 'first_cash', name: 'Первые деньги', desc: 'Первая сдача наличных', condition: { type: 'cash_submits', value: 1 }, reward: 50 },
+  { id: 'cash_submit_50', name: 'Кассир', desc: '50 сдач наличных', condition: { type: 'cash_submits', value: 50 }, reward: 200 },
+  { id: 'cash_submit_100', name: 'Главный кассир', desc: '100 сдач наличных', condition: { type: 'cash_submits', value: 100 }, reward: 500 },
+
+  // Пробег (только авто)
+  { id: 'first_mileage', name: 'Первый пробег', desc: 'Первая запись пробега', condition: { type: 'mileage_records', value: 1, courierType: 'auto' }, reward: 50 },
+  { id: 'mileage_50', name: 'Заправка', desc: '50 записей пробега', condition: { type: 'mileage_records', value: 50, courierType: 'auto' }, reward: 200 },
+  { id: 'mileage_100', name: 'Полный бак', desc: '100 записей пробега', condition: { type: 'mileage_records', value: 100, courierType: 'auto' }, reward: 400 },
+  { id: 'mileage_200', name: 'Заправщик', desc: '200 записей пробега', condition: { type: 'mileage_records', value: 200, courierType: 'auto' }, reward: 800 },
+
+  // Экспресс-заказы
+  { id: 'express_30', name: 'Экспресс', desc: '30+ заказов за смену', condition: { type: 'orders_single', value: 30 }, reward: 300 },
+  { id: 'express_35', name: 'Супер-экспресс', desc: '35+ заказов за смену', condition: { type: 'orders_single', value: 35 }, reward: 500 },
+  { id: 'express_40', name: 'Молния', desc: '40+ заказов за смену', condition: { type: 'orders_single', value: 40 }, reward: 1000 },
+
+  // Топ-1
+  { id: 'top1_5', name: 'Король дня', desc: '5 раз топ-1', condition: { type: 'top1_count', value: 5 }, reward: 300 },
+  { id: 'top1_10', name: 'Император', desc: '10 раз топ-1', condition: { type: 'top1_count', value: 10 }, reward: 600 },
+  { id: 'top1_20', name: 'Бог рейтинга', desc: '20 раз топ-1', condition: { type: 'top1_count', value: 20 }, reward: 1500 },
+
+  // Стрик
+  { id: 'streak_7', name: 'Стойкость', desc: '7 смен подряд', condition: { type: 'streak', value: 7 }, reward: 200 },
+  { id: 'streak_14', name: 'Железная воля', desc: '14 смен подряд', condition: { type: 'streak', value: 14 }, reward: 500 },
+  { id: 'streak_30', name: 'Марафонец', desc: '30 смен подряд', condition: { type: 'streak', value: 30 }, reward: 1500 },
 
   // Особые
   { id: 'top1_day', name: 'День в шляпе', desc: 'Топ-1 дня', condition: { type: 'top1_day' }, reward: 500 },
@@ -66,6 +105,11 @@ function getAchievementStats(telegramId) {
   let nightOwl = false;
   let perfectShift = false;
   let top1Day = false;
+  let routeSheets = 0;
+  let reconciliations = 0;
+  let cashSubmits = 0;
+  let mileageRecords = 0;
+  let top1Count = 0;
 
   if (userRow) {
     try {
@@ -79,6 +123,11 @@ function getAchievementStats(telegramId) {
       nightOwl = ud.nightOwl || false;
       perfectShift = ud.perfectShift || false;
       top1Day = ud.top1Day || false;
+      routeSheets = ud.routeSheetsSubmitted || 0;
+      reconciliations = ud.reconciliationsSubmitted || 0;
+      cashSubmits = ud.cashSubmits || 0;
+      mileageRecords = ud.mileageRecords || 0;
+      top1Count = ud.top1Count || 0;
     } catch (_) {}
   }
 
@@ -99,7 +148,12 @@ function getAchievementStats(telegramId) {
     earlyBird,
     nightOwl,
     perfectShift,
-    top1Day
+    top1Day,
+    routeSheets,
+    reconciliations,
+    cashSubmits,
+    mileageRecords,
+    top1Count
   };
 }
 
@@ -124,6 +178,12 @@ function getConditionProgress(stats, condition) {
     case 'early_start': current = stats.earlyStarts; break;
     case 'late_finish': current = stats.lateFinishes; break;
     case 'orders_single': current = stats.singleDayOrders; break;
+    case 'route_sheets': current = stats.routeSheets; break;
+    case 'reconciliations': current = stats.reconciliations; break;
+    case 'cash_submits': current = stats.cashSubmits; break;
+    case 'mileage_records': current = stats.mileageRecords; break;
+    case 'top1_count': current = stats.top1Count; break;
+    case 'streak': current = stats.currentStreak; break;
     case 'top1_day': current = stats.top1Day ? 1 : 0; isBoolean = true; break;
     case 'early_bird': current = stats.earlyBird ? 1 : 0; isBoolean = true; break;
     case 'night_owl': current = stats.nightOwl ? 1 : 0; isBoolean = true; break;
@@ -143,6 +203,7 @@ function formatAchievementsWithProgress(telegramId) {
     orders: { emoji: '🛒', label: 'Заказы', achievements: [] },
     cash: { emoji: '💰', label: 'Выручка', achievements: [] },
     shifts: { emoji: '⏱', label: 'Смены', achievements: [] },
+    docs: { emoji: '📄', label: 'Документы', achievements: [] },
     special: { emoji: '⭐', label: 'Особые', achievements: [] }
   };
 
@@ -166,15 +227,16 @@ function formatAchievementsWithProgress(telegramId) {
     // Определяем категорию
     const type = ach.condition.type;
     if (type === 'orders' || type === 'orders_single') categories.orders.achievements.push(line);
-    else if (type === 'cash') categories.cash.achievements.push(line);
-    else if (type === 'shifts' || type === 'early_start' || type === 'late_finish') categories.shifts.achievements.push(line);
+    else if (type === 'cash' || type === 'cash_submits') categories.cash.achievements.push(line);
+    else if (type === 'shifts' || type === 'early_start' || type === 'late_finish' || type === 'streak') categories.shifts.achievements.push(line);
+    else if (type === 'route_sheets' || type === 'reconciliations' || type === 'mileage_records') categories.docs.achievements.push(line);
     else categories.special.achievements.push(line);
   }
 
   let text = '🏆 <b>Мои достижения</b>\n';
   text += `<i>Разблокировано: ${unlocked.length} / ${ACHIEVEMENTS.length}</i>\n\n`;
 
-  for (const key of ['orders', 'cash', 'shifts', 'special']) {
+  for (const key of ['orders', 'cash', 'shifts', 'docs', 'special']) {
     const cat = categories[key];
     if (cat.achievements.length === 0) continue;
     text += `${cat.emoji} <b>${cat.label}</b>\n`;
@@ -201,6 +263,12 @@ function checkMilestoneAchievements(telegramId, stats) {
     else if (ach.condition.type === 'early_start' && (stats.earlyStarts || 0) >= ach.condition.value) met = true;
     else if (ach.condition.type === 'late_finish' && (stats.lateFinishes || 0) >= ach.condition.value) met = true;
     else if (ach.condition.type === 'orders_single' && (stats.singleDayOrders || 0) >= ach.condition.value) met = true;
+    else if (ach.condition.type === 'route_sheets' && (stats.routeSheets || 0) >= ach.condition.value) met = true;
+    else if (ach.condition.type === 'reconciliations' && (stats.reconciliations || 0) >= ach.condition.value) met = true;
+    else if (ach.condition.type === 'cash_submits' && (stats.cashSubmits || 0) >= ach.condition.value) met = true;
+    else if (ach.condition.type === 'mileage_records' && (stats.mileageRecords || 0) >= ach.condition.value) met = true;
+    else if (ach.condition.type === 'top1_count' && (stats.top1Count || 0) >= ach.condition.value) met = true;
+    else if (ach.condition.type === 'streak' && (stats.currentStreak || 0) >= ach.condition.value) met = true;
     else if (ach.condition.type === 'top1_day' && stats.top1Day) met = true;
     else if (ach.condition.type === 'early_bird' && stats.earlyBird) met = true;
     else if (ach.condition.type === 'night_owl' && stats.nightOwl) met = true;

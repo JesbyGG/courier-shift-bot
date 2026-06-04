@@ -2339,6 +2339,8 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
     await updateMileage(state.mileageRow, state.day, state.stage, mileageValue, state.workplace);
     console.log('пробег записан');
     addXp(telegramId, getXpForAction('mileage'), 'Запись пробега');
+    const curMileage = Number(getUserField(telegramId, 'mileageRecords') || 0);
+    setUserField(telegramId, 'mileageRecords', curMileage + 1);
     const mileageChallengeCompleted = updateChallengeProgress(telegramId, 'mileages');
     for (const ch of mileageChallengeCompleted) {
       addXp(telegramId, ch.reward, `Челлендж: ${ch.name}`);
@@ -2782,6 +2784,22 @@ async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, o
       // Лидер дня
       if (currentTop3[0] && currentTop3[0].telegramId === String(telegramId)) {
         await sendDailyLeaderNotification(workplace, dayKey, currentTop3[0]);
+        // Обновляем счётчик топ-1 если ещё не был сегодня
+        const today = new Date().toISOString().slice(0, 10);
+        const lastTop1Date = getUserField(telegramId, 'top1Date');
+        if (lastTop1Date !== today) {
+          setUserField(telegramId, 'top1Date', today);
+          if (!getUserField(telegramId, 'top1Day')) {
+            setUserField(telegramId, 'top1Day', true);
+          }
+          const curTop1 = Number(getUserField(telegramId, 'top1Count') || 0);
+          setUserField(telegramId, 'top1Count', curTop1 + 1);
+          try {
+            const stats = getAchievementStats(telegramId);
+            const unlocked = checkMilestoneAchievements(telegramId, stats);
+            if (unlocked.length > 0) await notifyAchievements(ctx, telegramId, unlocked);
+          } catch (_) {}
+        }
       }
 
       // Проверка сброса с 1-го места
@@ -3361,6 +3379,8 @@ async function finalizeReconciliationPostSend(ctx, state, telegramId, totalOrder
   // Всегда начисляем XP и прогресс челленджа за отправку сверки
   try {
     addXp(telegramId, getXpForAction('reconciliation'), 'Сверка');
+    const curRec = Number(getUserField(telegramId, 'reconciliationsSubmitted') || 0);
+    setUserField(telegramId, 'reconciliationsSubmitted', curRec + 1);
     const recChallengeCompleted = updateChallengeProgress(telegramId, 'reconciliations');
     for (const ch of recChallengeCompleted) {
       addXp(telegramId, ch.reward, `Челлендж: ${ch.name}`);

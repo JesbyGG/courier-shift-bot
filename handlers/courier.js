@@ -104,6 +104,8 @@ module.exports = function setupCourier(bot, services) {
       return;
     }
     addXp(ctx.from.id, getXpForAction('routeSheet'), 'Маршрутник');
+    const curSheets = Number(getUserField(ctx.from.id, 'routeSheetsSubmitted') || 0);
+    setUserField(ctx.from.id, 'routeSheetsSubmitted', curSheets + 1);
     const routeChallengeCompleted = updateChallengeProgress(ctx.from.id, 'routeSheets');
     for (const ch of routeChallengeCompleted) {
       addXp(ctx.from.id, ch.reward, `Челлендж: ${ch.name}`);
@@ -143,6 +145,8 @@ module.exports = function setupCourier(bot, services) {
         workplace, amount, action: 'self_cleared'
       });
       addXp(telegramId, getXpForAction('cashSubmit'), 'Сдача наличных');
+      const curCash = Number(getUserField(telegramId, 'cashSubmits') || 0);
+      setUserField(telegramId, 'cashSubmits', curCash + 1);
       const cashChallengeCompleted = updateChallengeProgress(telegramId, 'cashSubmits');
       for (const ch of cashChallengeCompleted) {
         addXp(telegramId, ch.reward, `Челлендж: ${ch.name}`);

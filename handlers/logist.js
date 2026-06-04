@@ -139,6 +139,8 @@ module.exports = function setupLogist(bot, services) {
     });
 
     addXp(reminder.courierId, getXpForAction('cashSubmit'), 'Сдача наличных (подтверждено)');
+    const curCash1 = Number(getUserField(reminder.courierId, 'cashSubmits') || 0);
+    setUserField(reminder.courierId, 'cashSubmits', curCash1 + 1);
     const cashChallengeCompleted1 = updateChallengeProgress(reminder.courierId, 'cashSubmits');
     for (const ch of cashChallengeCompleted1) {
       addXp(reminder.courierId, ch.reward, `Челлендж: ${ch.name}`);
@@ -248,6 +250,8 @@ module.exports = function setupLogist(bot, services) {
     clearPendingCashAndReminders(courierId);
 
     addXp(courierId, getXpForAction('cashSubmit'), 'Сдача наличных (self-clearance)');
+    const curCash2 = Number(getUserField(courierId, 'cashSubmits') || 0);
+    setUserField(courierId, 'cashSubmits', curCash2 + 1);
     const cashChallengeCompleted2 = updateChallengeProgress(courierId, 'cashSubmits');
     for (const ch of cashChallengeCompleted2) {
       addXp(courierId, ch.reward, `Челлендж: ${ch.name}`);
