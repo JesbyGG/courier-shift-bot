@@ -2596,7 +2596,6 @@ async function showMyAchievements(ctx) {
   for (const [key, info] of Object.entries(CATEGORY_MAP)) {
     buttons.push([Markup.button.callback(`${info.emoji} ${info.label}`, `ach_cat_${key}`)]);
   }
-  buttons.push([Markup.button.callback('📈 Мой прогресс', 'lb_progress')]);
   buttons.push([Markup.button.callback('⬅️ Назад', 'lb_back_menu')]);
 
   try {
