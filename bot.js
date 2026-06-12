@@ -74,7 +74,7 @@ const {
 } = require('./services/reconciliationOcr');
 const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, getDayOrders: getLbDayOrders, getWorkplaceRecord, setWorkplaceRecord, getDailyTop3, findOvertakenCouriers, getTodayKey: getLbTodayKey, _getAllRecords } = require('./services/leaderboard');
 const { addXp, getTotalXp, formatRankInfo, getXpForAction } = require('./services/xp');
-const { getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements, formatAchievementsWithProgress, formatAchievementsMenu, formatAchievementsSubmenu, formatAchievementsChain, CATEGORY_MAP, SUBCATEGORY_MAP } = require('./services/achievements');
+const { getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements, formatAchievementsWithProgress, formatAchievementsMenu, formatAchievementsCard, CATEGORY_MAP } = require('./services/achievements');
 const { updateStreak, getStreak, getStreakBonusesDescription, formatStreakInfo } = require('./services/streak');
 const { updateChallengeProgress, generateWeeklyChallenges, getChallenges, cleanupOldChallenges, cleanupInvalidChallenges, notifyChallengeCompleted, formatProgressBar } = require('./services/challenges');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, getCourierColumnsByDay, roundMinutesToHalfHour, roundTimeToHalfHour, isEmptyCell, isScheduleMarker } = require('./utils');
@@ -2396,6 +2396,7 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
       `✅ <b>Пробег сохранён</b>: <code>${mileageValue}</code> км\n\nЕсли неверно — нажмите «Изменить пробег».`,
       mileageSavedKeyboard()
     );
+    await replyFn('✅', getMenuForRole(telegramId));
   } catch (error) {
     console.error('ошибка Google Sheets', error);
     await replyFn('⚠️ Не удалось записать пробег.\nПопробуйте ещё раз или обратитесь к администратору.');
@@ -2600,35 +2601,10 @@ async function showMyAchievements(ctx) {
 
 async function showAchievementsCategory(ctx, category) {
   const telegramId = ctx.from.id;
-  const catInfo = CATEGORY_MAP[category];
-
-  if (!catInfo.hasSubcategories) {
-    // Показываем цепочку напрямую
-    const text = formatAchievementsChain(telegramId, category, category);
-    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-      [Markup.button.callback('⬅️ Назад', 'ach_back_main')]
-    ]) });
-    return;
-  }
-
-  const text = formatAchievementsSubmenu(telegramId, category);
-
-  const buttons = [];
-  for (const [subKey, subInfo] of Object.entries(SUBCATEGORY_MAP)) {
-    if (!subKey.startsWith(category + '_')) continue;
-    buttons.push([Markup.button.callback(`${subInfo.emoji} ${subInfo.label}`, `ach_sub_${subKey}`)]);
-  }
-  buttons.push([Markup.button.callback('⬅️ Назад', 'ach_back_main')]);
-
-  await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
-}
-
-async function showAchievementsChain(ctx, category, subcategory) {
-  const telegramId = ctx.from.id;
-  const text = formatAchievementsChain(telegramId, category, subcategory);
+  const text = formatAchievementsCard(telegramId, category);
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-    [Markup.button.callback('⬅️ Назад', `ach_back_cat_${category}`)]
+    [Markup.button.callback('⬅️ Назад к достижениям', 'ach_back_main')]
   ]) });
 }
 
@@ -3327,30 +3303,11 @@ for (const catKey of Object.keys(CATEGORY_MAP)) {
   });
 }
 
-// Достижения: подкатегории (docs_route, docs_recon и т.д.)
-const SUBCATEGORY_KEYS = ['orders_quantity', 'orders_records', 'shifts_quantity', 'shifts_schedule',
-  'docs_route', 'docs_recon', 'docs_cash', 'docs_mileage'];
-for (const subKey of SUBCATEGORY_KEYS) {
-  const category = subKey.split('_')[0];
-  bot.action(`ach_sub_${subKey}`, async (ctx) => {
-    await ctx.answerCbQuery();
-    await showAchievementsChain(ctx, category, subKey);
-  });
-}
-
 // Назад к главному меню достижений
 bot.action('ach_back_main', async (ctx) => {
   await ctx.answerCbQuery();
   await showMyAchievements(ctx);
 });
-
-// Назад к категории
-for (const catKey of Object.keys(CATEGORY_MAP)) {
-  bot.action(`ach_back_cat_${catKey}`, async (ctx) => {
-    await ctx.answerCbQuery();
-    await showAchievementsCategory(ctx, catKey);
-  });
-}
 
 bot.action('lb_progress', async (ctx) => {
   await ctx.answerCbQuery();
@@ -4252,7 +4209,7 @@ const services = {
   // leaderboard & achievements
   calculateLeaderboard, formatLeaderboard, getDailyTop3, findOvertakenCouriers,
   checkNotifications: checkLeaderboardNotifications, getWorkplaceRecord, setWorkplaceRecord,
-  getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements, formatAchievementsWithProgress, formatAchievementsMenu, formatAchievementsSubmenu, formatAchievementsChain, CATEGORY_MAP, SUBCATEGORY_MAP,
+  getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements, formatAchievementsWithProgress, formatAchievementsMenu, formatAchievementsCard, CATEGORY_MAP,
   updateStreak, getStreak, getStreakBonusesDescription, formatStreakInfo,
   getChallenges, generateWeeklyChallenges, cleanupOldChallenges, notifyChallengeCompleted,
   // sheets & ocr

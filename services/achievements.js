@@ -194,7 +194,7 @@ function formatProgressBar(current, target) {
   const pct = Math.min(1, Math.max(0, current / target));
   const filled = Math.round(pct * 10);
   const empty = 10 - filled;
-  return '█'.repeat(filled) + '░'.repeat(empty);
+  return '▓'.repeat(filled) + '░'.repeat(empty);
 }
 
 function getConditionProgress(stats, condition) {
@@ -378,90 +378,120 @@ function formatAchievementsMenu(telegramId) {
   const stats = getAchievementStats(telegramId);
   const unlocked = getUnlockedAchievements(telegramId);
   const unlockedIds = new Set(unlocked.map(a => a.id));
+  let totalAll = 0;
+  let doneAll = 0;
+  let totalXp = 0;
+  let earnedXp = 0;
 
   let text = '🏆 <b>Мои достижения</b>\n\n';
 
   for (const [catKey, catInfo] of Object.entries(CATEGORY_MAP)) {
     let total = 0;
     let done = 0;
+    let catXp = 0;
+    let catEarned = 0;
 
-    if (catInfo.hasSubcategories) {
-      for (const [subKey, subOrder] of Object.entries(ACHIEVEMENT_ORDER)) {
-        if (!subKey.startsWith(catKey + '_')) continue;
-        for (const achId of subOrder) {
-          const ach = ACHIEVEMENTS.find(a => a.id === achId);
-          if (!ach) continue;
-          if (ach.condition.courierType && ach.condition.courierType !== stats.courierType) continue;
-          total++;
-          if (unlockedIds.has(ach.id)) done++;
-        }
-      }
-    } else {
-      const order = ACHIEVEMENT_ORDER[catKey] || [];
-      for (const achId of order) {
-        const ach = ACHIEVEMENTS.find(a => a.id === achId);
-        if (!ach) continue;
-        if (ach.condition.courierType && ach.condition.courierType !== stats.courierType) continue;
-        total++;
-        if (unlockedIds.has(ach.id)) done++;
-      }
-    }
-
-    text += `${catInfo.emoji} <b>${catInfo.label}</b> — ${done}/${total}\n`;
-  }
-
-  return text.trim();
-}
-
-function formatAchievementsSubmenu(telegramId, category) {
-  const stats = getAchievementStats(telegramId);
-  const unlocked = getUnlockedAchievements(telegramId);
-  const unlockedIds = new Set(unlocked.map(a => a.id));
-  const catInfo = CATEGORY_MAP[category];
-
-  let text = `${catInfo.emoji} <b>${catInfo.label}</b>\n\n`;
-
-  for (const [subKey, subInfo] of Object.entries(SUBCATEGORY_MAP)) {
-    if (!subKey.startsWith(category + '_')) continue;
-
-    let total = 0;
-    let done = 0;
-    const order = ACHIEVEMENT_ORDER[subKey] || [];
+    const order = ACHIEVEMENT_ORDER[catKey] || [];
     for (const achId of order) {
       const ach = ACHIEVEMENTS.find(a => a.id === achId);
       if (!ach) continue;
       if (ach.condition.courierType && ach.condition.courierType !== stats.courierType) continue;
       total++;
-      if (unlockedIds.has(ach.id)) done++;
+      catXp += ach.reward || 0;
+      if (unlockedIds.has(ach.id)) {
+        done++;
+        catEarned += ach.reward || 0;
+      }
     }
 
-    if (total > 0) {
-      text += `${subInfo.emoji} <b>${subInfo.label}</b> — ${done}/${total}\n`;
-    }
+    if (total === 0) continue;
+    totalAll += total;
+    doneAll += done;
+    totalXp += catXp;
+    earnedXp += catEarned;
+
+    const pct = total > 0 ? done / total : 0;
+    const bar = formatProgressBar(pct * 100, 100);
+    text += `${catInfo.emoji} <b>${catInfo.label}</b> ${done}/${total}\n${bar}\n`;
   }
 
+  text += `\n📊 <b>Всего:</b> ${doneAll}/${totalAll} • ${earnedXp}/${totalXp} XP`;
   return text.trim();
 }
 
-function formatAchievementsChain(telegramId, category, subcategory) {
-  const subInfo = SUBCATEGORY_MAP[subcategory];
+function formatAchievementsCard(telegramId, category) {
+  const stats = getAchievementStats(telegramId);
+  const unlocked = getUnlockedAchievements(telegramId);
+  const unlockedIds = new Set(unlocked.map(a => a.id));
   const catInfo = CATEGORY_MAP[category];
-  const items = _getChainForSubcategory(telegramId, subcategory);
 
-  if (items.length === 0) {
-    return `${subInfo?.emoji || catInfo.emoji} <b>${subInfo?.label || catInfo.label}</b>\n\n<i>Нет доступных достижений</i>`;
+  const order = ACHIEVEMENT_ORDER[category] || [];
+  const achievements = [];
+  for (const achId of order) {
+    const ach = ACHIEVEMENTS.find(a => a.id === achId);
+    if (!ach) continue;
+    if (ach.condition.courierType && ach.condition.courierType !== stats.courierType) continue;
+    achievements.push(ach);
   }
 
-  let text = `${subInfo?.emoji || catInfo.emoji} <b>${subInfo?.label || catInfo.label}</b>\n\n`;
-
-  // Собираем цепочку с переносами каждые 4 элемента
-  const lines = [];
-  for (let i = 0; i < items.length; i += 4) {
-    const chunk = items.slice(i, i + 4);
-    lines.push(chunk.join(' → '));
+  let total = 0;
+  let done = 0;
+  let catXp = 0;
+  let catEarned = 0;
+  for (const ach of achievements) {
+    total++;
+    catXp += ach.reward || 0;
+    if (unlockedIds.has(ach.id)) {
+      done++;
+      catEarned += ach.reward || 0;
+    }
   }
 
-  text += lines.join('\n→ …\n') + '\n';
+  let text = `${catInfo.emoji} <b>${catInfo.label}</b>\n`;
+  text += `${done}/${total} получено • ${catEarned}/${catXp} XP\n\n`;
+
+  // Находим ближайшее активное для мотивации
+  let nextActive = null;
+  let nextProgress = null;
+  for (const ach of achievements) {
+    if (unlockedIds.has(ach.id)) continue;
+    const progress = getConditionProgress(stats, ach.condition);
+    if (!progress.isBoolean && progress.target > 0 && progress.current > 0) {
+      nextActive = ach;
+      nextProgress = progress;
+      break;
+    }
+  }
+
+  for (const ach of achievements) {
+    const isDone = unlockedIds.has(ach.id);
+    const isBlocked = ach.condition.courierType && ach.condition.courierType !== stats.courierType;
+    const progress = getConditionProgress(stats, ach.condition);
+
+    if (isDone) {
+      text += `✅ <b>${ach.name}</b>\n`;
+      text += `   ${ach.desc}\n`;
+      text += `   🎉 Получено! +${ach.reward} XP\n`;
+    } else if (isBlocked) {
+      text += `🔒 <b>${ach.name}</b>\n`;
+      text += `   ${ach.desc}\n`;
+      text += `   🔒 Не доступно для вашего типа курьера\n`;
+    } else {
+      text += `⏳ <b>${ach.name}</b>\n`;
+      text += `   ${ach.desc}\n`;
+      if (!progress.isBoolean && progress.target > 0) {
+        const bar = formatProgressBar(progress.current, progress.target);
+        text += `   ${bar} ${progress.current.toLocaleString('ru-RU')}/${progress.target.toLocaleString('ru-RU')}\n`;
+      }
+      if (ach === nextActive && nextProgress) {
+        const remaining = nextProgress.target - nextProgress.current;
+        text += `   💡 ${remaining.toLocaleString('ru-RU')} до следующего!\n`;
+      }
+      text += `   Награда: +${ach.reward} XP\n`;
+    }
+    text += `   ─────────────────────────────────\n`;
+  }
+
   return text.trim();
 }
 
@@ -476,8 +506,7 @@ module.exports = {
   formatAchievementsWithProgress,
   formatProgressBar,
   formatAchievementsMenu,
-  formatAchievementsSubmenu,
-  formatAchievementsChain,
+  formatAchievementsCard,
   CATEGORY_MAP,
   SUBCATEGORY_MAP,
   ACHIEVEMENT_ORDER
