@@ -109,11 +109,11 @@ const ACHIEVEMENTS = [
 ];
 
 const RARITY_TIERS = {
-  diamond: { emoji: '👑', label: 'Легенда', min: 2000 },
-  platinum: { emoji: '💎', label: 'Платина', min: 1000 },
-  gold: { emoji: '🥇', label: 'Золото', min: 400 },
-  silver: { emoji: '🥈', label: 'Серебро', min: 200 },
-  bronze: { emoji: '🥉', label: 'Бронза', min: 0 }
+  diamond: { emoji: '👑', label: 'Легенда', plural: 'ЛЕГЕНДАРНЫЕ', min: 2000 },
+  platinum: { emoji: '💎', label: 'Платина', plural: 'ПЛАТИНОВЫЕ', min: 1000 },
+  gold: { emoji: '🥇', label: 'Золото', plural: 'ЗОЛОТЫЕ', min: 400 },
+  silver: { emoji: '🥈', label: 'Серебро', plural: 'СЕРЕБРЯНЫЕ', min: 200 },
+  bronze: { emoji: '🥉', label: 'Бронза', plural: 'БРОНЗОВЫЕ', min: 0 }
 };
 
 const RARITY_ORDER = ['diamond', 'platinum', 'gold', 'silver', 'bronze'];
@@ -528,7 +528,7 @@ function formatRarityGallery(telegramId, tierKey) {
     if (unlockedIds.has(ach.id)) done++;
   }
 
-  let text = `${tier.emoji} <b>${tier.label.toUpperCase()}Е ТРОФЕИ</b>  ${done} / ${achievements.length}\n`;
+  let text = `${tier.emoji} <b>${tier.plural} ТРОФЕИ</b>  ${done} / ${achievements.length}\n`;
 
   for (const ach of achievements) {
     const isDone = unlockedIds.has(ach.id);
