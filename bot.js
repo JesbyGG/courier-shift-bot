@@ -2763,7 +2763,10 @@ async function showLeaderboardResult(ctx, periodDays = 7, mode = 'sum') {
     Markup.button.callback('🏆 Достижения', 'lb_achievements')
   ]);
   buttons.push([
-    Markup.button.callback('🔔 Уведомления', 'lb_notifications'),
+    Markup.button.callback('📈 Мой прогресс', 'lb_progress'),
+    Markup.button.callback('🔔 Уведомления', 'lb_notifications')
+  ]);
+  buttons.push([
     Markup.button.callback('❌ Закрыть', 'close_message')
   ]);
 
