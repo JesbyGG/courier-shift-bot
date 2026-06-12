@@ -389,6 +389,7 @@ function formatAchievementsCard(telegramId, category) {
   const unlocked = getUnlockedAchievements(telegramId);
   const unlockedIds = new Set(unlocked.map(a => a.id));
   const catInfo = CATEGORY_MAP[category];
+  if (!catInfo) return `${pe('❓')} <b>Неизвестная категория</b>`;
 
   const { total, done, catXp, catEarned } = _countCategoryAchievements(category, stats, unlockedIds);
 
