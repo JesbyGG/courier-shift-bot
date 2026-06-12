@@ -111,7 +111,7 @@ const ACHIEVEMENTS = [
 const RARITY_TIERS = {
   diamond: { emoji: '👑', label: 'Легенда', min: 2000 },
   platinum: { emoji: '💎', label: 'Платина', min: 1000 },
-  gold: { emoji: '🥇', label: 'Золото', min: 500 },
+  gold: { emoji: '🥇', label: 'Золото', min: 400 },
   silver: { emoji: '🥈', label: 'Серебро', min: 200 },
   bronze: { emoji: '🥉', label: 'Бронза', min: 0 }
 };
@@ -121,7 +121,7 @@ const RARITY_ORDER = ['diamond', 'platinum', 'gold', 'silver', 'bronze'];
 function getRarityTier(reward) {
   if (reward >= 2000) return 'diamond';
   if (reward >= 1000) return 'platinum';
-  if (reward >= 500) return 'gold';
+  if (reward >= 400) return 'gold';
   if (reward >= 200) return 'silver';
   return 'bronze';
 }
