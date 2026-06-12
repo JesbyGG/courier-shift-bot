@@ -59,21 +59,21 @@ const ACHIEVEMENTS = [
   { id: 'first_shift', name: 'Первый шаг', desc: 'Первая смена', condition: { type: 'shifts', value: 1 }, reward: 50 },
   { id: 'shifts_30', name: 'Трудоголик', desc: '30 смен', condition: { type: 'shifts', value: 30 }, reward: 200 },
   { id: 'shifts_200', name: 'Вахта', desc: '200 смен', condition: { type: 'shifts', value: 200 }, reward: 1000 },
-  { id: 'shifts_500', name: 'Ветеран', desc: '500 смен', condition: { type: 'shifts', value: 500 }, reward: 3000 },
-  { id: 'early_start_50', name: 'Ранний старт', desc: '50 смен начаты до 09:00', condition: { type: 'early_start', value: 50 }, reward: 500 },
-  { id: 'late_finish_50', name: 'Поздний финиш', desc: '50 смен закончены после 22:00', condition: { type: 'late_finish', value: 50 }, reward: 500 },
+  { id: 'shifts_500', name: 'Ветеран', desc: '500 смен', condition: { type: 'shifts', value: 500 }, reward: 2000 },
+  { id: 'early_start_50', name: 'Ранний старт', desc: '50 смен начаты до 09:00', condition: { type: 'early_start', value: 50 }, reward: 300 },
+  { id: 'late_finish_50', name: 'Поздний финиш', desc: '50 смен закончены после 22:00', condition: { type: 'late_finish', value: 50 }, reward: 300 },
 
   // Маршрутники
   { id: 'first_route', name: 'Первый маршрутник', desc: 'Отправить первый маршрутник', condition: { type: 'route_sheets', value: 1 }, reward: 50 },
   { id: 'route_50', name: 'Бумажный волк', desc: '50 маршрутников', condition: { type: 'route_sheets', value: 50 }, reward: 200 },
   { id: 'route_100', name: 'Бумажный тигр', desc: '100 маршрутников', condition: { type: 'route_sheets', value: 100 }, reward: 400 },
-  { id: 'route_200', name: 'Бумажный лев', desc: '200 маршрутников', condition: { type: 'route_sheets', value: 200 }, reward: 800 },
+  { id: 'route_200', name: 'Бумажный лев', desc: '200 маршрутников', condition: { type: 'route_sheets', value: 200 }, reward: 1200 },
 
   // Сверки
   { id: 'first_rec', name: 'Первый сверщик', desc: 'Первая сверка', condition: { type: 'reconciliations', value: 1 }, reward: 50 },
   { id: 'rec_30', name: 'Сверщик-эксперт', desc: '30 сверок', condition: { type: 'reconciliations', value: 30 }, reward: 200 },
   { id: 'rec_50', name: 'Сверщик-мастер', desc: '50 сверок', condition: { type: 'reconciliations', value: 50 }, reward: 400 },
-  { id: 'rec_100', name: 'Сверщик-легенда', desc: '100 сверок', condition: { type: 'reconciliations', value: 100 }, reward: 800 },
+  { id: 'rec_100', name: 'Сверщик-легенда', desc: '100 сверок', condition: { type: 'reconciliations', value: 100 }, reward: 1200 },
 
   // Наличные
   { id: 'first_cash', name: 'Первые деньги', desc: 'Первая сдача наличных', condition: { type: 'cash_submits', value: 1 }, reward: 50 },
@@ -84,17 +84,17 @@ const ACHIEVEMENTS = [
   { id: 'first_mileage', name: 'Первый пробег', desc: 'Первая запись пробега', condition: { type: 'mileage_records', value: 1, courierType: 'auto' }, reward: 50 },
   { id: 'mileage_50', name: 'Заправка', desc: '50 записей пробега', condition: { type: 'mileage_records', value: 50, courierType: 'auto' }, reward: 200 },
   { id: 'mileage_100', name: 'Полный бак', desc: '100 записей пробега', condition: { type: 'mileage_records', value: 100, courierType: 'auto' }, reward: 400 },
-  { id: 'mileage_200', name: 'Заправщик', desc: '200 записей пробега', condition: { type: 'mileage_records', value: 200, courierType: 'auto' }, reward: 800 },
+  { id: 'mileage_200', name: 'Заправщик', desc: '200 записей пробега', condition: { type: 'mileage_records', value: 200, courierType: 'auto' }, reward: 1200 },
 
   // Экспресс-заказы
-  { id: 'express_30', name: 'Экспресс', desc: '30+ заказов за смену', condition: { type: 'orders_single', value: 30 }, reward: 300 },
-  { id: 'express_35', name: 'Супер-экспресс', desc: '35+ заказов за смену', condition: { type: 'orders_single', value: 35 }, reward: 500 },
-  { id: 'express_40', name: 'Молния', desc: '40+ заказов за смену', condition: { type: 'orders_single', value: 40 }, reward: 1000 },
+  { id: 'express_30', name: 'Экспресс', desc: '30+ заказов за смену', condition: { type: 'orders_single', value: 30 }, reward: 500 },
+  { id: 'express_35', name: 'Супер-экспресс', desc: '35+ заказов за смену', condition: { type: 'orders_single', value: 35 }, reward: 700 },
+  { id: 'express_40', name: 'Молния', desc: '40+ заказов за смену', condition: { type: 'orders_single', value: 40 }, reward: 1500 },
 
   // Топ-1
   { id: 'top1_5', name: 'Король дня', desc: '5 раз топ-1', condition: { type: 'top1_count', value: 5 }, reward: 300 },
   { id: 'top1_10', name: 'Император', desc: '10 раз топ-1', condition: { type: 'top1_count', value: 10 }, reward: 600 },
-  { id: 'top1_20', name: 'Бог рейтинга', desc: '20 раз топ-1', condition: { type: 'top1_count', value: 20 }, reward: 1500 },
+  { id: 'top1_20', name: 'Бог рейтинга', desc: '20 раз топ-1', condition: { type: 'top1_count', value: 20 }, reward: 1000 },
 
   // Стрик
   { id: 'streak_7', name: 'Стойкость', desc: '7 смен подряд', condition: { type: 'streak', value: 7 }, reward: 200 },
@@ -107,6 +107,68 @@ const ACHIEVEMENTS = [
   { id: 'night_owl', name: 'Ночная сова', desc: 'Конец смены после 00:00', condition: { type: 'night_owl' }, reward: 200 },
   { id: 'perfect_shift', name: 'Идеальная смена', desc: 'Маршрутник + сверка + наличные за день', condition: { type: 'perfect_shift' }, reward: 400 }
 ];
+
+const RARITY_TIERS = {
+  diamond: { emoji: '👑', label: 'Легенда', min: 2000 },
+  platinum: { emoji: '💎', label: 'Платина', min: 1200 },
+  gold: { emoji: '🥇', label: 'Золото', min: 700 },
+  silver: { emoji: '🥈', label: 'Серебро', min: 200 },
+  bronze: { emoji: '🥉', label: 'Бронза', min: 0 }
+};
+
+const RARITY_ORDER = ['diamond', 'platinum', 'gold', 'silver', 'bronze'];
+
+function getRarityTier(reward) {
+  if (reward >= 2000) return 'diamond';
+  if (reward >= 1200) return 'platinum';
+  if (reward >= 700) return 'gold';
+  if (reward >= 200) return 'silver';
+  return 'bronze';
+}
+
+function getRarityCounts(telegramId) {
+  const stats = getAchievementStats(telegramId);
+  const unlockedIds = new Set(getUnlockedAchievements(telegramId).map(a => a.id));
+  const counts = { diamond: 0, platinum: 0, gold: 0, silver: 0, bronze: 0 };
+  const totals = { diamond: 0, platinum: 0, gold: 0, silver: 0, bronze: 0 };
+
+  for (const ach of ACHIEVEMENTS) {
+    if (ach.condition.courierType && ach.condition.courierType !== stats.courierType) continue;
+    const tier = getRarityTier(ach.reward);
+    totals[tier]++;
+    if (unlockedIds.has(ach.id)) counts[tier]++;
+  }
+
+  return { counts, totals };
+}
+
+function getBestAchievements(telegramId, count) {
+  const unlocked = getUnlockedAchievements(telegramId);
+  return unlocked
+    .sort((a, b) => (b.reward || 0) - (a.reward || 0))
+    .slice(0, count || 3);
+}
+
+function getNextAchievement(telegramId) {
+  const stats = getAchievementStats(telegramId);
+  const unlockedIds = new Set(getUnlockedAchievements(telegramId).map(a => a.id));
+  let best = null;
+  let bestPct = -1;
+
+  for (const ach of ACHIEVEMENTS) {
+    if (unlockedIds.has(ach.id)) continue;
+    if (ach.condition.courierType && ach.condition.courierType !== stats.courierType) continue;
+    const progress = getConditionProgress(stats, ach.condition);
+    if (progress.isBoolean || progress.target <= 0) continue;
+    const pct = progress.current / progress.target;
+    if (pct > bestPct) {
+      bestPct = pct;
+      best = { ...ach, progress };
+    }
+  }
+
+  return best;
+}
 
 function getAllAchievements() {
   return ACHIEVEMENTS;
@@ -236,56 +298,6 @@ function getConditionProgress(stats, condition) {
   return { current, target: value, isBoolean };
 }
 
-function formatAchievementsWithProgress(telegramId) {
-  const stats = getAchievementStats(telegramId);
-  const unlocked = getUnlockedAchievements(telegramId);
-  const unlockedIds = new Set(unlocked.map(a => a.id));
-
-  const categories = {
-    orders: { emoji: '🛒', label: 'Заказы', achievements: [] },
-    cash: { emoji: '💰', label: 'Выручка', achievements: [] },
-    shifts: { emoji: '⏱', label: 'Смены', achievements: [] },
-    docs: { emoji: '📄', label: 'Документы', achievements: [] },
-    special: { emoji: '⭐', label: 'Особые', achievements: [] }
-  };
-
-  for (const ach of ACHIEVEMENTS) {
-    // Пропускаем достижения не для этого типа курьера
-    if (ach.condition.courierType && ach.condition.courierType !== stats.courierType) continue;
-
-    const isDone = unlockedIds.has(ach.id);
-    const progress = getConditionProgress(stats, ach.condition);
-
-    const statusIcon = isDone ? '✅' : '⏳';
-
-    let progressLine = '';
-    if (!isDone && !progress.isBoolean && progress.target > 0) {
-      progressLine = ` — ${progress.current.toLocaleString('ru-RU')}/${progress.target.toLocaleString('ru-RU')}`;
-    }
-
-    const line = `${statusIcon} ${ach.name}${progressLine}`;
-
-    // Определяем категорию
-    const type = ach.condition.type;
-    if (type === 'orders' || type === 'orders_single') categories.orders.achievements.push(line);
-    else if (type === 'cash' || type === 'cash_submits') categories.cash.achievements.push(line);
-    else if (type === 'shifts' || type === 'early_start' || type === 'late_finish' || type === 'streak') categories.shifts.achievements.push(line);
-    else if (type === 'route_sheets' || type === 'reconciliations' || type === 'mileage_records') categories.docs.achievements.push(line);
-    else categories.special.achievements.push(line);
-  }
-
-  let text = `🏆 Мои достижения (${unlocked.length}/${ACHIEVEMENTS.length})\n\n`;
-
-  for (const key of ['orders', 'cash', 'shifts', 'docs', 'special']) {
-    const cat = categories[key];
-    if (cat.achievements.length === 0) continue;
-    text += `${cat.emoji} ${cat.label}\n`;
-    text += cat.achievements.join('\n') + '\n\n';
-  }
-
-  return text.trim();
-}
-
 function checkMilestoneAchievements(telegramId, stats) {
   const db = require('../db');
   const unlocked = [];
@@ -341,7 +353,7 @@ async function notifyAchievements(ctx, telegramId, unlocked) {
     }
   };
   for (const ach of unlocked) {
-    const msg = `🏆 <b>Достижение разблокировано!</b>\n\n${ach.name}\n<i>${ach.desc}</i>${ach.reward > 0 ? `\n\n+${ach.reward} XP` : ''}`;
+    const msg = formatUnlockNotification(ach);
     await sendMsg(telegramId, msg);
   }
 }
@@ -369,35 +381,6 @@ function _countCategoryAchievements(catKey, stats, unlockedIds) {
   }
 
   return { total, done, catXp, catEarned };
-}
-
-function formatAchievementsMenu(telegramId) {
-  const stats = getAchievementStats(telegramId);
-  const unlocked = getUnlockedAchievements(telegramId);
-  const unlockedIds = new Set(unlocked.map(a => a.id));
-  let totalAll = 0;
-  let doneAll = 0;
-  let totalXp = 0;
-  let earnedXp = 0;
-
-  let text = '🏆 <b>Мои достижения</b>\n\n';
-
-  for (const [catKey, catInfo] of Object.entries(CATEGORY_MAP)) {
-    const { total, done, catXp, catEarned } = _countCategoryAchievements(catKey, stats, unlockedIds);
-
-    if (total === 0) continue;
-    totalAll += total;
-    doneAll += done;
-    totalXp += catXp;
-    earnedXp += catEarned;
-
-    const pct = total > 0 ? done / total : 0;
-    const bar = formatProgressBar(pct * 100, 100);
-    text += `${catInfo.emoji} <b>${catInfo.label}</b> ${done}/${total}\n${bar}\n`;
-  }
-
-  text += `\n📊 <b>Всего:</b> ${doneAll}/${totalAll} • ${earnedXp}/${totalXp} XP`;
-  return text.trim();
 }
 
 function formatAchievementsCard(telegramId, category) {
@@ -479,6 +462,159 @@ function formatAchievementsCard(telegramId, category) {
   return text.trim();
 }
 
+function formatShowcase(telegramId) {
+  const stats = getAchievementStats(telegramId);
+  const unlocked = getUnlockedAchievements(telegramId);
+  const unlockedIds = new Set(unlocked.map(a => a.id));
+  const { counts, totals } = getRarityCounts(telegramId);
+  const best = getBestAchievements(telegramId, 1)[0];
+  const next = getNextAchievement(telegramId);
+
+  let totalAll = 0;
+  let doneAll = 0;
+  let totalXp = 0;
+  let earnedXp = 0;
+  for (const ach of ACHIEVEMENTS) {
+    if (ach.condition.courierType && ach.condition.courierType !== stats.courierType) continue;
+    totalAll++;
+    totalXp += ach.reward || 0;
+    if (unlockedIds.has(ach.id)) {
+      doneAll++;
+      earnedXp += ach.reward || 0;
+    }
+  }
+
+  let text = `╔═══════════════════════╗\n`;
+  text += `   🏆 <b>ТРОФЕЙНАЯ КОМНАТА</b>\n`;
+  text += `╚═══════════════════════╝\n\n`;
+  text += `🏅 <b>${doneAll}</b> / ${totalAll} медалей  •  <b>${earnedXp.toLocaleString('ru-RU')}</b> XP\n\n`;
+
+  const tierLine1 = `🥉 <code>${formatProgressBar(counts.bronze, totals.bronze)}</code> ${counts.bronze}`;
+  const tierLine2 = `🥈 <code>${formatProgressBar(counts.silver, totals.silver)}</code> ${counts.silver}`;
+  const tierLine3 = `🥇 <code>${formatProgressBar(counts.gold, totals.gold)}</code> ${counts.gold}`;
+  const tierLine4 = `💎 <code>${formatProgressBar(counts.platinum, totals.platinum)}</code> ${counts.platinum}`;
+  text += `${tierLine1}   ${tierLine2}\n`;
+  text += `${tierLine3}   ${tierLine4}\n`;
+
+  if (best) {
+    const tier = RARITY_TIERS[getRarityTier(best.reward)];
+    text += `\n🌟 <b>Лучший трофей:</b> ${best.name}\n`;
+    text += `   ${best.desc} • ${tier.emoji} +${best.reward.toLocaleString('ru-RU')} XP\n`;
+  }
+
+  if (next) {
+    const tier = RARITY_TIERS[getRarityTier(next.reward)];
+    const pct = next.progress.target > 0 ? Math.round((next.progress.current / next.progress.target) * 100) : 0;
+    text += `\n⏭ <b>Ближайший:</b> ${next.name} ${tier.emoji}\n`;
+    text += `   <code>${formatProgressBar(next.progress.current, next.progress.target)}</code> ${next.progress.current.toLocaleString('ru-RU')}/${next.progress.target.toLocaleString('ru-RU')}\n`;
+  }
+
+  return text.trim();
+}
+
+function formatRarityGallery(telegramId, tierKey) {
+  const stats = getAchievementStats(telegramId);
+  const unlocked = getUnlockedAchievements(telegramId);
+  const unlockedIds = new Set(unlocked.map(a => a.id));
+  const tier = RARITY_TIERS[tierKey];
+
+  const achievements = ACHIEVEMENTS.filter(ach => {
+    if (ach.condition.courierType && ach.condition.courierType !== stats.courierType) return false;
+    return getRarityTier(ach.reward) === tierKey;
+  });
+
+  let done = 0;
+  for (const ach of achievements) {
+    if (unlockedIds.has(ach.id)) done++;
+  }
+
+  let text = `${tier.emoji} <b>${tier.label.toUpperCase()}Е ТРОФЕИ</b>  ${done} / ${achievements.length}\n`;
+
+  for (const ach of achievements) {
+    const isDone = unlockedIds.has(ach.id);
+    const isBlocked = ach.condition.courierType && ach.condition.courierType !== stats.courierType;
+    const progress = getConditionProgress(stats, ach.condition);
+
+    text += `\n`;
+
+    if (isDone) {
+      const unlockedAch = unlocked.find(u => u.id === ach.id);
+      text += `✅ <b>${ach.name}</b> — ${ach.desc}\n`;
+      text += `   🎉 +${ach.reward.toLocaleString('ru-RU')} XP`;
+      if (unlockedAch?.unlockedAt) {
+        const d = new Date(unlockedAch.unlockedAt);
+        text += ` · 📅 ${d.toLocaleDateString('ru-RU')}`;
+      }
+      text += `\n`;
+    } else if (isBlocked) {
+      text += `🔒 <b>${ach.name}</b> — ${ach.desc}\n`;
+      text += `   Награда: +${ach.reward.toLocaleString('ru-RU')} XP\n`;
+    } else {
+      text += `⏳ <b>${ach.name}</b> — ${ach.desc}\n`;
+      if (!progress.isBoolean && progress.target > 0) {
+        text += `   <code>${formatProgressBar(progress.current, progress.target)}</code> ${progress.current.toLocaleString('ru-RU')}/${progress.target.toLocaleString('ru-RU')}\n`;
+      }
+      text += `   Награда: +${ach.reward.toLocaleString('ru-RU')} XP\n`;
+    }
+  }
+
+  return text.trim();
+}
+
+function formatTrophyCard(telegramId, achievementId) {
+  const ach = ACHIEVEMENTS.find(a => a.id === achievementId);
+  if (!ach) return '❌ Достижение не найдено';
+
+  const stats = getAchievementStats(telegramId);
+  const isDone = isAchievementUnlocked(telegramId, ach.id);
+  const progress = getConditionProgress(stats, ach.condition);
+  const tierKey = getRarityTier(ach.reward);
+  const tier = RARITY_TIERS[tierKey];
+
+  let text = `╔═══════════════════════╗\n`;
+  text += `   ${tier.emoji} <b>${ach.name.toUpperCase()}</b>\n`;
+  text += `   ${tier.emoji} ${tier.label} · +${ach.reward.toLocaleString('ru-RU')} XP\n`;
+  text += `╚═══════════════════════╝\n\n`;
+  text += `${ach.desc}\n\n`;
+
+  if (!progress.isBoolean && progress.target > 0) {
+    text += `<code>${formatProgressBar(progress.current, progress.target)}</code> ${progress.current.toLocaleString('ru-RU')} / ${progress.target.toLocaleString('ru-RU')}\n`;
+    if (!isDone) {
+      const remaining = progress.target - progress.current;
+      text += `💡 ${remaining.toLocaleString('ru-RU')} до следующего!\n`;
+    }
+    text += `\n`;
+  }
+
+  if (isDone) {
+    const unlocked = getUnlockedAchievements(telegramId).find(u => u.id === ach.id);
+    text += `Статус: ✅ Получено\n`;
+    if (unlocked?.unlockedAt) {
+      const d = new Date(unlocked.unlockedAt);
+      text += `Дата: 📅 ${d.toLocaleDateString('ru-RU')}\n`;
+    }
+  } else {
+    text += `Статус: ⏳ В процессе\n`;
+  }
+
+  return text.trim();
+}
+
+function formatUnlockNotification(achievement) {
+  const tierKey = getRarityTier(achievement.reward);
+  const tier = RARITY_TIERS[tierKey];
+
+  let text = `🎉🏆🎉\n\n`;
+  text += `🏅 <b>МЕДАЛЬ ПОЛУЧЕНА!</b>\n\n`;
+  text += `${tier.emoji} <b>${achievement.name.toUpperCase()}</b>\n`;
+  text += `<i>${achievement.desc}</i>\n\n`;
+  text += `Раритет: ${tier.emoji} ${tier.label}\n`;
+  text += `Награда: +${achievement.reward.toLocaleString('ru-RU')} XP\n\n`;
+  text += `🔥 Отличная работа!`;
+
+  return text;
+}
+
 module.exports = {
   getAllAchievements,
   getUnlockedAchievements,
@@ -487,10 +623,18 @@ module.exports = {
   checkMilestoneAchievements,
   getAchievementStats,
   notifyAchievements,
-  formatAchievementsWithProgress,
   formatProgressBar,
-  formatAchievementsMenu,
   formatAchievementsCard,
+  formatShowcase,
+  formatRarityGallery,
+  formatTrophyCard,
+  formatUnlockNotification,
+  getRarityTier,
+  getRarityCounts,
+  getBestAchievements,
+  getNextAchievement,
+  RARITY_TIERS,
+  RARITY_ORDER,
   CATEGORY_MAP,
   SUBCATEGORY_MAP,
   ACHIEVEMENT_ORDER

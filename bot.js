@@ -75,7 +75,7 @@ const {
 } = require('./services/reconciliationOcr');
 const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, getDayOrders: getLbDayOrders, getWorkplaceRecord, setWorkplaceRecord, getDailyTop3, findOvertakenCouriers, getTodayKey: getLbTodayKey, _getAllRecords } = require('./services/leaderboard');
 const { addXp, getTotalXp, formatRankInfo, getXpForAction } = require('./services/xp');
-const { getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements, formatAchievementsWithProgress, formatAchievementsMenu, formatAchievementsCard, CATEGORY_MAP } = require('./services/achievements');
+const { getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements, formatAchievementsCard, formatShowcase, formatRarityGallery, formatTrophyCard, formatUnlockNotification, getRarityTier, RARITY_TIERS, RARITY_ORDER, CATEGORY_MAP } = require('./services/achievements');
 const { updateStreak, getStreak, getStreakBonusesDescription, formatStreakInfo } = require('./services/streak');
 const { updateChallengeProgress, generateWeeklyChallenges, getChallenges, cleanupOldChallenges, cleanupInvalidChallenges, notifyChallengeCompleted, formatProgressBar } = require('./services/challenges');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, getCourierColumnsByDay, roundMinutesToHalfHour, roundTimeToHalfHour, isEmptyCell, isScheduleMarker } = require('./utils');
@@ -2588,18 +2588,52 @@ async function showLeaderboardMenu(ctx) {
   return { status: 'showing_leaderboard' };
 }
 
-async function showMyAchievements(ctx) {
+async function showTrophyRoom(ctx) {
   const telegramId = ctx.from.id;
-  const text = formatAchievementsMenu(telegramId);
+  const text = formatShowcase(telegramId);
 
-  const buttons = [];
-  for (const [key, info] of Object.entries(CATEGORY_MAP)) {
-    buttons.push([Markup.button.callback(`${info.emoji} ${info.label}`, `ach_cat_${key}`)]);
-  }
-  buttons.push([Markup.button.callback('⬅️ Назад', 'lb_back_menu')]);
+  const buttons = [
+    [Markup.button.callback('👑 Легенды', 'ach_rarity_diamond'),
+     Markup.button.callback('💎 Платина', 'ach_rarity_platinum'),
+     Markup.button.callback('🥇 Золото', 'ach_rarity_gold')],
+    [Markup.button.callback('🥈 Серебро', 'ach_rarity_silver'),
+     Markup.button.callback('🥉 Бронза', 'ach_rarity_bronze')],
+    [Markup.button.callback('🛒 Заказы', 'ach_cat_orders'),
+     Markup.button.callback('💰 Выручка', 'ach_cat_cash'),
+     Markup.button.callback('⏱ Смены', 'ach_cat_shifts')],
+    [Markup.button.callback('📄 Документы', 'ach_cat_docs'),
+     Markup.button.callback('⭐ Особые', 'ach_cat_special')],
+    [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
+  ];
 
   try {
     await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  } catch (e) {
+    if (!e.message?.includes('message is not modified')) throw e;
+  }
+}
+
+async function showRarityGallery(ctx, tierKey) {
+  const telegramId = ctx.from.id;
+  const text = formatRarityGallery(telegramId, tierKey);
+
+  try {
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
+      [Markup.button.callback('⬅️ Назад в витрину', 'ach_back_showcase')]
+    ]) });
+  } catch (e) {
+    if (!e.message?.includes('message is not modified')) throw e;
+  }
+}
+
+async function showTrophyCard(ctx, achievementId, backCallback) {
+  const telegramId = ctx.from.id;
+  const text = formatTrophyCard(telegramId, achievementId);
+
+  try {
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
+      [Markup.button.callback('⬅️ Назад', backCallback || 'ach_back_showcase')]
+    ]) });
   } catch (e) {
     if (!e.message?.includes('message is not modified')) throw e;
   }
@@ -2611,7 +2645,7 @@ async function showAchievementsCategory(ctx, category) {
 
   try {
     await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-      [Markup.button.callback('⬅️ Назад к достижениям', 'ach_back_main')]
+      [Markup.button.callback('⬅️ Назад в витрину', 'ach_back_showcase')]
     ]) });
   } catch (e) {
     if (!e.message?.includes('message is not modified')) throw e;
@@ -3302,7 +3336,7 @@ bot.action('lb_challenges', async (ctx) => {
 
 bot.action('lb_achievements', async (ctx) => {
   await ctx.answerCbQuery();
-  await showMyAchievements(ctx);
+  await showTrophyRoom(ctx);
 });
 
 // Достижения: категории
@@ -3313,10 +3347,26 @@ for (const catKey of Object.keys(CATEGORY_MAP)) {
   });
 }
 
-// Назад к главному меню достижений
-bot.action('ach_back_main', async (ctx) => {
+// Достижения: редкость
+for (const tierKey of RARITY_ORDER) {
+  bot.action(`ach_rarity_${tierKey}`, async (ctx) => {
+    await ctx.answerCbQuery();
+    await showRarityGallery(ctx, tierKey);
+  });
+}
+
+// Достижения: карточки
+for (const ach of getAllAchievements()) {
+  bot.action(`ach_trophy_${ach.id}`, async (ctx) => {
+    await ctx.answerCbQuery();
+    await showTrophyCard(ctx, ach.id, 'ach_back_showcase');
+  });
+}
+
+// Назад в витрину
+bot.action('ach_back_showcase', async (ctx) => {
   await ctx.answerCbQuery();
-  await showMyAchievements(ctx);
+  await showTrophyRoom(ctx);
 });
 
 bot.action('lb_progress', async (ctx) => {
@@ -4220,7 +4270,7 @@ const services = {
   // leaderboard & achievements
   calculateLeaderboard, formatLeaderboard, getDailyTop3, findOvertakenCouriers,
   checkNotifications: checkLeaderboardNotifications, getWorkplaceRecord, setWorkplaceRecord,
-  getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements, formatAchievementsWithProgress, formatAchievementsMenu, formatAchievementsCard, CATEGORY_MAP,
+  getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements, formatAchievementsCard, formatShowcase, formatRarityGallery, formatTrophyCard, formatUnlockNotification, CATEGORY_MAP,
   updateStreak, getStreak, getStreakBonusesDescription, formatStreakInfo,
   getChallenges, generateWeeklyChallenges, cleanupOldChallenges, notifyChallengeCompleted,
   // sheets & ocr
@@ -4237,7 +4287,7 @@ const services = {
   updateCourierTime, updateMileage,
   // misc
   openShopNotify,
-  showLeaderboardMenu, showWeeklyChallenges, showMyAchievements,
+  showLeaderboardMenu, showWeeklyChallenges, showTrophyRoom,
   showMyProgress, showXpInfo, showNotificationSettings, sendCommandsList
 };
 
