@@ -2598,11 +2598,6 @@ async function showTrophyRoom(ctx) {
      Markup.button.callback('🥇 Золото', 'ach_rarity_gold')],
     [Markup.button.callback('🥈 Серебро', 'ach_rarity_silver'),
      Markup.button.callback('🥉 Бронза', 'ach_rarity_bronze')],
-    [Markup.button.callback('🛒 Заказы', 'ach_cat_orders'),
-     Markup.button.callback('💰 Выручка', 'ach_cat_cash'),
-     Markup.button.callback('⏱ Смены', 'ach_cat_shifts')],
-    [Markup.button.callback('📄 Документы', 'ach_cat_docs'),
-     Markup.button.callback('⭐ Особые', 'ach_cat_special')],
     [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
   ];
 
