@@ -109,11 +109,11 @@ const ACHIEVEMENTS = [
 ];
 
 const RARITY_TIERS = {
-  diamond: { emoji: '👑', label: 'Легенда', plural: 'ЛЕГЕНДАРНЫЕ', min: 2000 },
-  platinum: { emoji: '💎', label: 'Платина', plural: 'ПЛАТИНОВЫЕ', min: 1000 },
-  gold: { emoji: '🥇', label: 'Золото', plural: 'ЗОЛОТЫЕ', min: 400 },
-  silver: { emoji: '🥈', label: 'Серебро', plural: 'СЕРЕБРЯНЫЕ', min: 200 },
-  bronze: { emoji: '🥉', label: 'Бронза', plural: 'БРОНЗОВЫЕ', min: 0 }
+  diamond: { emoji: '👑', label: 'Легенда', min: 2000 },
+  platinum: { emoji: '💎', label: 'Платина', min: 1000 },
+  gold: { emoji: '🥇', label: 'Золото', min: 400 },
+  silver: { emoji: '🥈', label: 'Серебро', min: 200 },
+  bronze: { emoji: '🥉', label: 'Бронза', min: 0 }
 };
 
 const RARITY_ORDER = ['diamond', 'platinum', 'gold', 'silver', 'bronze'];
@@ -299,8 +299,7 @@ function getConditionProgress(stats, condition) {
 }
 
 function checkMilestoneAchievements(telegramId, stats) {
-const db = require('../db');
-const { pe } = require('./premiumEmoji');
+  const db = require('../db');
   const unlocked = [];
   for (const ach of ACHIEVEMENTS) {
     if (isAchievementUnlocked(telegramId, ach.id)) continue;
@@ -389,11 +388,10 @@ function formatAchievementsCard(telegramId, category) {
   const unlocked = getUnlockedAchievements(telegramId);
   const unlockedIds = new Set(unlocked.map(a => a.id));
   const catInfo = CATEGORY_MAP[category];
-  if (!catInfo) return `${pe('❓')} <b>Неизвестная категория</b>`;
 
   const { total, done, catXp, catEarned } = _countCategoryAchievements(category, stats, unlockedIds);
 
-  let text = `${pe(catInfo.emoji)} <b>${catInfo.label}</b>\n`;
+  let text = `${catInfo.emoji} <b>${catInfo.label}</b>\n`;
   text += `${done}/${total} получено • ${catEarned}/${catXp} XP\n`;
 
   const subs = CATEGORY_SUBCATEGORIES[category] || [];
@@ -418,7 +416,7 @@ function formatAchievementsCard(telegramId, category) {
       for (const ach of achievements) {
         if (unlockedIds.has(ach.id)) subDone++;
       }
-      text += `\n${pe(subInfo.emoji)} <b>${subInfo.label}</b> ${subDone}/${achievements.length}\n`;
+      text += `\n${subInfo.emoji} <b>${subInfo.label}</b> ${subDone}/${achievements.length}\n`;
     }
 
     let nextActive = null;
@@ -439,14 +437,14 @@ function formatAchievementsCard(telegramId, category) {
       const progress = getConditionProgress(stats, ach.condition);
 
       if (isDone) {
-        text += `${pe('✅')} <b>${ach.name}</b>\n`;
+        text += `✅ <b>${ach.name}</b>\n`;
         text += `   ${ach.desc}\n`;
-        text += `   ${pe('🎉')} +${ach.reward} XP\n`;
+        text += `   🎉 +${ach.reward} XP\n`;
       } else if (isBlocked) {
-        text += `${pe('🔒')} <b>${ach.name}</b>\n`;
+        text += `🔒 <b>${ach.name}</b>\n`;
         text += `   ${ach.desc}\n`;
       } else {
-        text += `${pe('⏳')} <b>${ach.name}</b>\n`;
+        text += `⏳ <b>${ach.name}</b>\n`;
         text += `   ${ach.desc}\n`;
         if (!progress.isBoolean && progress.target > 0) {
           const bar = formatProgressBar(progress.current, progress.target);
@@ -454,7 +452,7 @@ function formatAchievementsCard(telegramId, category) {
         }
         if (ach === nextActive && nextProgress) {
           const remaining = nextProgress.target - nextProgress.current;
-          text += `   ${pe('💡')} ${remaining.toLocaleString('ru-RU')} до следующего!\n`;
+          text += `   💡 ${remaining.toLocaleString('ru-RU')} до следующего!\n`;
         }
         text += `   Награда: +${ach.reward} XP\n`;
       }
@@ -487,27 +485,27 @@ function formatShowcase(telegramId) {
   }
 
   let text = `╔═══════════════════════╗\n`;
-  text += `   ${pe('🏆')} <b>ТРОФЕЙНАЯ КОМНАТА</b>\n`;
+  text += `   🏆 <b>ТРОФЕЙНАЯ КОМНАТА</b>\n`;
   text += `╚═══════════════════════╝\n\n`;
-  text += `${pe('🏅')} <b>${doneAll}</b> / ${totalAll} медалей  •  <b>${earnedXp.toLocaleString('ru-RU')}</b> XP\n\n`;
+  text += `🏅 <b>${doneAll}</b> / ${totalAll} медалей  •  <b>${earnedXp.toLocaleString('ru-RU')}</b> XP\n\n`;
 
-  const tierLine1 = `${pe('🥉')} <code>${formatProgressBar(counts.bronze, totals.bronze)}</code> ${counts.bronze}`;
-  const tierLine2 = `${pe('🥈')} <code>${formatProgressBar(counts.silver, totals.silver)}</code> ${counts.silver}`;
-  const tierLine3 = `${pe('🥇')} <code>${formatProgressBar(counts.gold, totals.gold)}</code> ${counts.gold}`;
-  const tierLine4 = `${pe('💎')} <code>${formatProgressBar(counts.platinum, totals.platinum)}</code> ${counts.platinum}`;
+  const tierLine1 = `🥉 <code>${formatProgressBar(counts.bronze, totals.bronze)}</code> ${counts.bronze}`;
+  const tierLine2 = `🥈 <code>${formatProgressBar(counts.silver, totals.silver)}</code> ${counts.silver}`;
+  const tierLine3 = `🥇 <code>${formatProgressBar(counts.gold, totals.gold)}</code> ${counts.gold}`;
+  const tierLine4 = `💎 <code>${formatProgressBar(counts.platinum, totals.platinum)}</code> ${counts.platinum}`;
   text += `${tierLine1}   ${tierLine2}\n`;
   text += `${tierLine3}   ${tierLine4}\n`;
 
   if (best) {
     const tier = RARITY_TIERS[getRarityTier(best.reward)];
-    text += `\n${pe('🌟')} <b>Лучший трофей:</b> ${best.name}\n`;
-    text += `   ${best.desc} • ${pe(tier.emoji)} +${best.reward.toLocaleString('ru-RU')} XP\n`;
+    text += `\n🌟 <b>Лучший трофей:</b> ${best.name}\n`;
+    text += `   ${best.desc} • ${tier.emoji} +${best.reward.toLocaleString('ru-RU')} XP\n`;
   }
 
   if (next) {
     const tier = RARITY_TIERS[getRarityTier(next.reward)];
     const pct = next.progress.target > 0 ? Math.round((next.progress.current / next.progress.target) * 100) : 0;
-    text += `\n${pe('⏭')} <b>Ближайший:</b> ${next.name} ${pe(tier.emoji)}\n`;
+    text += `\n⏭ <b>Ближайший:</b> ${next.name} ${tier.emoji}\n`;
     text += `   <code>${formatProgressBar(next.progress.current, next.progress.target)}</code> ${next.progress.current.toLocaleString('ru-RU')}/${next.progress.target.toLocaleString('ru-RU')}\n`;
   }
 
@@ -530,7 +528,7 @@ function formatRarityGallery(telegramId, tierKey) {
     if (unlockedIds.has(ach.id)) done++;
   }
 
-  let text = `${pe(tier.emoji)} <b>${tier.plural} ТРОФЕИ</b>  ${done} / ${achievements.length}\n`;
+  let text = `${tier.emoji} <b>${tier.label.toUpperCase()}Е ТРОФЕИ</b>  ${done} / ${achievements.length}\n`;
 
   for (const ach of achievements) {
     const isDone = unlockedIds.has(ach.id);
@@ -541,18 +539,18 @@ function formatRarityGallery(telegramId, tierKey) {
 
     if (isDone) {
       const unlockedAch = unlocked.find(u => u.id === ach.id);
-      text += `${pe('✅')} <b>${ach.name}</b> — ${ach.desc}\n`;
-      text += `   ${pe('🎉')} +${ach.reward.toLocaleString('ru-RU')} XP`;
+      text += `✅ <b>${ach.name}</b> — ${ach.desc}\n`;
+      text += `   🎉 +${ach.reward.toLocaleString('ru-RU')} XP`;
       if (unlockedAch?.unlockedAt) {
         const d = new Date(unlockedAch.unlockedAt);
-        text += ` · ${pe('📅')} ${d.toLocaleDateString('ru-RU')}`;
+        text += ` · 📅 ${d.toLocaleDateString('ru-RU')}`;
       }
       text += `\n`;
     } else if (isBlocked) {
-      text += `${pe('🔒')} <b>${ach.name}</b> — ${ach.desc}\n`;
+      text += `🔒 <b>${ach.name}</b> — ${ach.desc}\n`;
       text += `   Награда: +${ach.reward.toLocaleString('ru-RU')} XP\n`;
     } else {
-      text += `${pe('⏳')} <b>${ach.name}</b> — ${ach.desc}\n`;
+      text += `⏳ <b>${ach.name}</b> — ${ach.desc}\n`;
       if (!progress.isBoolean && progress.target > 0) {
         text += `   <code>${formatProgressBar(progress.current, progress.target)}</code> ${progress.current.toLocaleString('ru-RU')}/${progress.target.toLocaleString('ru-RU')}\n`;
       }
@@ -565,7 +563,7 @@ function formatRarityGallery(telegramId, tierKey) {
 
 function formatTrophyCard(telegramId, achievementId) {
   const ach = ACHIEVEMENTS.find(a => a.id === achievementId);
-  if (!ach) return `${pe('❌')} Достижение не найдено`;
+  if (!ach) return '❌ Достижение не найдено';
 
   const stats = getAchievementStats(telegramId);
   const isDone = isAchievementUnlocked(telegramId, ach.id);
@@ -574,8 +572,8 @@ function formatTrophyCard(telegramId, achievementId) {
   const tier = RARITY_TIERS[tierKey];
 
   let text = `╔═══════════════════════╗\n`;
-  text += `   ${pe(tier.emoji)} <b>${ach.name.toUpperCase()}</b>\n`;
-  text += `   ${pe(tier.emoji)} ${tier.label} · +${ach.reward.toLocaleString('ru-RU')} XP\n`;
+  text += `   ${tier.emoji} <b>${ach.name.toUpperCase()}</b>\n`;
+  text += `   ${tier.emoji} ${tier.label} · +${ach.reward.toLocaleString('ru-RU')} XP\n`;
   text += `╚═══════════════════════╝\n\n`;
   text += `${ach.desc}\n\n`;
 
@@ -583,20 +581,20 @@ function formatTrophyCard(telegramId, achievementId) {
     text += `<code>${formatProgressBar(progress.current, progress.target)}</code> ${progress.current.toLocaleString('ru-RU')} / ${progress.target.toLocaleString('ru-RU')}\n`;
     if (!isDone) {
       const remaining = progress.target - progress.current;
-      text += `${pe('💡')} ${remaining.toLocaleString('ru-RU')} до следующего!\n`;
+      text += `💡 ${remaining.toLocaleString('ru-RU')} до следующего!\n`;
     }
     text += `\n`;
   }
 
   if (isDone) {
     const unlocked = getUnlockedAchievements(telegramId).find(u => u.id === ach.id);
-    text += `Статус: ${pe('✅')} Получено\n`;
+    text += `Статус: ✅ Получено\n`;
     if (unlocked?.unlockedAt) {
       const d = new Date(unlocked.unlockedAt);
-      text += `Дата: ${pe('📅')} ${d.toLocaleDateString('ru-RU')}\n`;
+      text += `Дата: 📅 ${d.toLocaleDateString('ru-RU')}\n`;
     }
   } else {
-    text += `Статус: ${pe('⏳')} В процессе\n`;
+    text += `Статус: ⏳ В процессе\n`;
   }
 
   return text.trim();
@@ -606,13 +604,13 @@ function formatUnlockNotification(achievement) {
   const tierKey = getRarityTier(achievement.reward);
   const tier = RARITY_TIERS[tierKey];
 
-  let text = `${pe('🎉')}${pe('🏆')}${pe('🎉')}\n\n`;
-  text += `${pe('🏅')} <b>МЕДАЛЬ ПОЛУЧЕНА!</b>\n\n`;
-  text += `${pe(tier.emoji)} <b>${achievement.name.toUpperCase()}</b>\n`;
+  let text = `🎉🏆🎉\n\n`;
+  text += `🏅 <b>МЕДАЛЬ ПОЛУЧЕНА!</b>\n\n`;
+  text += `${tier.emoji} <b>${achievement.name.toUpperCase()}</b>\n`;
   text += `<i>${achievement.desc}</i>\n\n`;
-  text += `Раритет: ${pe(tier.emoji)} ${tier.label}\n`;
+  text += `Раритет: ${tier.emoji} ${tier.label}\n`;
   text += `Награда: +${achievement.reward.toLocaleString('ru-RU')} XP\n\n`;
-  text += `${pe('🔥')} Отличная работа!`;
+  text += `🔥 Отличная работа!`;
 
   return text;
 }

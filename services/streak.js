@@ -1,5 +1,4 @@
 const db = require('../db');
-const { pe } = require('./premiumEmoji');
 
 function _formatLocalDate(date, timezone) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -89,21 +88,21 @@ function updateStreak(telegramId, shiftDateStr) {
 
 function getStreakBonusesDescription(bonuses) {
   if (!bonuses || bonuses.length === 0) return '';
-  const lines = bonuses.map(b => `${pe('🔥')} Стрик ${b.threshold}! +${b.xp} XP`);
+  const lines = bonuses.map(b => `🔥 Стрик ${b.threshold}! +${b.xp} XP`);
   return '\n' + lines.join('\n');
 }
 
 function formatStreakInfo(telegramId) {
   const streak = getStreak(telegramId);
   if (streak.currentStreak === 0) {
-    return `${pe('🔥')} Стрик: нет активного (рекорд: ${streak.maxStreak})`;
+    return '🔥 Стрик: нет активного (рекорд: ' + streak.maxStreak + ')';
   }
-  let text = `${pe('🔥')} Стрик: <b>${streak.currentStreak}</b> смен (рекорд: ${streak.maxStreak})`;
+  let text = `🔥 Стрик: <b>${streak.currentStreak}</b> смен (рекорд: ${streak.maxStreak})`;
   // Показываем ближайший бонус
   for (const { threshold, xp } of STREAK_BONUSES) {
     if (streak.currentStreak < threshold) {
       const remaining = threshold - streak.currentStreak;
-      text += `\n${pe('💪')} Ещё ${remaining} смен до +${xp} XP`;
+      text += `\n💪 Ещё ${remaining} смен до +${xp} XP`;
       break;
     }
   }

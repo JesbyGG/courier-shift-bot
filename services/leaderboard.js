@@ -1,5 +1,4 @@
 const db = require('../db');
-const { pe } = require('./premiumEmoji');
 
 function _getRecord(telegramId) {
   const row = db.prepare('SELECT data FROM leaderboard WHERE telegramId = ?').get(String(telegramId));
@@ -163,9 +162,9 @@ function formatLeaderboard(entries, myTelegramId, showWorkplace = false) {
 
   const lines = entries.slice(0, 50).map(entry => {
     let medal = '';
-    if (entry.rank === 1) medal = pe('🥇');
-    else if (entry.rank === 2) medal = pe('🥈');
-    else if (entry.rank === 3) medal = pe('🥉');
+    if (entry.rank === 1) medal = '🥇';
+    else if (entry.rank === 2) medal = '🥈';
+    else if (entry.rank === 3) medal = '🥉';
     else medal = '  ';
 
     let fioStr = entry.fio.split(' ').slice(0, 2).join(' ');

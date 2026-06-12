@@ -1,5 +1,4 @@
 module.exports = function setupCourier(bot, services) {
-  const { pe } = require('../services/premiumEmoji');
   const {
     getState, setState, clearState,
     isLogist, getMenuForRole,
@@ -23,7 +22,7 @@ module.exports = function setupCourier(bot, services) {
   bot.on('photo', async (ctx) => {
     if (ctx.chat?.type !== 'private') return;
     if (isLogist(ctx.from.id)) {
-      await ctx.replyWithHTML(`${pe('❌')} Эта функция доступна только курьерам.`, getMenuForRole(ctx.from.id));
+      await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
       return;
     }
     const telegramId = ctx.from.id;
@@ -40,7 +39,7 @@ module.exports = function setupCourier(bot, services) {
     if (state?.awaitingReconciliationPhoto) {
       const res = await handleReconciliationPhoto(ctx, state, fileId);
       if (res?.status === 'photos_sent_terminal') {
-        await ctx.replyWithHTML(`${pe('✅')} <b>Все фото (2 шт.) отправлены.</b>${res.ocrWarning}`, getMenuForRole(ctx.from.id));
+        await ctx.replyWithHTML(`✅ <b>Все фото (2 шт.) отправлены.</b>${res.ocrWarning}`, getMenuForRole(ctx.from.id));
         if (res.postRes?.status === 'partial_error') {
           await ctx.replyWithHTML(
             `⚠️ <b>Фото отправлены, но не удалось записать:</b>\n` +
@@ -50,7 +49,7 @@ module.exports = function setupCourier(bot, services) {
           );
         }
       } else if (res?.status === 'photos_sent') {
-        await ctx.replyWithHTML(`${pe('✅')} <b>Все фото (${res.total} шт.) отправлены.</b>${res.ocrWarning}`, getMenuForRole(ctx.from.id));
+        await ctx.replyWithHTML(`✅ <b>Все фото (${res.total} шт.) отправлены.</b>${res.ocrWarning}`, getMenuForRole(ctx.from.id));
         if (res.postRes?.status === 'partial_error') {
           await ctx.replyWithHTML(
             `⚠️ <b>Фото отправлены, но не удалось записать:</b>\n` +
@@ -87,7 +86,7 @@ module.exports = function setupCourier(bot, services) {
     await ctx.answerCbQuery();
     deleteUser(ctx.from.id);
     setState(ctx.from.id, { awaitingFio: true });
-    await ctx.replyWithHTML(`${pe('👤')} <b>Смена сотрудника</b>\n\nПредыдущие данные удалены.\nВведите имя и фамилию как в таблице.`);
+    await ctx.replyWithHTML('👤 <b>Смена сотрудника</b>\n\nПредыдущие данные удалены.\nВведите имя и фамилию как в таблице.');
   });
 
   bot.action('route_sheet_done', async (ctx) => {
@@ -98,8 +97,8 @@ module.exports = function setupCourier(bot, services) {
       const sent = state.reconciliationPhotosSent || 0;
       await ctx.replyWithHTML(
         sent > 0
-          ? `${pe('✅')} Завершено. Отправлено фото: <b>${sent}</b>.`
-          : `${pe('✅')} Завершено. Фото не отправлены.`,
+          ? `✅ Завершено. Отправлено фото: <b>${sent}</b>.`
+          : '✅ Завершено. Фото не отправлены.',
         courierMainMenu(ctx.from.id)
       );
       return;
@@ -119,7 +118,7 @@ module.exports = function setupCourier(bot, services) {
       const unlocked = checkMilestoneAchievements(ctx.from.id, stats);
       if (unlocked.length > 0) await notifyAchievements(ctx, ctx.from.id, unlocked);
     } catch (_) {}
-    await ctx.replyWithHTML(`${pe('✅')} Завершено. Спасибо.`, courierMainMenu(ctx.from.id));
+    await ctx.replyWithHTML('✅ Завершено. Спасибо.', courierMainMenu(ctx.from.id));
   });
 
   bot.action('cash_submit_yes', async (ctx) => {
@@ -129,7 +128,7 @@ module.exports = function setupCourier(bot, services) {
     const amount = Number(pendingCash?.amount || 0);
 
     if (!Number.isFinite(amount) || amount < 1) {
-      await ctx.replyWithHTML(`${pe('✅')} Долгов нет — все деньги сданы.`, getMenuForRole(telegramId));
+      await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы.', getMenuForRole(telegramId));
       return;
     }
 
@@ -161,10 +160,10 @@ module.exports = function setupCourier(bot, services) {
         if (unlocked.length > 0) await notifyAchievements(ctx, telegramId, unlocked);
       } catch (_) {}
       try {
-        await ctx.editMessageText(`${pe('✅')} <b>${esc(courierFio)}</b>, сдача <code>${esc(formatted)}</code> ₽ подтверждена.`);
+        await ctx.editMessageText(`✅ <b>${esc(courierFio)}</b>, сдача <code>${esc(formatted)}</code> ₽ подтверждена.`);
       } catch (e) { /* ignore */ }
       await ctx.replyWithHTML(
-        `${pe('✅')} <b>Сдача подтверждена</b>\n\n` +
+        `✅ <b>Сдача подтверждена</b>\n\n` +
         `Вы сдали <code>${esc(formatted)}</code> ₽.\n` +
         `Спасибо!`,
         getMenuForRole(telegramId)
@@ -183,11 +182,11 @@ module.exports = function setupCourier(bot, services) {
     await notifyLogistsAboutSelfClearance(telegramId, courierFio, amount, formatted, workplace);
 
     try {
-      await ctx.editMessageText(`${pe('⏳')} Запрос отправлен. Ожидайте подтверждения логиста.`);
+      await ctx.editMessageText('⏳ Запрос отправлен. Ожидайте подтверждения логиста.');
     } catch (e) { /* ignore */ }
 
     await ctx.replyWithHTML(
-      `${pe('⏳')} <b>Запрос отправлен</b>\n\n` +
+      `⏳ <b>Запрос отправлен</b>\n\n` +
       `Вы отметили сдачу <code>${esc(formatted)}</code> ₽.\n` +
       `Ожидайте подтверждения от логиста.`,
       getMenuForRole(telegramId)
@@ -195,11 +194,11 @@ module.exports = function setupCourier(bot, services) {
   });
 
   bot.action('cash_submit_no', async (ctx) => {
-    await ctx.answerCbQuery(`${pe('❌')} Отложено`);
+    await ctx.answerCbQuery('❌ Отложено');
     const fun = String(process.env.FUN_TONE || '').toLowerCase() === 'true';
     const message = fun
-      ? `${pe('😼')} Тогда бегом сдавать деньги! Котоконтроль не дремлет ${pe('🐾')}\n\nКогда сдадите — нажмите «${pe('💵')} Деньги к сдаче» и подтвердите.`
-      : `⚠️ Не забудьте сдать деньги.\n\nКогда сдадите — нажмите «${pe('💵')} Деньги к сдаче» и подтвердите.`;
+      ? '😼 Тогда бегом сдавать деньги! Котоконтроль не дремлет 🐾\n\nКогда сдадите — нажмите «💵 Деньги к сдаче» и подтвердите.'
+      : '⚠️ Не забудьте сдать деньги.\n\nКогда сдадите — нажмите «💵 Деньги к сдаче» и подтвердите.';
     await ctx.replyWithHTML(message, getMenuForRole(ctx.from.id));
   });
 
@@ -221,7 +220,7 @@ module.exports = function setupCourier(bot, services) {
       ocrValue: null
     });
 
-    await ctx.replyWithHTML(`${pe('📷')} Отправьте новое фото пробега крупным планом или нажмите «${pe('⏭️')} Пропустить».`, skipMileageKeyboard());
+    await ctx.replyWithHTML('📷 Отправьте новое фото пробега крупным планом или нажмите «⏭️ Пропустить».', skipMileageKeyboard());
   });
 
   bot.action('replace_mileage_start', async (ctx) => {
@@ -242,7 +241,7 @@ module.exports = function setupCourier(bot, services) {
     await ctx.answerCbQuery();
     const res = await replaceTimeAction(ctx, 'start');
     if (res.status === 'replaced') {
-      await ctx.replyWithHTML(`${pe('🟢')} <b>Старт смены</b> заменён: <code>${esc(res.timeValue)}</code>`, getMenuForRole(ctx.from.id));
+      await ctx.replyWithHTML(`🟢 <b>Старт смены</b> заменён: <code>${esc(res.timeValue)}</code>`, getMenuForRole(ctx.from.id));
     } else if (res.status === 'not_found') {
       await ctx.replyWithHTML(formatNoSheetMessage(res.result, res.workplace));
     } else if (res.status === 'error') {
@@ -254,7 +253,7 @@ module.exports = function setupCourier(bot, services) {
     await ctx.answerCbQuery();
     const res = await replaceTimeAction(ctx, 'end');
     if (res.status === 'replaced') {
-      await ctx.replyWithHTML(`${pe('🔴')} <b>Конец смены</b> заменён: <code>${esc(res.timeValue)}</code>`, getMenuForRole(ctx.from.id));
+      await ctx.replyWithHTML(`🔴 <b>Конец смены</b> заменён: <code>${esc(res.timeValue)}</code>`, getMenuForRole(ctx.from.id));
     } else if (res.status === 'not_found') {
       await ctx.replyWithHTML(formatNoSheetMessage(res.result, res.workplace));
     } else if (res.status === 'error') {
@@ -270,13 +269,13 @@ module.exports = function setupCourier(bot, services) {
     if (state?.mileageProcessing) {
       setState(ctx.from.id, { ...state, mileageProcessing: false, awaitingMileagePhoto: false, awaitingManualMileage: false });
       clearState(ctx.from.id);
-      await ctx.replyWithHTML(`${pe('⏭️')} Обработка фото отменена.`, getMenuForRole(ctx.from.id));
+      await ctx.replyWithHTML('⏭️ Обработка фото отменена.', getMenuForRole(ctx.from.id));
       return;
     }
 
     if (savedMileage) {
       clearState(ctx.from.id);
-      await ctx.replyWithHTML(`${pe('⬅️')} Возвращаю в меню.`, getMenuForRole(ctx.from.id));
+      await ctx.replyWithHTML('⬅️ Возвращаю в меню.', getMenuForRole(ctx.from.id));
       return;
     }
 
@@ -290,10 +289,10 @@ module.exports = function setupCourier(bot, services) {
   });
 
   bot.action('confirm_skip_mileage', async (ctx) => {
-    await ctx.answerCbQuery(`${pe('⏭️')} Пропущено`);
+    await ctx.answerCbQuery('⏭️ Пропущено');
     clearState(ctx.from.id);
     console.log('пропуск пробега подтверждён');
-    await ctx.replyWithHTML(`${pe('⏭️')} Пробег пропущен.`, getMenuForRole(ctx.from.id));
+    await ctx.replyWithHTML('⏭️ Пробег пропущен.', getMenuForRole(ctx.from.id));
   });
 
   bot.action('cancel_skip_mileage', async (ctx) => {
@@ -311,7 +310,7 @@ module.exports = function setupCourier(bot, services) {
     }
 
     setState(ctx.from.id, { ...state, mileageProcessing: false, awaitingManualMileage: true, awaitingMileagePhoto: false });
-    await ctx.replyWithHTML(`${pe('✏️')} <b>Ввод пробега вручную</b>\n\nВведите пробег только цифрами или загрузите фото повторно.`, manualMileageKeyboard());
+    await ctx.replyWithHTML('✏️ <b>Ввод пробега вручную</b>\n\nВведите пробег только цифрами или загрузите фото повторно.', manualMileageKeyboard());
   });
 
   bot.action('edit_time', async (ctx) => {
@@ -330,7 +329,7 @@ module.exports = function setupCourier(bot, services) {
     });
 
     await ctx.replyWithHTML(
-      `${pe('✏️')} <b>Изменение времени</b>\n\n` +
+      `✏️ <b>Изменение времени</b>\n\n` +
       `Этап: <b>${esc(formatStage(state.stage))}</b>\n\n` +
       `Введите время в любом формате:\n` +
       `• целое число — <code>7</code>\n` +
