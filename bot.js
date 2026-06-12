@@ -2676,23 +2676,24 @@ async function showNotificationSettings(ctx) {
   const telegramId = ctx.from.id;
   const settings = getNotificationSettings(telegramId);
 
-  const toggle = (key, label, emoji) => {
-    const isOn = settings[key];
-    return Markup.button.callback(`${isOn ? '✅' : '❌'} ${label}`, `notif_${key}`);
+  // Проверяем группы
+  const personalOn = settings.personalRecord && settings.workplaceRecord && settings.challengeCompleted;
+  const rankingOn = settings.overtake && settings.dailyLeader;
+
+  const toggleGroup = (isOn, label, callback) => {
+    return Markup.button.callback(`${isOn ? '✅' : '❌'} ${label}`, callback);
   };
 
   await ctx.editMessageText(
-    '🔔 <b>Настройки уведомлений рейтинга</b>\n\n' +
-    'Нажмите, чтобы включить или выключить:\n\n' +
-    '✅ — включено\n' +
-    '❌ — выключено',
+    '🔔 <b>Настройки уведомлений</b>\n\n' +
+    'Группы уведомлений:\n\n' +
+    '🏆 <b>Личные рекорды</b> — личный рекорд, рекорд точки, выполнение челленджа\n' +
+    '📊 <b>Рейтинг</b> — обгоны, лидер дня\n\n' +
+    '✅ — включено, ❌ — выключено',
     { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-      [toggle('personalRecord', 'Личный рекорд')],
-      [toggle('overtake', 'Обгоны в рейтинге')],
-      [toggle('workplaceRecord', 'Рекорд точки')],
-      [toggle('dailyLeader', 'Лидер дня / сброс')],
-      [toggle('top3Change', 'Изменение топ-3')],
-      [toggle('challengeCompleted', 'Выполнение челленджа')],
+      [toggleGroup(personalOn, 'Личные рекорды', 'notif_personal')],
+      [toggleGroup(rankingOn, 'Рейтинг', 'notif_ranking')],
+      [Markup.button.callback('🌟 Включить всё', 'notif_all_on'), Markup.button.callback('❌ Выключить всё', 'notif_all_off')],
       [Markup.button.callback('⬅️ Назад к рейтингу', 'lb_back_menu')]
     ]) }
   );
@@ -2762,7 +2763,7 @@ async function showLeaderboardResult(ctx, periodDays = 7, mode = 'sum') {
     Markup.button.callback('🏆 Достижения', 'lb_achievements')
   ]);
   buttons.push([
-    Markup.button.callback('⬅️ Назад', 'lb_back_menu'),
+    Markup.button.callback('🔔 Уведомления', 'lb_notifications'),
     Markup.button.callback('❌ Закрыть', 'close_message')
   ]);
 
@@ -3368,17 +3369,55 @@ bot.action('lb_notifications', async (ctx) => {
   await showNotificationSettings(ctx);
 });
 
-const NOTIFICATION_KEYS = ['personalRecord', 'overtake', 'workplaceRecord', 'dailyLeader', 'top3Change', 'challengeCompleted'];
-for (const key of NOTIFICATION_KEYS) {
-    bot.action(`notif_${key}`, async (ctx) => {
-      await ctx.answerCbQuery();
-      const telegramId = ctx.from.id;
-      const current = getNotificationSettings(telegramId);
-      current[key] = !current[key];
-      setUserField(telegramId, 'notificationSettings', JSON.stringify(current));
-      await showNotificationSettings(ctx);
-    });
-  }
+// Групповые уведомления
+bot.action('notif_personal', async (ctx) => {
+  await ctx.answerCbQuery();
+  const telegramId = ctx.from.id;
+  const current = getNotificationSettings(telegramId);
+  const newValue = !(current.personalRecord && current.workplaceRecord && current.challengeCompleted);
+  current.personalRecord = newValue;
+  current.workplaceRecord = newValue;
+  current.challengeCompleted = newValue;
+  setUserField(telegramId, 'notificationSettings', JSON.stringify(current));
+  await showNotificationSettings(ctx);
+});
+
+bot.action('notif_ranking', async (ctx) => {
+  await ctx.answerCbQuery();
+  const telegramId = ctx.from.id;
+  const current = getNotificationSettings(telegramId);
+  const newValue = !(current.overtake && current.dailyLeader);
+  current.overtake = newValue;
+  current.dailyLeader = newValue;
+  setUserField(telegramId, 'notificationSettings', JSON.stringify(current));
+  await showNotificationSettings(ctx);
+});
+
+bot.action('notif_all_on', async (ctx) => {
+  await ctx.answerCbQuery();
+  const telegramId = ctx.from.id;
+  const current = getNotificationSettings(telegramId);
+  current.personalRecord = true;
+  current.workplaceRecord = true;
+  current.dailyLeader = true;
+  current.overtake = true;
+  current.challengeCompleted = true;
+  setUserField(telegramId, 'notificationSettings', JSON.stringify(current));
+  await showNotificationSettings(ctx);
+});
+
+bot.action('notif_all_off', async (ctx) => {
+  await ctx.answerCbQuery();
+  const telegramId = ctx.from.id;
+  const current = getNotificationSettings(telegramId);
+  current.personalRecord = false;
+  current.workplaceRecord = false;
+  current.dailyLeader = false;
+  current.overtake = false;
+  current.challengeCompleted = false;
+  setUserField(telegramId, 'notificationSettings', JSON.stringify(current));
+  await showNotificationSettings(ctx);
+});
 
 bot.action('lb_p_day', async (ctx) => {
   await ctx.answerCbQuery();
