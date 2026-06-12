@@ -11,12 +11,14 @@ const CATEGORY_MAP = {
 const SUBCATEGORY_MAP = {
   orders_quantity: { emoji: '📦', label: 'Количество' },
   orders_records: { emoji: '⚡', label: 'Рекорды' },
+  cash: { emoji: '💰', label: 'Выручка' },
   shifts_quantity: { emoji: '🔢', label: 'Количество' },
   shifts_schedule: { emoji: '🕐', label: 'Расписание' },
   docs_route: { emoji: '📸', label: 'Маршрутники' },
   docs_recon: { emoji: '📊', label: 'Сверки' },
   docs_cash: { emoji: '💵', label: 'Наличные' },
-  docs_mileage: { emoji: '🚗', label: 'Пробег' }
+  docs_mileage: { emoji: '🚗', label: 'Пробег' },
+  special: { emoji: '⭐', label: 'Особые' }
 };
 
 const CATEGORY_SUBCATEGORIES = {
@@ -412,7 +414,7 @@ function formatAchievementsCard(telegramId, category) {
   const subs = CATEGORY_SUBCATEGORIES[category] || [];
 
   for (const subKey of subs) {
-    const subInfo = SUBCATEGORY_MAP[subKey];
+    const subInfo = SUBCATEGORY_MAP[subKey] || { emoji: '📌', label: subKey };
     const order = ACHIEVEMENT_ORDER[subKey] || [];
     const achievements = [];
     for (const achId of order) {
@@ -424,12 +426,15 @@ function formatAchievementsCard(telegramId, category) {
 
     if (achievements.length === 0) continue;
 
-    let subDone = 0;
-    for (const ach of achievements) {
-      if (unlockedIds.has(ach.id)) subDone++;
-    }
+    const showSubHeader = subs.length > 1;
 
-    text += `\n${subInfo.emoji} <b>${subInfo.label}</b> ${subDone}/${achievements.length}\n`;
+    if (showSubHeader) {
+      let subDone = 0;
+      for (const ach of achievements) {
+        if (unlockedIds.has(ach.id)) subDone++;
+      }
+      text += `\n${subInfo.emoji} <b>${subInfo.label}</b> ${subDone}/${achievements.length}\n`;
+    }
 
     let nextActive = null;
     let nextProgress = null;
