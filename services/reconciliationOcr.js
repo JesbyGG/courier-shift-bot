@@ -16,11 +16,56 @@ function withTimeout(promise, timeoutMs, label) {
 function parseMoneyRu(value) {
   const raw = String(value || '').trim();
   if (!raw) return null;
-  const cleaned = raw.replace(/[\s\u00A0]/g, '').replace(/₽/g, '').replace(/,/g, '.').replace(/[^0-9.]/g, '');
-  if (!cleaned) return null;
-  const number = Number(cleaned);
+  // Preserve comma as decimal separator if present
+  const hasComma = raw.includes(',');
+  const cleaned = raw.replace(/[\s\u00A0]/g, '').replace(/₽/g, '');
+  if (hasComma) {
+    // Replace comma with dot for parsing, but keep original format
+    const normalized = cleaned.replace(/,/g, '.');
+    const number = Number(normalized.replace(/[^0-9.]/g, ''));
+    if (!Number.isFinite(number) || number < 0) return null;
+    return number;
+  }
+  const normalized = cleaned.replace(/[^0-9.]/g, '');
+  const number = Number(normalized);
   if (!Number.isFinite(number) || number < 0) return null;
   return number;
+}
+
+// Simple reconciliation: just get cash amount
+async function recognizeReconciliationCashSimple(ctx, fileId) {
+  try {
+    const geminiOcrUrl = process.env.GEMINI_OCR_URL || '';
+    if (!geminiOcrUrl) {
+      console.error('Gemini OCR URL not configured');
+      return null;
+    }
+
+    const link = await ctx.telegram.getFileLink(fileId);
+    const response = await axios.get(link.href, { responseType: 'arraybuffer', timeout: 30000 });
+    const imageBuffer = Buffer.from(response.data);
+
+    const recUrl = geminiOcrUrl.replace(/\/+$/, '') + '/reconciliation';
+    const ocrResponse = await axios.post(recUrl, imageBuffer, {
+      timeout: 30000,
+      headers: { 'Content-Type': 'application/octet-stream' }
+    });
+
+    const data = ocrResponse.data;
+    console.log('reconciliation simple OCR:', JSON.stringify(data));
+
+    if (data.cash_amount) {
+      const amount = parseMoneyRu(data.cash_amount);
+      if (amount && amount > 0) {
+        return amount;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('reconciliation simple OCR error:', error.message || error);
+    return null;
+  }
 }
 
 function extractOrdersCountFromOcrText(text) {
@@ -191,6 +236,7 @@ module.exports = {
   recognizeReconciliationCashSafe,
   shouldWarnAboutReconciliationOcr,
   recognizeReconciliationCash,
+  recognizeReconciliationCashSimple,
   extractCashFromOcrText,
   extractOrdersCountFromOcrText,
   parseMoneyRu

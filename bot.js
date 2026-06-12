@@ -68,6 +68,7 @@ const {
   roundMoney,
   emptyReconciliationCash,
   recognizeReconciliationCashSafe,
+  recognizeReconciliationCashSimple,
   shouldWarnAboutReconciliationOcr,
   recognizeReconciliationCash
 } = require('./services/reconciliationOcr');
@@ -3547,9 +3548,9 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
   const isTerminalFirstPhoto = isTerminal && photosSent === 1;
 
   if (isTerminalFirstPhoto) {
-    const cashInfo = await recognizeReconciliationCashSafe(ctx, fileId, 'terminal_first_photo');
-  const shouldAttachCash = cashInfo.valid && Number(cashInfo.amount) > 10 && Number(cashInfo.orders) > 0;
-    const cashFormatted = shouldAttachCash ? formatMoneyRu(cashInfo.amount) : null;
+    const cashAmount = await recognizeReconciliationCashSimple(ctx, fileId);
+    const shouldAttachCash = cashAmount > 0;
+    const cashFormatted = shouldAttachCash ? formatMoneyRu(cashAmount) : null;
 
     const captionLines = [
       `📊 Сверки — Терминал (статистика)`,
@@ -3558,7 +3559,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     ];
 
     if (shouldAttachCash && cashFormatted) {
-      const rawAmount = Number(cashInfo.amount);
+      const rawAmount = Number(cashAmount);
       if (!Number.isFinite(rawAmount) || rawAmount < 1 || rawAmount > MAX_REASONABLE_CASH_AMOUNT) {
         console.log('сверка OCR: сумма наличных вне допустимого диапазона', rawAmount);
       } else {
@@ -3577,7 +3578,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
         setPendingCash(telegramId, {
           amount: totalAmount,
           formatted: totalFormatted,
-          orders: cashInfo.orders,
+          orders: 1,
           workplace: state.workplace || null,
           sourceLabel: 'Терминал',
           updatedAt: new Date().toISOString(),
@@ -3597,11 +3598,11 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       fileId,
       workplace: state?.workplace || null,
       label: 'Терминал (статистика)',
-      cashOrders: cashInfo.orders,
-      cashAmount: cashInfo.amount,
-      totalOrders: cashInfo.totalOrders,
+      cashOrders: shouldAttachCash ? 1 : 0,
+      cashAmount: cashAmount,
+      totalOrders: null,
       cashApplied: Boolean(shouldAttachCash),
-      reason: cashInfo.reason || null
+      reason: shouldAttachCash ? 'ok' : 'no_cash'
     });
 
     setState(telegramId, {
@@ -3609,8 +3610,8 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       reconciliationPhotosSent: photosSent,
       reconciliationPhoto1FileId: fileId,
       reconciliationPhoto1Caption: caption,
-      reconciliationPhoto1TotalOrders: cashInfo.totalOrders || null,
-      reconciliationPhoto1OcrReason: cashInfo.reason || null
+      reconciliationPhoto1TotalOrders: null,
+      reconciliationPhoto1OcrReason: shouldAttachCash ? 'ok' : 'no_cash'
     });
 
     await ctx.replyWithHTML(
@@ -3667,9 +3668,9 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
   }
 
   const label = 'Пин-Панель';
-  const cashInfo = await recognizeReconciliationCashSafe(ctx, fileId, 'pin_panel');
-  const shouldAttachCash = cashInfo.valid && Number(cashInfo.amount) > 10 && Number(cashInfo.orders) > 0;
-  const cashFormatted = shouldAttachCash ? formatMoneyRu(cashInfo.amount) : null;
+  const cashAmount = await recognizeReconciliationCashSimple(ctx, fileId);
+  const shouldAttachCash = cashAmount > 0;
+  const cashFormatted = shouldAttachCash ? formatMoneyRu(cashAmount) : null;
 
   const captionLines = [
     `📊 Сверки — ${esc(label)}`,
@@ -3678,7 +3679,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
   ];
 
   if (shouldAttachCash && cashFormatted) {
-    const rawAmount = Number(cashInfo.amount);
+    const rawAmount = Number(cashAmount);
     if (!Number.isFinite(rawAmount) || rawAmount < 1 || rawAmount > MAX_REASONABLE_CASH_AMOUNT) {
       console.log('сверка OCR: сумма наличных вне допустимого диапазона', rawAmount);
     } else {
@@ -3697,7 +3698,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       setPendingCash(telegramId, {
         amount: totalAmount,
         formatted: totalFormatted,
-        orders: cashInfo.orders,
+        orders: 1,
         workplace: state.workplace || null,
         sourceLabel: label,
         updatedAt: new Date().toISOString(),
@@ -3717,11 +3718,11 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     fileId,
     workplace: state?.workplace || null,
     label,
-    cashOrders: cashInfo.orders,
-    cashAmount: cashInfo.amount,
-    totalOrders: cashInfo.totalOrders,
+    cashOrders: shouldAttachCash ? 1 : 0,
+    cashAmount: cashAmount,
+    totalOrders: null,
     cashApplied: Boolean(shouldAttachCash),
-    reason: cashInfo.reason || null
+    reason: shouldAttachCash ? 'ok' : 'no_cash'
   });
 
   try {
@@ -3734,11 +3735,10 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     savePhotoThread(forwarded, telegramId, 'reconciliation');
 
     clearState(telegramId);
-    const ocrWarning = shouldWarnAboutReconciliationOcr(cashInfo)
-      ? `\n\n⚠️ OCR не распознал заказы/наличные. Фото отправлено, но данные не записаны автоматически.`
+    const ocrWarning = !shouldAttachCash
+      ? `\n\n⚠️ OCR не распознал сумму наличных. Фото отправлено, но данные не записаны автоматически.`
       : '';
-    const totalOrders = cashInfo.totalOrders;
-    const postRes = await finalizeReconciliationPostSend(ctx, state, telegramId, totalOrders);
+    const postRes = await finalizeReconciliationPostSend(ctx, state, telegramId, null);
     return { status: 'photos_sent', total, ocrWarning, postRes };
   } catch (error) {
     console.error('telegram send reconciliation photo error', error);
