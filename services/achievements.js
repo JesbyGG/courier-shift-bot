@@ -1,11 +1,11 @@
 const db = require('../db');
 
 const CATEGORY_MAP = {
-  orders: { emoji: '🛒', label: 'Заказы', hasSubcategories: true },
-  cash: { emoji: '💰', label: 'Выручка', hasSubcategories: false },
-  shifts: { emoji: '⏱', label: 'Смены', hasSubcategories: true },
-  docs: { emoji: '📄', label: 'Документы', hasSubcategories: true },
-  special: { emoji: '⭐', label: 'Особые', hasSubcategories: false }
+  orders: { emoji: '🛒', label: 'Заказы' },
+  cash: { emoji: '💰', label: 'Выручка' },
+  shifts: { emoji: '⏱', label: 'Смены' },
+  docs: { emoji: '📄', label: 'Документы' },
+  special: { emoji: '⭐', label: 'Особые' }
 };
 
 const SUBCATEGORY_MAP = {
@@ -17,6 +17,14 @@ const SUBCATEGORY_MAP = {
   docs_recon: { emoji: '📊', label: 'Сверки' },
   docs_cash: { emoji: '💵', label: 'Наличные' },
   docs_mileage: { emoji: '🚗', label: 'Пробег' }
+};
+
+const CATEGORY_SUBCATEGORIES = {
+  orders: ['orders_quantity', 'orders_records'],
+  shifts: ['shifts_quantity', 'shifts_schedule'],
+  docs: ['docs_route', 'docs_recon', 'docs_cash', 'docs_mileage'],
+  special: ['special'],
+  cash: ['cash']
 };
 
 const ACHIEVEMENT_ORDER = {
@@ -336,42 +344,29 @@ async function notifyAchievements(ctx, telegramId, unlocked) {
   }
 }
 
-function _formatChainItem(ach, stats, unlockedIds) {
-  const isBlocked = ach.condition.courierType && ach.condition.courierType !== stats.courierType;
-  if (isBlocked) return null;
+function _countCategoryAchievements(catKey, stats, unlockedIds) {
+  const subs = CATEGORY_SUBCATEGORIES[catKey] || [];
+  let total = 0;
+  let done = 0;
+  let catXp = 0;
+  let catEarned = 0;
 
-  const isDone = unlockedIds.has(ach.id);
-  const progress = getConditionProgress(stats, ach.condition);
-
-  if (isDone) {
-    return `✅ <b>${ach.name}</b>`;
+  for (const subKey of subs) {
+    const order = ACHIEVEMENT_ORDER[subKey] || [];
+    for (const achId of order) {
+      const ach = ACHIEVEMENTS.find(a => a.id === achId);
+      if (!ach) continue;
+      if (ach.condition.courierType && ach.condition.courierType !== stats.courierType) continue;
+      total++;
+      catXp += ach.reward || 0;
+      if (unlockedIds.has(ach.id)) {
+        done++;
+        catEarned += ach.reward || 0;
+      }
+    }
   }
 
-  if (!progress.isBoolean && progress.target > 0) {
-    const bar = formatProgressBar(progress.current, progress.target);
-    return `⏳ <b>${ach.name}</b> ${bar} ${progress.current.toLocaleString('ru-RU')}/${progress.target.toLocaleString('ru-RU')}`;
-  }
-
-  return `⏳ <b>${ach.name}</b>`;
-}
-
-function _getChainForSubcategory(telegramId, subcategory) {
-  const stats = getAchievementStats(telegramId);
-  const unlocked = getUnlockedAchievements(telegramId);
-  const unlockedIds = new Set(unlocked.map(a => a.id));
-
-  const order = ACHIEVEMENT_ORDER[subcategory];
-  if (!order) return [];
-
-  const items = [];
-  for (const achId of order) {
-    const ach = ACHIEVEMENTS.find(a => a.id === achId);
-    if (!ach) continue;
-    const item = _formatChainItem(ach, stats, unlockedIds);
-    if (item) items.push(item);
-  }
-
-  return items;
+  return { total, done, catXp, catEarned };
 }
 
 function formatAchievementsMenu(telegramId) {
@@ -386,23 +381,7 @@ function formatAchievementsMenu(telegramId) {
   let text = '🏆 <b>Мои достижения</b>\n\n';
 
   for (const [catKey, catInfo] of Object.entries(CATEGORY_MAP)) {
-    let total = 0;
-    let done = 0;
-    let catXp = 0;
-    let catEarned = 0;
-
-    const order = ACHIEVEMENT_ORDER[catKey] || [];
-    for (const achId of order) {
-      const ach = ACHIEVEMENTS.find(a => a.id === achId);
-      if (!ach) continue;
-      if (ach.condition.courierType && ach.condition.courierType !== stats.courierType) continue;
-      total++;
-      catXp += ach.reward || 0;
-      if (unlockedIds.has(ach.id)) {
-        done++;
-        catEarned += ach.reward || 0;
-      }
-    }
+    const { total, done, catXp, catEarned } = _countCategoryAchievements(catKey, stats, unlockedIds);
 
     if (total === 0) continue;
     totalAll += total;
@@ -425,71 +404,71 @@ function formatAchievementsCard(telegramId, category) {
   const unlockedIds = new Set(unlocked.map(a => a.id));
   const catInfo = CATEGORY_MAP[category];
 
-  const order = ACHIEVEMENT_ORDER[category] || [];
-  const achievements = [];
-  for (const achId of order) {
-    const ach = ACHIEVEMENTS.find(a => a.id === achId);
-    if (!ach) continue;
-    if (ach.condition.courierType && ach.condition.courierType !== stats.courierType) continue;
-    achievements.push(ach);
-  }
-
-  let total = 0;
-  let done = 0;
-  let catXp = 0;
-  let catEarned = 0;
-  for (const ach of achievements) {
-    total++;
-    catXp += ach.reward || 0;
-    if (unlockedIds.has(ach.id)) {
-      done++;
-      catEarned += ach.reward || 0;
-    }
-  }
+  const { total, done, catXp, catEarned } = _countCategoryAchievements(category, stats, unlockedIds);
 
   let text = `${catInfo.emoji} <b>${catInfo.label}</b>\n`;
-  text += `${done}/${total} получено • ${catEarned}/${catXp} XP\n\n`;
+  text += `${done}/${total} получено • ${catEarned}/${catXp} XP\n`;
 
-  // Находим ближайшее активное для мотивации
-  let nextActive = null;
-  let nextProgress = null;
-  for (const ach of achievements) {
-    if (unlockedIds.has(ach.id)) continue;
-    const progress = getConditionProgress(stats, ach.condition);
-    if (!progress.isBoolean && progress.target > 0 && progress.current > 0) {
-      nextActive = ach;
-      nextProgress = progress;
-      break;
+  const subs = CATEGORY_SUBCATEGORIES[category] || [];
+
+  for (const subKey of subs) {
+    const subInfo = SUBCATEGORY_MAP[subKey];
+    const order = ACHIEVEMENT_ORDER[subKey] || [];
+    const achievements = [];
+    for (const achId of order) {
+      const ach = ACHIEVEMENTS.find(a => a.id === achId);
+      if (!ach) continue;
+      if (ach.condition.courierType && ach.condition.courierType !== stats.courierType) continue;
+      achievements.push(ach);
     }
-  }
 
-  for (const ach of achievements) {
-    const isDone = unlockedIds.has(ach.id);
-    const isBlocked = ach.condition.courierType && ach.condition.courierType !== stats.courierType;
-    const progress = getConditionProgress(stats, ach.condition);
+    if (achievements.length === 0) continue;
 
-    if (isDone) {
-      text += `✅ <b>${ach.name}</b>\n`;
-      text += `   ${ach.desc}\n`;
-      text += `   🎉 Получено! +${ach.reward} XP\n`;
-    } else if (isBlocked) {
-      text += `🔒 <b>${ach.name}</b>\n`;
-      text += `   ${ach.desc}\n`;
-      text += `   🔒 Не доступно для вашего типа курьера\n`;
-    } else {
-      text += `⏳ <b>${ach.name}</b>\n`;
-      text += `   ${ach.desc}\n`;
-      if (!progress.isBoolean && progress.target > 0) {
-        const bar = formatProgressBar(progress.current, progress.target);
-        text += `   ${bar} ${progress.current.toLocaleString('ru-RU')}/${progress.target.toLocaleString('ru-RU')}\n`;
-      }
-      if (ach === nextActive && nextProgress) {
-        const remaining = nextProgress.target - nextProgress.current;
-        text += `   💡 ${remaining.toLocaleString('ru-RU')} до следующего!\n`;
-      }
-      text += `   Награда: +${ach.reward} XP\n`;
+    let subDone = 0;
+    for (const ach of achievements) {
+      if (unlockedIds.has(ach.id)) subDone++;
     }
-    text += `   ─────────────────────────────────\n`;
+
+    text += `\n${subInfo.emoji} <b>${subInfo.label}</b> ${subDone}/${achievements.length}\n`;
+
+    let nextActive = null;
+    let nextProgress = null;
+    for (const ach of achievements) {
+      if (unlockedIds.has(ach.id)) continue;
+      const progress = getConditionProgress(stats, ach.condition);
+      if (!progress.isBoolean && progress.target > 0 && progress.current > 0) {
+        nextActive = ach;
+        nextProgress = progress;
+        break;
+      }
+    }
+
+    for (const ach of achievements) {
+      const isDone = unlockedIds.has(ach.id);
+      const isBlocked = ach.condition.courierType && ach.condition.courierType !== stats.courierType;
+      const progress = getConditionProgress(stats, ach.condition);
+
+      if (isDone) {
+        text += `✅ <b>${ach.name}</b>\n`;
+        text += `   ${ach.desc}\n`;
+        text += `   🎉 +${ach.reward} XP\n`;
+      } else if (isBlocked) {
+        text += `🔒 <b>${ach.name}</b>\n`;
+        text += `   ${ach.desc}\n`;
+      } else {
+        text += `⏳ <b>${ach.name}</b>\n`;
+        text += `   ${ach.desc}\n`;
+        if (!progress.isBoolean && progress.target > 0) {
+          const bar = formatProgressBar(progress.current, progress.target);
+          text += `   ${bar} ${progress.current.toLocaleString('ru-RU')}/${progress.target.toLocaleString('ru-RU')}\n`;
+        }
+        if (ach === nextActive && nextProgress) {
+          const remaining = nextProgress.target - nextProgress.current;
+          text += `   💡 ${remaining.toLocaleString('ru-RU')} до следующего!\n`;
+        }
+        text += `   Награда: +${ach.reward} XP\n`;
+      }
+    }
   }
 
   return text.trim();
