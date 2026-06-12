@@ -59,7 +59,8 @@ const {
   getSelfClearanceRequest,
   cleanupStaleReminders,
   getShiftStatus,
-  setShiftStatus
+  setShiftStatus,
+  clearShiftStatus
 } = require('./services/storage');
 const { recognizeMileage, downloadTelegramFile, isGeminiOcrEnabled, recognizeTextWithGemini, getMinMileageThreshold, checkGeminiOcrHealth } = require('./services/mileageOcr');
 const { saveOcrDebugImage, updateOcrDebugStatus } = require('./services/ocrDebug');
@@ -1767,6 +1768,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       `<i>Если время неверное — нажмите «Изменить время».</i>`,
       timeChangeKeyboard()
     );
+    await ctx.replyWithHTML('✅', getMenuForRole(telegramId));
 
     if (result.stage === 'start') {
       const pendingCash = getPendingCash(telegramId);
@@ -2594,18 +2596,27 @@ async function showMyAchievements(ctx) {
   for (const [key, info] of Object.entries(CATEGORY_MAP)) {
     buttons.push([Markup.button.callback(`${info.emoji} ${info.label}`, `ach_cat_${key}`)]);
   }
+  buttons.push([Markup.button.callback('📈 Мой прогресс', 'lb_progress')]);
   buttons.push([Markup.button.callback('⬅️ Назад', 'lb_back_menu')]);
 
-  await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  try {
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  } catch (e) {
+    if (!e.message?.includes('message is not modified')) throw e;
+  }
 }
 
 async function showAchievementsCategory(ctx, category) {
   const telegramId = ctx.from.id;
   const text = formatAchievementsCard(telegramId, category);
 
-  await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-    [Markup.button.callback('⬅️ Назад к достижениям', 'ach_back_main')]
-  ]) });
+  try {
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
+      [Markup.button.callback('⬅️ Назад к достижениям', 'ach_back_main')]
+    ]) });
+  } catch (e) {
+    if (!e.message?.includes('message is not modified')) throw e;
+  }
 }
 
 async function showMyProgress(ctx) {
@@ -4176,6 +4187,7 @@ const services = {
   isAdminUser, getSheetAccessUsers, addSheetAccessUser, removeSheetAccessUser,
   _pendingUpdates, savePendingUpdates, notifyUsersAboutUpdate,
   setState, getState, clearState,
+  clearShiftStatus,
   // text router flows
   punchTimeFlow, mileageFlow, routeSheetFlow, reconciliationFlow,
   showPendingCashStatus, showIssuesMenu, showLeaderboardMenu,
