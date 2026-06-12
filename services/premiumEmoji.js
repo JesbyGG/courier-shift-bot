@@ -236,6 +236,7 @@ const SINGLE_EMOJI_RE = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6
  * @returns {string} HTML-строка с <tg-emoji> или оригинальный символ
  */
 function pe(emoji) {
+  if (!emoji) return '';
   const id = EMOJI_MAP[emoji];
   if (!id) return emoji;
   return `<tg-emoji emoji_id="${id}">${emoji}</tg-emoji>`;
