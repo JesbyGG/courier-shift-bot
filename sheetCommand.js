@@ -1,4 +1,5 @@
 const { verifySheetAccess } = require('./services/googleSheets');
+const { pe } = require('./services/premiumEmoji');
 const {
   resolveSheetInfo,
   setWorkplaceSheetId,
@@ -109,12 +110,12 @@ function registerSheetCommand(bot, options = {}) {
     const adminIds = (process.env.ADMIN_IDS || '').split(',').map((id) => Number(id.trim())).filter(Number.isFinite);
 
     if (adminIds.length === 0) {
-      await ctx.replyWithHTML('⛔ Команда отключена: не настроен <code>ADMIN_IDS</code> в .env.');
+      await ctx.replyWithHTML(`${pe('⛔')} Команда отключена: не настроен <code>ADMIN_IDS</code> в .env.`);
       return;
     }
 
     if (!isAdminUser(ctx.from.id)) {
-      await ctx.replyWithHTML('⛔ Эта команда доступна только администратору.');
+      await ctx.replyWithHTML(`${pe('⛔')} Эта команда доступна только администратору.`);
       return;
     }
 
@@ -125,9 +126,9 @@ function registerSheetCommand(bot, options = {}) {
     const nextMonth = getNextMonthKey();
 
     if (!subcommand || subcommand === 'list' || subcommand === 'список') {
-      let message = '📋 <b>Привязка таблиц</b>\n\n';
-      message += `🗓 Активный месяц: <code>${esc(currentMonth)}</code>\n`;
-      message += `🗓 Следующий месяц: <code>${esc(nextMonth)}</code>\n\n`;
+      let message = `${pe('📋')} <b>Привязка таблиц</b>\n\n`;
+      message += `${pe('🗓')} Активный месяц: <code>${esc(currentMonth)}</code>\n`;
+      message += `${pe('🗓')} Следующий месяц: <code>${esc(nextMonth)}</code>\n\n`;
 
       for (const workplace of workplaces) {
         const active = resolveSheetInfo(workplace);
@@ -141,7 +142,7 @@ function registerSheetCommand(bot, options = {}) {
               ? 'fallback из .env'
               : 'не задано';
 
-        message += `🏬 <b>${esc(workplace)}</b>\n`;
+        message += `${pe('🏬')} <b>${esc(workplace)}</b>\n`;
         message += `   Активная (${esc(currentMonth)}): <code>${esc(active.sheetId || 'не задана')}</code>\n`;
         message += `   Следующая (${esc(nextMonth)}): <code>${esc(nextId || 'не задана')}</code>\n`;
         message += `   Источник: ${esc(sourceText)}\n`;
@@ -188,12 +189,12 @@ function registerSheetCommand(bot, options = {}) {
           }
           setWorkplaceSheetId(item, '');
         }
-        await ctx.replyWithHTML('✅ Все привязки для всех магазинов сброшены.');
+        await ctx.replyWithHTML(`${pe('✅')} Все привязки для всех магазинов сброшены.`);
         return;
       }
 
       if (!workplace) {
-        await ctx.replyWithHTML('❌ Укажите магазин: <code>/sheet reset east active</code> или <code>/sheet reset center next</code> (или <code>/sheet reset all</code>).');
+        await ctx.replyWithHTML(`${pe('❌')} Укажите магазин: <code>/sheet reset east active</code> или <code>/sheet reset center next</code> (или <code>/sheet reset all</code>).`);
         return;
       }
 
@@ -203,25 +204,25 @@ function registerSheetCommand(bot, options = {}) {
           setWorkplaceSheetIdByMonth(workplace, monthKey, '');
         }
         setWorkplaceSheetId(workplace, '');
-        await ctx.replyWithHTML(`✅ Все привязки для <b>${esc(workplace)}</b> сброшены.`);
+        await ctx.replyWithHTML(`${pe('✅')} Все привязки для <b>${esc(workplace)}</b> сброшены.`);
         return;
       }
 
       const slot = parseSheetSlotToken(resetTarget);
       if (!slot) {
-        await ctx.replyWithHTML('❌ Укажите режим: <code>active</code>, <code>next</code> или <code>YYYY-MM</code>.');
+        await ctx.replyWithHTML(`${pe('❌')} Укажите режим: <code>active</code>, <code>next</code> или <code>YYYY-MM</code>.`);
         return;
       }
 
       setWorkplaceSheetIdByMonth(workplace, slot.monthKey, '');
-      await ctx.replyWithHTML(`✅ Привязка для <b>${esc(workplace)}</b> (${esc(slot.label)}: <code>${esc(slot.monthKey)}</code>) удалена.`);
+      await ctx.replyWithHTML(`${pe('✅')} Привязка для <b>${esc(workplace)}</b> (${esc(slot.label)}: <code>${esc(slot.monthKey)}</code>) удалена.`);
       return;
     }
 
     const workplace = getWorkplaceFromToken(subcommand);
     if (!workplace) {
       await ctx.replyWithHTML(
-        '❌ Укажите магазин:\n\n' +
+        `${pe('❌')} Укажите магазин:\n\n` +
         '<code>/sheet east active URL</code>\n' +
         '<code>/sheet center next URL</code>\n\n' +
         'Или <code>/sheet</code> для просмотра текущих таблиц.'
@@ -235,7 +236,7 @@ function registerSheetCommand(bot, options = {}) {
       const currentId = getWorkplaceSheetIdByMonth(workplace, currentMonth);
       const nextId = getWorkplaceSheetIdByMonth(workplace, nextMonth);
       await ctx.replyWithHTML(
-        `📋 <b>${esc(workplace)}</b>\n\n` +
+        `${pe('📋')} <b>${esc(workplace)}</b>\n\n` +
         `Активная (${esc(currentMonth)}): <code>${esc(active.sheetId || 'не задана')}</code>\n` +
         `Следующая (${esc(nextMonth)}): <code>${esc(nextId || 'не задана')}</code>\n\n` +
         'Пример:\n' +
@@ -260,7 +261,7 @@ function registerSheetCommand(bot, options = {}) {
 
     const sheetId = extractSheetId(sheetArg);
     if (!sheetId) {
-      await ctx.replyWithHTML('❌ Не удалось извлечь ID таблицы из ссылки.\n\nОтправьте ссылку вида:\n<code>https://docs.google.com/spreadsheets/d/...</code>');
+      await ctx.replyWithHTML(`${pe('❌')} Не удалось извлечь ID таблицы из ссылки.\n\nОтправьте ссылку вида:\n<code>https://docs.google.com/spreadsheets/d/...</code>`);
       return;
     }
 
@@ -270,14 +271,14 @@ function registerSheetCommand(bot, options = {}) {
         ? 'следующий месяц'
         : 'авто';
 
-    await ctx.replyWithHTML(`⏳ Проверяю таблицу для <b>${esc(workplace)}</b> (режим: ${esc(modeText)})...`);
+    await ctx.replyWithHTML(`${pe('⏳')} Проверяю таблицу для <b>${esc(workplace)}</b> (режим: ${esc(modeText)})...`);
 
     try {
       const result = await verifySheetAccess(sheetId);
 
       if (!result.ok) {
         await ctx.replyWithHTML(
-          `❌ <b>Ошибка доступа</b>\n\n${esc(result.error)}\n\n` +
+          `${pe('❌')} <b>Ошибка доступа</b>\n\n${esc(result.error)}\n\n` +
           'Убедитесь, что:\n' +
           '1. Таблица существует\n' +
           '2. Дан доступ: <code>courier-shift-bot@courier-shift-bot.iam.gserviceaccount.com</code>\n' +
@@ -307,15 +308,15 @@ function registerSheetCommand(bot, options = {}) {
           ? 'таблица на следующий месяц'
           : `таблица на ${monthKey}`;
 
-      let message = `✅ <b>Таблица привязана!</b>\n\n` +
-        `🏬 Магазин: <b>${esc(workplace)}</b>\n` +
-        `🗂 Режим: <b>${esc(boundAs)}</b>\n` +
-        `🗓 Месяц: <code>${esc(monthKey)}</code>\n` +
-        `📊 Название: <b>${esc(result.title)}</b>\n` +
-        `🆔 ID: <code>${esc(sheetId)}</code>`;
+      let message = `${pe('✅')} <b>Таблица привязана!</b>\n\n` +
+        `${pe('🏬')} Магазин: <b>${esc(workplace)}</b>\n` +
+        `${pe('🗂')} Режим: <b>${esc(boundAs)}</b>\n` +
+        `${pe('🗓')} Месяц: <code>${esc(monthKey)}</code>\n` +
+        `${pe('📊')} Название: <b>${esc(result.title)}</b>\n` +
+        `${pe('🆔')} ID: <code>${esc(sheetId)}</code>`;
 
       if (titleMonth) {
-        message += `\n\nℹ️ Месяц из названия таблицы: <code>${esc(titleMonth)}</code>.`;
+        message += `\n\n${pe('ℹ️')} Месяц из названия таблицы: <code>${esc(titleMonth)}</code>.`;
         if (titleMonth !== monthKey) {
           message += ' Проверьте, что выбрали правильный режим (active/next).';
         }
@@ -323,7 +324,7 @@ function registerSheetCommand(bot, options = {}) {
 
       const active = resolveSheetInfo(workplace);
       if (active.sheetId) {
-        message += `\n\n✅ Активная сейчас (${esc(currentMonth)}): <code>${esc(active.sheetId)}</code>`;
+        message += `\n\n${pe('✅')} Активная сейчас (${esc(currentMonth)}): <code>${esc(active.sheetId)}</code>`;
       } else if (active.missingForMonth) {
         message += `\n\n⚠️ Для текущего месяца <code>${esc(active.monthKey)}</code> таблица не задана.`;
       }

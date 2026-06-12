@@ -1,4 +1,5 @@
 const db = require('../db');
+const { pe } = require('./premiumEmoji');
 
 const CHALLENGE_POOL = {
   common: [
@@ -159,11 +160,11 @@ function notifyChallengeCompleted(ctx, telegramId, challenge) {
     }
   };
   const msg = (
-    `🔥 <b>Челлендж выполнен!</b>\n\n` +
+    `${pe('🔥')} <b>Челлендж выполнен!</b>\n\n` +
     `${challenge.name}\n` +
     `<i>${challenge.desc}</i>\n\n` +
     `Награда: <b>+${challenge.reward} XP</b>\n\n` +
-    `💪 Так держать! Ты настоящий профи! 🚀`
+    `${pe('💪')} Так держать! Ты настоящий профи! ${pe('🚀')}`
   );
   sendMsg(telegramId, msg);
 }

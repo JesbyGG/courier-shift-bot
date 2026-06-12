@@ -1,4 +1,5 @@
 module.exports = function setupReplyForwarding(bot, services) {
+  const { pe } = require('../services/premiumEmoji');
   const {
     saveThread,
     findThreadByGroupMessage,
@@ -52,31 +53,31 @@ module.exports = function setupReplyForwarding(bot, services) {
       }
 
       if (ctx.message.text) {
-        const text = `📨 <b>${esc(managerName)}</b>:\n\n${esc(ctx.message.text)}`;
+        const text = `${pe('📨')} <b>${esc(managerName)}</b>:\n\n${esc(ctx.message.text)}`;
         result = await bot.telegram.sendMessage(courierId, text, sendOpts);
       } else if (ctx.message.photo) {
-        const caption = `📨 <b>${esc(managerName)}</b>:`;
+        const caption = `${pe('📨')} <b>${esc(managerName)}</b>:`;
         result = await bot.telegram.sendPhoto(courierId, ctx.message.photo[ctx.message.photo.length - 1].file_id, {
           caption,
           parse_mode: 'HTML',
           reply_to_message_id: forwardedOriginal?.message_id
         });
       } else if (ctx.message.document) {
-        const caption = `📨 <b>${esc(managerName)}</b>:`;
+        const caption = `${pe('📨')} <b>${esc(managerName)}</b>:`;
         result = await bot.telegram.sendDocument(courierId, ctx.message.document.file_id, {
           caption,
           parse_mode: 'HTML',
           reply_to_message_id: forwardedOriginal?.message_id
         });
       } else if (ctx.message.voice) {
-        const caption = `📨 <b>${esc(managerName)}</b>:`;
+        const caption = `${pe('📨')} <b>${esc(managerName)}</b>:`;
         result = await bot.telegram.sendVoice(courierId, ctx.message.voice.file_id, {
           caption,
           parse_mode: 'HTML',
           reply_to_message_id: forwardedOriginal?.message_id
         });
       } else {
-        result = await bot.telegram.sendMessage(courierId, `📨 <b>${esc(managerName)}</b>:`, sendOpts);
+        result = await bot.telegram.sendMessage(courierId, `${pe('📨')} <b>${esc(managerName)}</b>:`, sendOpts);
       }
 
       if (result) {
@@ -118,7 +119,7 @@ module.exports = function setupReplyForwarding(bot, services) {
       let result;
 
       if (ctx.message.text) {
-        const text = `↩️ <b>Ответ ${esc(courierName)}:</b>\n\n${esc(ctx.message.text)}`;
+        const text = `${pe('↩️')} <b>Ответ ${esc(courierName)}:</b>\n\n${esc(ctx.message.text)}`;
         try {
           result = await bot.telegram.sendMessage(groupChatId, text, {
             parse_mode: 'HTML',
@@ -128,7 +129,7 @@ module.exports = function setupReplyForwarding(bot, services) {
           result = await bot.telegram.sendMessage(groupChatId, text, { parse_mode: 'HTML' });
         }
       } else if (ctx.message.photo) {
-        const caption = `↩️ <b>Фото от ${esc(courierName)}:</b>`;
+        const caption = `${pe('↩️')} <b>Фото от ${esc(courierName)}:</b>`;
         try {
           result = await bot.telegram.sendPhoto(groupChatId, ctx.message.photo[ctx.message.photo.length - 1].file_id, {
             caption,
@@ -142,7 +143,7 @@ module.exports = function setupReplyForwarding(bot, services) {
           });
         }
       } else if (ctx.message.document) {
-        const caption = `↩️ <b>Документ от ${esc(courierName)}:</b>`;
+        const caption = `${pe('↩️')} <b>Документ от ${esc(courierName)}:</b>`;
         try {
           result = await bot.telegram.sendDocument(groupChatId, ctx.message.document.file_id, {
             caption,
@@ -156,7 +157,7 @@ module.exports = function setupReplyForwarding(bot, services) {
           });
         }
       } else if (ctx.message.voice) {
-        const caption = `↩️ <b>Голосовое от ${esc(courierName)}:</b>`;
+        const caption = `${pe('↩️')} <b>Голосовое от ${esc(courierName)}:</b>`;
         try {
           result = await bot.telegram.sendVoice(groupChatId, ctx.message.voice.file_id, {
             caption,
@@ -170,7 +171,7 @@ module.exports = function setupReplyForwarding(bot, services) {
           });
         }
       } else {
-        const text = `↩️ <b>Сообщение от ${esc(courierName)}:</b>`;
+        const text = `${pe('↩️')} <b>Сообщение от ${esc(courierName)}:</b>`;
         try {
           result = await bot.telegram.sendMessage(groupChatId, text, {
             parse_mode: 'HTML',
@@ -187,7 +188,7 @@ module.exports = function setupReplyForwarding(bot, services) {
 
         // Подтверждение курьеру
         try {
-          await bot.telegram.sendMessage(ctx.chat.id, '✅ <b>Ответ отправлен</b>', {
+          await bot.telegram.sendMessage(ctx.chat.id, `${pe('✅')} <b>Ответ отправлен</b>`, {
             parse_mode: 'HTML',
             reply_to_message_id: ctx.message.message_id
           });

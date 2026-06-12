@@ -27,6 +27,7 @@ const {
   loadPendingUpdatesFromDb,
   setNotifyAdminCallback
 } = require('./services/googleSheets');
+const { pe } = require('./services/premiumEmoji');
 const {
   getUserField,
   getFullProfile,
@@ -223,17 +224,17 @@ const _EN_TO_RU = {
 };
 
 const COMMIT_PREFIX_RU = {
-  feat: '✨ Добавлено',
-  fix: '🔧 Исправлено',
-  refactor: '♻️ Переработано',
-  chore: '🔧 Техническое',
-  docs: '📝 Документация',
-  style: '🎨 Оформление',
-  perf: '⚡ Оптимизация',
-  test: '🧪 Тесты',
-  build: '📦 Сборка',
-  ci: '⚙️ CI/CD',
-  revert: '↩️ Откат'
+  feat: `${pe('✨')} Добавлено`,
+  fix: `${pe('🔧')} Исправлено`,
+  refactor: `${pe('♻️')} Переработано`,
+  chore: `${pe('🔧')} Техническое`,
+  docs: `${pe('📝')} Документация`,
+  style: `${pe('🎨')} Оформление`,
+  perf: `${pe('⚡')} Оптимизация`,
+  test: `${pe('🧪')} Тесты`,
+  build: `${pe('📦')} Сборка`,
+  ci: `${pe('⚙️')} CI/CD`,
+  revert: `${pe('↩️')} Откат`
 };
 
 function _translateToRussian(text) {
@@ -409,7 +410,7 @@ async function pokeCourier(ctx, courierId) {
   if (selfClearance) {
     await ctx.answerCbQuery();
     await ctx.replyWithHTML(
-      `⏳ ${esc(courierRecord.fio)} уже отметил сдачу.\n` +
+      `${pe('⏳')} ${esc(courierRecord.fio)} уже отметил сдачу.\n` +
       `Ожидает подтверждения: <code>${esc(selfClearance.formatted || String(selfClearance.amount))}</code> ₽`,
       Markup.inlineKeyboard([
         [Markup.button.callback('✅ Подтвердить', `sc_appr_${courierId}`)],
@@ -422,9 +423,9 @@ async function pokeCourier(ctx, courierId) {
   const pendingCash = getPendingCash(courierId);
   const amount = Number(pendingCash?.amount || 0);
   if (!Number.isFinite(amount) || amount < 1) {
-    await ctx.answerCbQuery('✅ Курьер уже сдал деньги.');
+    await ctx.answerCbQuery(`${pe('✅')} Курьер уже сдал деньги.`);
     if (ctx.callbackQuery) {
-      try { await ctx.editMessageText('✅ Курьер уже сдал деньги.'); } catch (e) { /* ignore */ }
+      try { await ctx.editMessageText(`${pe('✅')} Курьер уже сдал деньги.`); } catch (e) { /* ignore */ }
     }
     return;
   }
@@ -460,9 +461,9 @@ async function pokeCourier(ctx, courierId) {
   });
 
   const workplaceLabel = courierRecord.workplace || 'не указано';
-  const courierMsg = `🔔 <b>Логист ${esc(logistFio)} напоминает:</b>\n\n` +
-    `💵 У вас <code>${esc(formatted)}</code> ₽ к сдаче.\n` +
-    `🏬 <b>${esc(workplaceLabel)}</b>\n\n` +
+  const courierMsg = `${pe('🔔')} <b>Логист ${esc(logistFio)} напоминает:</b>\n\n` +
+    `${pe('💵')} У вас <code>${esc(formatted)}</code> ₽ к сдаче.\n` +
+    `${pe('🏬')} <b>${esc(workplaceLabel)}</b>\n\n` +
     `Сдали деньги?`;
 
   try {
@@ -480,12 +481,12 @@ async function pokeCourier(ctx, courierId) {
     updateReminder(shortId, { courierMsgId: msgId });
 
     if (ctx.callbackQuery) {
-      await ctx.answerCbQuery('✅ Напоминание отправлено');
+      await ctx.answerCbQuery(`${pe('✅')} Напоминание отправлено`);
       try {
-        await ctx.editMessageText(`✅ Напоминание отправлено: <b>${esc(courierRecord.fio)}</b> — <code>${esc(formatted)}</code> ₽`, { parse_mode: 'HTML' });
+        await ctx.editMessageText(`${pe('✅')} Напоминание отправлено: <b>${esc(courierRecord.fio)}</b> — <code>${esc(formatted)}</code> ₽`, { parse_mode: 'HTML' });
       } catch (e) { /* ignore */ }
     } else {
-      await ctx.replyWithHTML(`✅ Напоминание отправлено: <b>${esc(courierRecord.fio)}</b> — <code>${esc(formatted)}</code> ₽`);
+      await ctx.replyWithHTML(`${pe('✅')} Напоминание отправлено: <b>${esc(courierRecord.fio)}</b> — <code>${esc(formatted)}</code> ₽`);
     }
   } catch (e) {
     console.error('failed to send reminder to courier', e);
@@ -523,7 +524,7 @@ async function showHistoryDatePicker(ctx) {
   }
   buttons.push([Markup.button.callback('❌ Закрыть', 'close_message')]);
 
-  await ctx.replyWithHTML('📋 <b>История сборов</b>\n\nВыберите дату:', Markup.inlineKeyboard(buttons));
+  await ctx.replyWithHTML(`${pe('📋')} <b>История сборов</b>\n\nВыберите дату:`, Markup.inlineKeyboard(buttons));
   return { status: 'showing_history' };
 }
 
@@ -535,12 +536,12 @@ async function showCashHistoryForDate(ctx, dateStr) {
   const approvedRows = rows.filter(r => r.action === 'approved' || r.action === 'self_cleared' || r.action === 'logist_approved');
 
   if (approvedRows.length === 0) {
-    await ctx.replyWithHTML(`📋 <b>История сборов за ${dateStr}</b>\n\nНет подтверждённых сдач за эту дату.`);
+    await ctx.replyWithHTML(`${pe('📋')} <b>История сборов за ${dateStr}</b>\n\nНет подтверждённых сдач за эту дату.`);
     return;
   }
 
   const total = approvedRows.reduce((sum, r) => sum + r.amount, 0);
-  let msg = `📋 <b>История сборов за ${dateStr}</b>\n` +
+  let msg = `${pe('📋')} <b>История сборов за ${dateStr}</b>\n` +
     `Всего собрано: <code>${formatMoneyRu(total)}</code> ₽\n\n`;
 
   for (const row of approvedRows) {
@@ -578,7 +579,7 @@ async function openShopNotify(ctx) {
   if (chatId) {
     try {
       await bot.telegram.sendMessage(chatId,
-        `🏪 <b>${esc(workplace)} — ОТКРЫТ</b> ✅\n\nЛогист: ${esc(fio)}`,
+        `${pe('🏪')} <b>${esc(workplace)} — ОТКРЫТ</b> ${pe('✅')}\n\nЛогист: ${esc(fio)}`,
         { parse_mode: 'HTML' }
       );
     } catch (e) {
@@ -605,10 +606,10 @@ async function notifyLogistsAboutSelfClearance(courierId, courierFio, amount, fo
   for (const recipientId of allRecipientIds) {
     try {
       await bot.telegram.sendMessage(recipientId,
-        `💰 <b>Курьер отметил сдачу</b>\n\n` +
-        `👤 ${esc(courierFio)}\n` +
-        `💵 <code>${esc(formatted)}</code> ₽\n` +
-        `🏬 ${esc(workplace)}\n\n` +
+        `${pe('💰')} <b>Курьер отметил сдачу</b>\n\n` +
+        `${pe('👤')} ${esc(courierFio)}\n` +
+        `${pe('💵')} <code>${esc(formatted)}</code> ₽\n` +
+        `${pe('🏬')} ${esc(workplace)}\n\n` +
         `Подтвердите сдачу:`,
         { parse_mode: 'HTML', ...keyboard }
       );
@@ -728,7 +729,7 @@ function getTimeGreeting(timezone = process.env.APP_TIMEZONE || 'Europe/Moscow')
 }
 
 function formatPhotoStatus(stage) {
-  return stage === 'start' ? '🟢 Старт' : '🔴 Конец';
+  return stage === 'start' ? `${pe('🟢')} Старт` : `${pe('🔴')} Конец`;
 }
 
 function getEmployeeDisplayName(fio) {
@@ -751,25 +752,25 @@ function truncateCaption(text, limit = TELEGRAM_CAPTION_LIMIT) {
 function buildPhotoCaption(state, telegramId) {
   const name = getEmployeeDisplayName(state.fio);
   const nameLine = telegramId
-    ? `👤 <a href="tg://user?id=${telegramId}">${esc(name)}</a>`
-    : `👤 ${name}`;
+    ? `${pe('👤')} <a href="tg://user?id=${telegramId}">${esc(name)}</a>`
+    : `${pe('👤')} ${name}`;
   return truncateCaption([
     formatPhotoStatus(state.stage),
     nameLine,
-    `🚙 ${state.auto || 'не указано'}`,
-    `🏬 ${state.workplace || 'не указано'}`
+    `${pe('🚙')} ${state.auto || 'не указано'}`,
+    `${pe('🏬')} ${state.workplace || 'не указано'}`
   ].join('\n'));
 }
 
 function buildRouteSheetCaption(state, routeSheetNumber, telegramId) {
   const name = getEmployeeDisplayName(state.fio);
   const nameLine = telegramId
-    ? `👤 <a href="tg://user?id=${telegramId}">${esc(name)}</a>`
-    : `👤 ${name}`;
+    ? `${pe('👤')} <a href="tg://user?id=${telegramId}">${esc(name)}</a>`
+    : `${pe('👤')} ${name}`;
   return truncateCaption([
-    `📄 Маршрутный лист №${routeSheetNumber}`,
+    `${pe('📄')} Маршрутный лист №${routeSheetNumber}`,
     nameLine,
-    `🏬 ${state.workplace || 'не указано'}`
+    `${pe('🏬')} ${state.workplace || 'не указано'}`
   ].join('\n'));
 }
 
@@ -1470,7 +1471,7 @@ async function askForCarNumber(ctx, fio = getUserField(ctx.from.id, 'fio')) {
 async function askForWorkplace(ctx, fio = getUserField(ctx.from.id, 'fio')) {
   setState(ctx.from.id, { awaitingWorkplace: true, fio });
   await ctx.replyWithHTML(
-    '🏬 <b>Интернет-магазин</b>\n\nВыберите ваш магазин:',
+    `${pe('🏬')} <b>Интернет-магазин</b>\n\nВыберите ваш магазин:`,
     workplaceMenu()
   );
 }
@@ -1478,7 +1479,7 @@ async function askForWorkplace(ctx, fio = getUserField(ctx.from.id, 'fio')) {
 async function askForDevice(ctx, fio = getUserField(ctx.from.id, 'fio')) {
   setState(ctx.from.id, { awaitingDevice: true, fio });
   await ctx.replyWithHTML(
-    '💻 <b>Рабочее устройство</b>\n\nВыберите устройство:',
+    `${pe('💻')} <b>Рабочее устройство</b>\n\nВыберите устройство:`,
     deviceMenu()
   );
 }
@@ -1487,12 +1488,12 @@ async function saveCarNumber(ctx, value) {
   const carNumber = normalizeCarNumber(value);
 
   if (!carNumber || isMenuText(value)) {
-    await ctx.replyWithHTML('❌ Введите номер машины текстом.\nНапример: <code>А123ВС777</code>');
+    await ctx.replyWithHTML(`${pe('❌')} Введите номер машины текстом.\nНапример: <code>А123ВС777</code>`);
     return 'error';
   }
 
   if (!isValidCarNumber(carNumber)) {
-    await ctx.replyWithHTML('❌ Неверный формат номера.\nНомер должен содержать буквы и цифры.\nНапример: <code>А123ВС777</code>');
+    await ctx.replyWithHTML(`${pe('❌')} Неверный формат номера.\nНомер должен содержать буквы и цифры.\nНапример: <code>А123ВС777</code>`);
     return 'error';
   }
 
@@ -1500,19 +1501,19 @@ async function saveCarNumber(ctx, value) {
   console.log('номер машины сохранён');
 
   if (!getUserField(ctx.from.id, 'workplace')) {
-    await ctx.replyWithHTML(`✅ Номер машины сохранён: <code>${esc(carNumber)}</code>`);
+    await ctx.replyWithHTML(`${pe('✅')} Номер машины сохранён: <code>${esc(carNumber)}</code>`);
     await askForWorkplace(ctx);
     return 'askWorkplace';
   }
 
   if (!getUserField(ctx.from.id, 'device')) {
-    await ctx.replyWithHTML(`✅ Номер машины сохранён: <code>${esc(carNumber)}</code>`);
+    await ctx.replyWithHTML(`${pe('✅')} Номер машины сохранён: <code>${esc(carNumber)}</code>`);
     await askForDevice(ctx);
     return 'askDevice';
   }
 
   clearState(ctx.from.id);
-  await ctx.replyWithHTML(`✅ Номер машины сохранён: <code>${esc(carNumber)}</code>`);
+  await ctx.replyWithHTML(`${pe('✅')} Номер машины сохранён: <code>${esc(carNumber)}</code>`);
   return 'done';
 }
 
@@ -1520,7 +1521,7 @@ async function saveWorkplace(ctx, value) {
   const workplace = WORKPLACES.find((item) => item.toLowerCase() === String(value || '').trim().toLowerCase());
 
   if (!workplace) {
-    await ctx.replyWithHTML('❌ Выберите магазин кнопкой ниже.', workplaceMenu());
+    await ctx.replyWithHTML(`${pe('❌')} Выберите магазин кнопкой ниже.`, workplaceMenu());
     return 'error';
   }
 
@@ -1530,18 +1531,18 @@ async function saveWorkplace(ctx, value) {
 
   if (role === 'logist') {
     clearState(ctx.from.id);
-    await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`);
+    await ctx.replyWithHTML(`${pe('✅')} Магазин сохранён: <b>${esc(workplace)}</b>`);
     return 'done';
   }
 
   if (!getUserField(ctx.from.id, 'device')) {
-    await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`);
+    await ctx.replyWithHTML(`${pe('✅')} Магазин сохранён: <b>${esc(workplace)}</b>`);
     await askForDevice(ctx);
     return 'askDevice';
   }
 
   clearState(ctx.from.id);
-  await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`);
+  await ctx.replyWithHTML(`${pe('✅')} Магазин сохранён: <b>${esc(workplace)}</b>`);
   return 'done';
 }
 
@@ -1549,14 +1550,14 @@ async function saveDevice(ctx, value) {
   const device = DEVICES.find((item) => item.toLowerCase() === String(value || '').trim().toLowerCase());
 
   if (!device) {
-    await ctx.replyWithHTML('❌ Выберите устройство кнопкой ниже.', deviceMenu());
+    await ctx.replyWithHTML(`${pe('❌')} Выберите устройство кнопкой ниже.`, deviceMenu());
     return 'error';
   }
 
   setUserField(ctx.from.id, 'device', device);
   clearState(ctx.from.id);
   console.log('устройство сохранено');
-  await ctx.replyWithHTML(`✅ Устройство сохранено: <b>${esc(device)}</b>`);
+  await ctx.replyWithHTML(`${pe('✅')} Устройство сохранено: <b>${esc(device)}</b>`);
   return 'done';
 }
 
@@ -1603,7 +1604,7 @@ async function askForFio(ctx) {
   const telegramId = ctx.from.id;
   setState(telegramId, { awaitingFio: true });
   await ctx.replyWithHTML(
-    '👤 <b>Авторизация</b>\n\nВведите имя и фамилию как в таблице.',
+    `${pe('👤')} <b>Авторизация</b>\n\nВведите имя и фамилию как в таблице.`,
     Markup.keyboard([[BUTTONS.back]]).resize()
   );
 }
@@ -1617,13 +1618,13 @@ async function authorizeFio(ctx, fio) {
 
     if (!employee) {
       console.log('сотрудник не найден');
-      await ctx.replyWithHTML('❌ Сотрудник не найден в таблице.\nПроверьте имя и фамилию и попробуйте ещё раз.');
+      await ctx.replyWithHTML(`${pe('❌')} Сотрудник не найден в таблице.\nПроверьте имя и фамилию и попробуйте ещё раз.`);
       return;
     }
 
     setUserField(telegramId, 'fio', employee.fio);
     console.log('сотрудник найден');
-    await ctx.replyWithHTML(`✅ Сотрудник найден: <b>${esc(employee.fio)}</b>`);
+    await ctx.replyWithHTML(`${pe('✅')} Сотрудник найден: <b>${esc(employee.fio)}</b>`);
 
     const auto = String(employee.auto || '').trim().toLowerCase();
     const workplace = employee.workplace;
@@ -1633,19 +1634,19 @@ async function authorizeFio(ctx, fio) {
         setUserField(telegramId, 'courierType', 'pedestrian');
         setUserField(telegramId, 'role', 'courier');
         setUserField(telegramId, 'workplace', 'ИМ Центр');
-        await ctx.replyWithHTML('🚶 <b>Пеший курьер</b>, магазин <b>ИМ Центр</b>.');
+        await ctx.replyWithHTML(`${pe('🚶')} <b>Пеший курьер</b>, магазин <b>ИМ Центр</b>.`);
         await askForDevice(ctx, employee.fio);
         return;
       }
       if (auto === 'логист') {
         setUserField(telegramId, 'role', 'logist');
-        await ctx.replyWithHTML('📦 <b>Логист</b>.\n\nТеперь выберите ваш магазин.', logistMainMenu(telegramId));
+        await ctx.replyWithHTML(`${pe('📦')} <b>Логист</b>.\n\nТеперь выберите ваш магазин.`, logistMainMenu(telegramId));
         await askForWorkplace(ctx, employee.fio);
         return;
       }
       setUserField(telegramId, 'courierType', 'auto');
       setUserField(telegramId, 'role', 'courier');
-      await ctx.replyWithHTML('🚗 <b>Авто-курьер</b>.\n\nТеперь введите номер машины.');
+      await ctx.replyWithHTML(`${pe('🚗')} <b>Авто-курьер</b>.\n\nТеперь введите номер машины.`);
       await askForCarNumber(ctx, employee.fio);
       return;
     }
@@ -1653,15 +1654,15 @@ async function authorizeFio(ctx, fio) {
     if (workplace === 'ИМ Восток') {
       if (auto === 'логист') {
         setUserField(telegramId, 'role', 'logist');
-        await ctx.replyWithHTML('📦 <b>Логист</b>.\n\nТеперь выберите ваш магазин.', logistMainMenu(telegramId));
+        await ctx.replyWithHTML(`${pe('📦')} <b>Логист</b>.\n\nТеперь выберите ваш магазин.`, logistMainMenu(telegramId));
         await askForWorkplace(ctx, employee.fio);
         return;
       }
       setState(telegramId, { awaitingRoleChoice: true, fio: employee.fio, workplace: employee.workplace });
       await ctx.replyWithHTML(
-        '👤 <b>Выберите вашу роль:</b>\n\n' +
-        '▫️ <b>Курьер</b> — доставка заказов, пробег, маршрутник, сверка, наличные\n' +
-        '▫️ <b>Логист</b> — учёт времени, сбор наличных с курьеров, таблицы',
+        `${pe('👤')} <b>Выберите вашу роль:</b>\n\n` +
+        `${pe('▫️')} <b>Курьер</b> — доставка заказов, пробег, маршрутник, сверка, наличные\n` +
+        `${pe('▫️')} <b>Логист</b> — учёт времени, сбор наличных с курьеров, таблицы`,
         roleChoiceKeyboard()
       );
       return;
@@ -1669,9 +1670,9 @@ async function authorizeFio(ctx, fio) {
 
     setState(telegramId, { awaitingRoleChoice: true, fio: employee.fio, workplace: employee.workplace });
     await ctx.replyWithHTML(
-      '👤 <b>Выберите вашу роль:</b>\n\n' +
-      '▫️ <b>Курьер</b> — доставка заказов, пробег, маршрутник, сверка, наличные\n' +
-      '▫️ <b>Логист</b> — учёт времени, сбор наличных с курьеров, таблицы',
+      `${pe('👤')} <b>Выберите вашу роль:</b>\n\n` +
+      `${pe('▫️')} <b>Курьер</b> — доставка заказов, пробег, маршрутник, сверка, наличные\n` +
+      `${pe('▫️')} <b>Логист</b> — учёт времени, сбор наличных с курьеров, таблицы`,
       roleChoiceKeyboard()
     );
   } catch (error) {
@@ -1705,8 +1706,8 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       setState(telegramId, { awaitingReplaceChoice: true, fio: profile.fio });
       await ctx.replyWithHTML(
         `⚠️ За сегодня уже внесены начало и конец смены.\n\n` +
-        `🟢 Старт: <code>${esc(result.from)}</code>\n` +
-        `🔴 Конец: <code>${esc(result.to)}</code>\n\n` +
+        `${pe('🟢')} Старт: <code>${esc(result.from)}</code>\n` +
+        `${pe('🔴')} Конец: <code>${esc(result.to)}</code>\n\n` +
         `Выберите, что заменить:`,
         replaceKeyboard()
       );
@@ -1749,7 +1750,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       if (unlocked.length > 0) await notifyAchievements(ctx, telegramId, unlocked);
     } catch (_) {}
 
-    const icon = result.stage === 'start' ? '🟢' : '🔴';
+    const icon = result.stage === 'start' ? `${pe('🟢')}` : `${pe('🔴')}`;
     const label = result.stage === 'start' ? 'Старт' : 'Конец';
 
     setState(telegramId, {
@@ -1768,7 +1769,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       `<i>Если время неверное — нажмите «Изменить время».</i>`,
       timeChangeKeyboard()
     );
-    await ctx.replyWithHTML('✅', getMenuForRole(telegramId));
+    await ctx.replyWithHTML(`${pe('✅')}`, getMenuForRole(telegramId));
 
     if (result.stage === 'start') {
       const pendingCash = getPendingCash(telegramId);
@@ -1779,7 +1780,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
         const numberOnly = formatMoneyRuNumber(pendingAmount) || String(formattedAmount || '').replace(/\s*₽$/, '');
         await ctx.replyWithHTML(
           `⚠️ <b>Не забудьте сдать деньги</b>: <code>${esc(numberOnly)}</code> ₽\n` +
-          `🏬 <b>${esc(pendingCash?.workplace || profile.workplace || 'не указано')}</b>`,
+          `${pe('🏬')} <b>${esc(pendingCash?.workplace || profile.workplace || 'не указано')}</b>`,
           cashSubmitConfirmKeyboard()
         );
       }
@@ -1817,8 +1818,8 @@ async function mileageFlow(ctx, explicitStage = null) {
       setState(telegramId, { awaitingMileageReplaceChoice: true, fio: profile.fio });
       await ctx.replyWithHTML(
         `⚠️ За сегодня уже внесён пробег.\n\n` +
-        `🟢 Старт: <code>${esc(result.startMileage)}</code>\n` +
-        `🔴 Конец: <code>${esc(result.endMileage)}</code>\n\n` +
+        `${pe('🟢')} Старт: <code>${esc(result.startMileage)}</code>\n` +
+        `${pe('🔴')} Конец: <code>${esc(result.endMileage)}</code>\n\n` +
         `Выберите, что заменить:`,
         mileageReplaceKeyboard()
       );
@@ -1828,9 +1829,9 @@ async function mileageFlow(ctx, explicitStage = null) {
     setState(telegramId, makeMileageState(telegramId, applyProfile(result, profile), { source: 'mileage' }));
     console.log('ожидание пробега', result.stage);
     await ctx.replyWithHTML(
-      `📷 <b>Отправьте фото одометра</b>\n\n` +
+      `${pe('📷')} <b>Отправьте фото одометра</b>\n\n` +
       `Этап: <b>${esc(formatStage(result.stage))}</b>\n\n` +
-      `📎 <i>Нажмите на скрепку → Камера или Галерея</i>`,
+      `${pe('📎')} <i>Нажмите на скрепку → Камера или Галерея</i>`,
       skipMileageKeyboard()
     );
     return { status: 'awaiting_photo' };
@@ -1859,9 +1860,9 @@ async function routeSheetFlow(ctx) {
   });
 
   await ctx.replyWithHTML(
-    `📄 <b>Маршрутный лист</b>\n\n` +
+    `${pe('📄')} <b>Маршрутный лист</b>\n\n` +
     `Отправьте фото. Можно отправить несколько фото подряд.\n\n` +
-    `📎 <i>Нажмите на скрепку → Камера или Галерея</i>`,
+    `${pe('📎')} <i>Нажмите на скрепку → Камера или Галерея</i>`,
     routeSheetKeyboard()
   );
   return { status: 'awaiting_photo' };
@@ -1897,16 +1898,16 @@ async function reconciliationFlow(ctx) {
     : '';
 
   const lines = [
-    `📸 <b>Сверки</b>`,
+    `${pe('📸')} <b>Сверки</b>`,
     '',
-    `📷 Фото <b>1 из ${totalPhotos}</b>: <b>${firstLabel}</b>`,
+    `${pe('📷')} Фото <b>1 из ${totalPhotos}</b>: <b>${firstLabel}</b>`,
   ];
   if (orderHint) {
     lines.push('');
     lines.push(orderHint);
   }
   lines.push('');
-  lines.push('📎 <i>Нажмите на скрепку → Камера или Галерея</i>');
+  lines.push(`${pe('📎')} <i>Нажмите на скрепку → Камера или Галерея</i>`);
 
   await ctx.replyWithHTML(lines.join('\n'), routeSheetKeyboard());
   return { status: 'awaiting_photo' };
@@ -1935,11 +1936,11 @@ async function showPendingCashStatus(ctx) {
   const workplace = pendingCash?.workplace || profile.workplace || 'не указано';
   const fun = String(process.env.FUN_TONE || '').toLowerCase() === 'true';
   const lines = [
-    `💵 <b>Деньги к сдаче</b>: <code>${esc(numberOnly)}</code> ₽`,
-    `🏬 <b>${esc(workplace)}</b>`,
+    `${pe('💵')} <b>Деньги к сдаче</b>: <code>${esc(numberOnly)}</code> ₽`,
+    `${pe('🏬')} <b>${esc(workplace)}</b>`,
     ''
   ];
-  if (fun) lines.push('😼 Ай-ай, денюжки надо сдать!', '');
+  if (fun) lines.push(`${pe('😼')} Ай-ай, денюжки надо сдать!`, '');
   lines.push('Сдали деньги в кассу?');
   await ctx.replyWithHTML(lines.join('\n'), cashSubmitConfirmKeyboard());
   return { status: 'showing_pending' };
@@ -1952,7 +1953,7 @@ async function sendHelp(ctx) {
     const workplace = getUserField(ctx.from.id, 'workplace');
     const features = WORKPLACE_FEATURES[workplace] || {};
     const hasCash = features.cashCollection;
-    let logistHelp = '❓ <b>Помощь</b>\n' +
+    let logistHelp = `${pe('❓')} <b>Помощь</b>\n` +
       '━━━━━━━━━━━━━━━\n\n' +
       `1️⃣ <b>Записать время</b> — «${BUTTONS.punchTime}» отметить начало или конец смены.\n` +
       `2️⃣ <b>Открыть ИМ</b> — «${BUTTONS.openShop}» отправить уведомление об открытии магазина в группу.\n`;
@@ -1962,7 +1963,7 @@ async function sendHelp(ctx) {
     }
     logistHelp += `${hasCash ? '5️⃣' : '3️⃣'} <b>Таблицы</b> — «${BUTTONS.sheetInfo}» информация о привязке таблиц.\n`;
     logistHelp += `${hasCash ? '6️⃣' : '4️⃣'} <b>Настройки</b> — «${BUTTONS.settings}» магазин, смена сотрудника.\n\n`;
-    logistHelp += '📋 Команды:';
+    logistHelp += `${pe('📋')} Команды:`;
     await ctx.replyWithHTML(
       logistHelp,
       Markup.inlineKeyboard([
@@ -1974,19 +1975,19 @@ async function sendHelp(ctx) {
   }
 
   await ctx.replyWithHTML(
-    '❓ <b>Помощь</b>\n' +
+    `${pe('❓')} <b>Помощь</b>\n` +
     '━━━━━━━━━━━━━━━\n\n' +
     '1️⃣ <b>Первый вход</b> — введите ФИО, номер машины, магазин и устройство.\n' +
     `2️⃣ <b>Записать время</b> — «${BUTTONS.punchTime}» отметить начало или конец смены.\n` +
     `3️⃣ <b>Фото пробега</b> — «${BUTTONS.mileage}» отправьте фото одометра или введите вручную.\n` +
-    '   • «📷 Загрузить фото повторно» или «✏️ Ввести вручную» если не распозналось.\n' +
+    `   • ${pe('📷')} Загрузить фото повторно» или «${pe('✏️')} Ввести вручную» если не распозналось.\n` +
     `4️⃣ <b>Отправить маршрутник</b> — «${BUTTONS.routeSheet}» отправить фото маршрутного листа.\n` +
     `5️⃣ <b>Отправить сверку</b> — «${BUTTONS.reconciliation}» Терминал — 2 фото, Пин-Панель — 1 фото.\n` +
     `6️⃣ <b>Сдать наличные</b> — «${BUTTONS.cashCheck}» показать сумму к сдаче и подтвердить.\n` +
     `7️⃣ <b>Проблема с заказом</b> — «${BUTTONS.issues}» ссылки для решения проблем с заказами.\n` +
     `8️⃣ <b>Рейтинг</b> — «${BUTTONS.leaderBoard}» рейтинг курьеров по заказам.\n` +
     `9️⃣ <b>Настройки</b> — «${BUTTONS.settings}» номер машины, магазин, устройство, сотрудник.\n\n` +
-    '📋 Команды:',
+    `${pe('📋')} Команды:`,
     Markup.inlineKeyboard([
       [Markup.button.callback('📋 Команды', 'help_commands')],
       [Markup.button.callback('❌ Закрыть', 'close_message')]
@@ -1997,7 +1998,7 @@ async function sendHelp(ctx) {
 async function sendCommandsList(ctx) {
   const isAdmin = isAdminUser(ctx.from.id);
   const role = getUserRole(ctx.from.id);
-  let msg = '📋 <b>Команды</b>\n' +
+  let msg = `${pe('📋')} <b>Команды</b>\n` +
     '━━━━━━━━━━━━━━━\n\n' +
     '<b>Основные:</b>\n' +
     '/help — помощь\n' +
@@ -2017,7 +2018,7 @@ async function sendCommandsList(ctx) {
     msg += '<b>Администратору:</b>\n' +
       '/chatid — информация о чате\n' +
       '/sheet — привязка таблиц\n' +
-      '/sheet_access — доступ к «📋 Таблицы»\n' +
+      `/sheet_access — доступ к «${pe('📋')} Таблицы»\n` +
       '  <code>/sheet_access</code> — показать список\n' +
       '  <code>/sheet_access 123456789</code> — дать доступ\n' +
       '  <code>/sheet_access - 123456789</code> — убрать доступ\n' +
@@ -2026,20 +2027,20 @@ async function sendCommandsList(ctx) {
 
   if (role === 'logist') {
     msg += '<b>Кнопки меню:</b>\n' +
-      `⏱ <b>Время</b> — записать старт/конец\n` +
-      `💳 <b>Наличные</b> — посмотреть должников, отправить напоминание\n` +
-      `📋 <b>Таблицы</b> — информация о привязке таблиц\n` +
-      `⚙️ <b>Настройки</b> — магазин, сотрудник`;
+      `${pe('⏱')} <b>Время</b> — записать старт/конец\n` +
+      `${pe('💳')} <b>Наличные</b> — посмотреть должников, отправить напоминание\n` +
+      `${pe('📋')} <b>Таблицы</b> — информация о привязке таблиц\n` +
+      `${pe('⚙️')} <b>Настройки</b> — магазин, сотрудник`;
   } else {
     msg += '<b>Кнопки меню:</b>\n' +
-      `⏱ <b>Время</b> — записать старт/конец\n` +
-      `🚗 <b>Пробег</b> — фото одометра → распознавание\n` +
-      `📄 <b>Маршрутник</b> — отправить фото\n` +
-      `📊 <b>Сверки</b> — фото терминала/пин-панели\n` +
-      `💵 <b>Наличные</b> — сумма к сдаче\n` +
-      `⚠️ <b>Проблема</b> — решить проблему с заказом\n` +
-      `🏆 <b>Лидерборд</b> — рейтинг курьеров\n` +
-      `⚙️ <b>Настройки</b> — машина, магазин, устройство, сотрудник`;
+      `${pe('⏱')} <b>Время</b> — записать старт/конец\n` +
+      `${pe('🚗')} <b>Пробег</b> — фото одометра → распознавание\n` +
+      `${pe('📄')} <b>Маршрутник</b> — отправить фото\n` +
+      `${pe('📊')} <b>Сверки</b> — фото терминала/пин-панели\n` +
+      `${pe('💵')} <b>Наличные</b> — сумма к сдаче\n` +
+      `${pe('⚠️')} <b>Проблема</b> — решить проблему с заказом\n` +
+      `${pe('🏆')} <b>Лидерборд</b> — рейтинг курьеров\n` +
+      `${pe('⚙️')} <b>Настройки</b> — машина, магазин, устройство, сотрудник`;
   }
 
   await ctx.replyWithHTML(msg);
@@ -2091,39 +2092,39 @@ function buildUpdateHighlights(changedFiles = [], version, updates = []) {
   const highlights = [];
 
   if (includesAny(['gemini_ocr_server.py'])) {
-    highlights.push('📸 Полностью обновлён движок OCR: Gemini 2.5 Flash Lite распознаёт и пробег, и сверки.');
+    highlights.push(`${pe('📸')} Полностью обновлён движок OCR: Gemini 2.5 Flash Lite распознаёт и пробег, и сверки.`);
   }
 
   if (includesAny(['bot.js'])) {
-    highlights.push('🤖 Обновлена логика бота, улучшена стабильность.');
+    highlights.push(`${pe('🤖')} Обновлена логика бота, улучшена стабильность.`);
   }
 
   if (includesAny(['ecosystem.config.js'])) {
-    highlights.push('⚙️ Обновлены настройки запуска.');
+    highlights.push(`${pe('⚙️')} Обновлены настройки запуска.`);
   }
 
   if (includesAny(['sheetcommand.js', 'googlesheets.js', 'storage.js'])) {
-    highlights.push('🗂 Улучшена работа с таблицами.');
+    highlights.push(`${pe('🗂')} Улучшена работа с таблицами.`);
   }
 
   if (includesAny(['mileageocr.js'])) {
-    highlights.push('📸 Улучшено распознавание пробега.');
+    highlights.push(`${pe('📸')} Улучшено распознавание пробега.`);
   }
 
   if (includesAny(['achievements.js', 'xp.js', 'challenges.js', 'leaderboard.js', 'streak.js'])) {
-    highlights.push('🏆 Обновлена система достижений и рейтинга.');
+    highlights.push(`${pe('🏆')} Обновлена система достижений и рейтинга.`);
   }
 
   if (includesAny(['courier.js', 'logist.js', 'commands.js', 'admin.js', 'textrouter.js', 'replyforwarding.js'])) {
-    highlights.push('💬 Обновлены сценарии общения с ботом.');
+    highlights.push(`${pe('💬')} Обновлены сценарии общения с ботом.`);
   }
 
   if (includesAny(['utils.js'])) {
-    highlights.push('🧮 Обновлены вспомогательные функции.');
+    highlights.push(`${pe('🧮')} Обновлены вспомогательные функции.`);
   }
 
   if (highlights.length === 0) {
-    highlights.push('✨ Небольшие улучшения стабильности и удобства.');
+    highlights.push(`${pe('✨')} Небольшие улучшения стабильности и удобства.`);
   }
 
   // Добавляем 1-2 git-коммита как детали (если есть)
@@ -2145,10 +2146,10 @@ function formatUpdateMessage(version, changedFiles = [], updates = []) {
   }
 
   return (
-    `🆕 <b><i>Обновление бота v${esc(version)}</i></b>\n\n` +
+    `${pe('🆕')} <b><i>Обновление бота v${esc(version)}</i></b>\n\n` +
     '<b>Коротко, что изменили:</b>\n' +
     `${lines}${detailsBlock}\n\n` +
-    '💙 Хорошей смены!'
+    `${pe('💙')} Хорошей смены!`
   );
 }
 
@@ -2224,7 +2225,7 @@ async function askAdminsAboutUpdate(version, changedFiles = [], updates = []) {
 
   const message = formatUpdateMessage(version, changedFiles, updates);
   const previewText = (
-    `🔔 <b>Обнаружено обновление v${esc(version)}</b>\n\n` +
+    `${pe('🔔')} <b>Обнаружено обновление v${esc(version)}</b>\n\n` +
     '<b>Предпросмотр сообщения:</b>\n\n' +
     `${message}\n\n` +
     'Отправить уведомление всем пользователям?'
@@ -2395,7 +2396,7 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
       mileageProcessing: false
     });
     await replyFn(
-      `✅ <b>Пробег сохранён</b>: <code>${mileageValue}</code> км\n\nЕсли неверно — нажмите «Изменить пробег».`,
+      `${pe('✅')} <b>Пробег сохранён</b>: <code>${mileageValue}</code> км\n\nЕсли неверно — нажмите «Изменить пробег».`,
       mileageSavedKeyboard()
     );
     await replyFn('✅', getMenuForRole(telegramId));
@@ -2571,10 +2572,10 @@ async function backToMainMenu(ctx) {
   clearState(ctx.from.id);
 
   const message = state?.savedMileage
-    ? '⬅️ Возвращаю в меню.'
+    ? `${pe('⬅️')} Возвращаю в меню.`
     : state?.mileageRow
-      ? '⬅️ Возвращаю в меню. Пробег не сохранён.'
-      : '⬅️ Возвращаю в меню.';
+      ? `${pe('⬅️')} Возвращаю в меню. Пробег не сохранён.`
+      : `${pe('⬅️')} Возвращаю в меню.`;
 
   return { status: 'back_to_menu', message };
 }
@@ -2654,12 +2655,12 @@ async function showMyProgress(ctx) {
   const rankInfo = formatRankInfo(telegramId, profile.courierType);
   const streakInfo = formatStreakInfo(telegramId);
 
-  let text = '📈 <b>Мой прогресс</b>\n\n';
-  text += `👤 <b>${esc(profile.fio || 'Курьер')}</b>\n`;
-  text += `🚗 Тип: ${profile.courierType === 'pedestrian' ? '🚶 Пеший' : '🚗 Авто'}\n\n`;
-  text += `⭐ ${rankInfo}\n\n`;
+  let text = `${pe('📈')} <b>Мой прогресс</b>\n\n`;
+  text += `${pe('👤')} <b>${esc(profile.fio || 'Курьер')}</b>\n`;
+  text += `${pe('🚗')} Тип: ${profile.courierType === 'pedestrian' ? `${pe('🚶')} Пеший` : `${pe('🚗')} Авто`}\n\n`;
+  text += `${pe('⭐')} ${rankInfo}\n\n`;
   text += `${streakInfo}\n`;
-  text += `💰 Всего XP: ${xp.toLocaleString('ru-RU')}\n`;
+  text += `${pe('💰')} Всего XP: ${xp.toLocaleString('ru-RU')}\n`;
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
     [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
@@ -2668,19 +2669,19 @@ async function showMyProgress(ctx) {
 
 async function showXpInfo(ctx) {
   const text =
-    '❓ <b>Как работает XP</b>\n\n' +
+    `${pe('❓')} <b>Как работает XP</b>\n\n` +
     'За каждое действие вы получаете очки опыта (XP):\n\n' +
-    '⏱ Начало/конец смены — <b>15 XP</b>\n' +
-    '📄 Маршрутник — <b>30 XP</b>\n' +
-    '📊 Сверка — <b>50 XP</b>\n' +
-    '💵 Сдача наличных — <b>80 XP</b>\n' +
-    '🚗 Пробег — <b>30 XP</b>\n\n' +
-    '🏆 <b>Бонусы:</b>\n' +
+    `${pe('⏱')} Начало/конец смены — <b>15 XP</b>\n` +
+    `${pe('📄')} Маршрутник — <b>30 XP</b>\n` +
+    `${pe('📊')} Сверка — <b>50 XP</b>\n` +
+    `${pe('💵')} Сдача наличных — <b>80 XP</b>\n` +
+    `${pe('🚗')} Пробег — <b>30 XP</b>\n\n` +
+    `${pe('🏆')} <b>Бонусы:</b>\n` +
     'Топ-10 дня — <b>150 XP</b>\n' +
     'Топ-3 дня — <b>300 XP</b>\n' +
-    '🥇 1-е место — <b>800 XP</b>\n\n' +
-    '🔥 <b>Стрик:</b> каждые 5 смен подряд — <b>+50 XP</b>\n\n' +
-    'С накоплением XP растёт ваш ранг — от Новичка до Короля рейтинга! 👑';
+    `${pe('🥇')} 1-е место — <b>800 XP</b>\n\n` +
+    `${pe('🔥')} <b>Стрик:</b> каждые 5 смен подряд — <b>+50 XP</b>\n\n` +
+    `С накоплением XP растёт ваш ранг — от Новичка до Короля рейтинга! ${pe('👑')}`;
 
   await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
     [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
@@ -2700,11 +2701,11 @@ async function showNotificationSettings(ctx) {
   };
 
   await ctx.editMessageText(
-    '🔔 <b>Настройки уведомлений</b>\n\n' +
+    `${pe('🔔')} <b>Настройки уведомлений</b>\n\n` +
     'Группы уведомлений:\n\n' +
-    '🏆 <b>Личные рекорды</b> — личный рекорд, рекорд точки, выполнение челленджа\n' +
-    '📊 <b>Рейтинг</b> — обгоны, лидер дня\n\n' +
-    '✅ — включено, ❌ — выключено',
+    `${pe('🏆')} <b>Личные рекорды</b> — личный рекорд, рекорд точки, выполнение челленджа\n` +
+    `${pe('📊')} <b>Рейтинг</b> — обгоны, лидер дня\n\n` +
+    `${pe('✅')} — включено, ${pe('❌')} — выключено`,
     { parse_mode: 'HTML', ...Markup.inlineKeyboard([
       [toggleGroup(personalOn, 'Личные рекорды', 'notif_personal')],
       [toggleGroup(rankingOn, 'Рейтинг', 'notif_ranking')],
@@ -2720,7 +2721,7 @@ async function showWeeklyChallenges(ctx) {
   generateWeeklyChallenges(telegramId, profile.courierType);
   const challenges = getChallenges(telegramId);
 
-  let text = '🔥 <b>Челленджи недели</b>\n\n';
+  let text = `${pe('🔥')} <b>Челленджи недели</b>\n\n`;
   if (challenges.length === 0) {
     text += 'Пока нет активных челленджей. Приходите в понедельник!\n';
   } else {
@@ -2755,7 +2756,7 @@ async function showLeaderboardResult(ctx, periodDays = 7, mode = 'sum') {
   const periodLabel = periodDays === 0 ? 'Всё время' : periodDays === 1 ? 'День' : 'Неделя';
   const modeLabel = mode === 'max' ? '🔥 Лучший день' : '';
 
-  const lines = [`🏆 <b>Рейтинг ${typeLabel}</b>\n🏬 ${esc(workplace)} | 📅 ${periodLabel}${modeLabel ? ' | ' + modeLabel : ''}\n`];
+  const lines = [`${pe('🏆')} <b>Рейтинг ${typeLabel}</b>\n${pe('🏬')} ${esc(workplace)} | ${pe('📅')} ${periodLabel}${modeLabel ? ' | ' + modeLabel : ''}\n`];
   lines.push(formatLeaderboard(entries, telegramId, false));
   if (entries.length === 0) {
     lines.push('\n<i>Пока нет данных за выбранный период.</i>');
@@ -2829,7 +2830,7 @@ async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, o
             `⚠️ <b>Вас обогнали в рейтинге!</b>\n\n` +
             `${esc(fio)} доставил <b>${ordersCount}</b> заказов и обогнал вас.\n` +
             `У вас сейчас <b>${victim.orders}</b> заказов.\n` +
-            `🏬 ${esc(workplace)}`,
+            `${pe('🏬')} ${esc(workplace)}`,
             { parse_mode: 'HTML' }
           );
         } catch (e) {
@@ -2841,7 +2842,7 @@ async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, o
         const names = overtaken.map(v => `${esc(v.fio)} (${v.orders})`).join(', ');
         try {
           await ctx.replyWithHTML(
-            `🎉 <b>Вы обогнали в рейтинге!</b>\n\n${names}\n\nТеперь у вас <b>${ordersCount}</b> заказов.`
+            `${pe('🎉')} <b>Вы обогнали в рейтинге!</b>\n\n${names}\n\nТеперь у вас <b>${ordersCount}</b> заказов.`
           );
         } catch (e) {
           console.error('overtaken self notify error', e.message || e);
@@ -2896,7 +2897,7 @@ async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, o
             if (victimSettings.dailyLeader) {
               try {
                 await bot.telegram.sendMessage(id,
-                  `📉 <b>Вас сбросили с 1-го места!</b>\n\n` +
+                  `${pe('📉')} <b>Вас сбросили с 1-го места!</b>\n\n` +
                   `${esc(fio)} обогнал вас с <b>${ordersCount}</b> заказами.\n` +
                   `У вас сейчас — посмотрите свою сверку.`,
                   { parse_mode: 'HTML' }
@@ -2949,11 +2950,11 @@ async function sendWorkplaceRecordNotifications(workplace, dayKey, recordInfo, s
   const record = getWorkplaceRecord(workplace, dayKey);
   if (!record) return;
 
-  let text = `🏆 <b>Новый рекорд точки ${esc(workplace)}!</b>\n\n`;
-  text += `🥇 <b>${esc(record.fio)}</b> — <b>${record.orders}</b> заказов (новый рекорд!)\n`;
-  if (records[1]) text += `🥈 ${esc(records[1].fio)} — ${records[1].orders} заказов\n`;
-  if (records[2]) text += `🥉 ${esc(records[2].fio)} — ${records[2].orders} заказов\n`;
-  text += `\n🔥 Рекорд растёт! Продолжайте в том же духе!`;
+  let text = `${pe('🏆')} <b>Новый рекорд точки ${esc(workplace)}!</b>\n\n`;
+  text += `${pe('🥇')} <b>${esc(record.fio)}</b> — <b>${record.orders}</b> заказов (новый рекорд!)\n`;
+  if (records[1]) text += `${pe('🥈')} ${esc(records[1].fio)} — ${records[1].orders} заказов\n`;
+  if (records[2]) text += `${pe('🥉')} ${esc(records[2].fio)} — ${records[2].orders} заказов\n`;
+  text += `\n${pe('🔥')} Рекорд растёт! Продолжайте в том же духе!`;
 
   const all = getAllUserIds();
   for (const id of all) {
@@ -2978,7 +2979,7 @@ async function sendDailyLeaderNotification(workplace, dayKey, leader) {
 
   try {
     await bot.telegram.sendMessage(leader.telegramId,
-      `🥇 <b>Вы лидер дня в ${esc(workplace)}!</b>\n\n` +
+      `${pe('🥇')} <b>Вы лидер дня в ${esc(workplace)}!</b>\n\n` +
       `<b>${leader.orders}</b> заказов. Так держать!`,
       { parse_mode: 'HTML' }
     );
@@ -2991,10 +2992,10 @@ async function sendTop3ChangeNotifications(workplace, dayKey, previousTop3, curr
   const changed = JSON.stringify(previousTop3.map(x => x.telegramId).sort()) !== JSON.stringify(currentTop3.map(x => x.telegramId).sort());
   if (!changed) return;
 
-  let text = `🔔 <b>Топ-3 ${esc(workplace)} изменился!</b>\n\n`;
-  if (currentTop3[0]) text += `🥇 ${esc(currentTop3[0].fio)} — ${currentTop3[0].orders}\n`;
-  if (currentTop3[1]) text += `🥈 ${esc(currentTop3[1].fio)} — ${currentTop3[1].orders}\n`;
-  if (currentTop3[2]) text += `🥉 ${esc(currentTop3[2].fio)} — ${currentTop3[2].orders}\n`;
+  let text = `${pe('🔔')} <b>Топ-3 ${esc(workplace)} изменился!</b>\n\n`;
+  if (currentTop3[0]) text += `${pe('🥇')} ${esc(currentTop3[0].fio)} — ${currentTop3[0].orders}\n`;
+  if (currentTop3[1]) text += `${pe('🥈')} ${esc(currentTop3[1].fio)} — ${currentTop3[1].orders}\n`;
+  if (currentTop3[2]) text += `${pe('🥉')} ${esc(currentTop3[2].fio)} — ${currentTop3[2].orders}\n`;
 
   const all = getAllUserIds();
   for (const id of all) {
@@ -3009,7 +3010,7 @@ async function sendTop3ChangeNotifications(workplace, dayKey, previousTop3, curr
     // Найти позицию получателя
     const recipientEntry = currentTop3.find(x => x.telegramId === id);
     if (recipientEntry) {
-      text += `\n🏅 Вы на ${recipientEntry.rank || '?'} месте!`;
+      text += `\n${pe('🏅')} Вы на ${recipientEntry.rank || '?'} месте!`;
     } else {
       const allRecords = [];
       for (const [tid, r] of Object.entries(_getAllRecords())) {
@@ -3019,7 +3020,7 @@ async function sendTop3ChangeNotifications(workplace, dayKey, previousTop3, curr
       }
       allRecords.sort((a, b) => b.orders - a.orders);
       const idx = allRecords.findIndex(x => x.telegramId === id);
-      if (idx >= 0) text += `\n📊 Вы на ${idx + 1} месте (${allRecords[idx].orders} заказов).`;
+      if (idx >= 0) text += `\n${pe('📊')} Вы на ${idx + 1} месте (${allRecords[idx].orders} заказов).`;
     }
 
     try {
@@ -3057,7 +3058,7 @@ async function showIssuesMenu(ctx) {
   buttons.push([Markup.button.callback('⬅️ Назад', 'issues_back')]);
 
   await ctx.replyWithHTML(
-    '⚠️ <b>Проблема с заказом</b>\n\nВыберите чат для обращения:',
+    `${pe('⚠️')} <b>Проблема с заказом</b>\n\nВыберите чат для обращения:`,
     Markup.inlineKeyboard(buttons)
   );
   return { status: 'showing_issues' };
@@ -3607,9 +3608,9 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     const cashFormatted = shouldAttachCash ? formatMoneyRu(cashAmount) : null;
 
     const captionLines = [
-      `📊 Сверки — Терминал (статистика)`,
-      `👤 <a href="tg://user?id=${telegramId}">${esc(getEmployeeDisplayName(state.fio))}</a>`,
-      `🏬 ${esc(state.workplace || 'не указано')}`
+      `${pe('📊')} Сверки — Терминал (статистика)`,
+      `${pe('👤')} <a href="tg://user?id=${telegramId}">${esc(getEmployeeDisplayName(state.fio))}</a>`,
+      `${pe('🏬')} ${esc(state.workplace || 'не указано')}`
     ];
 
     if (shouldAttachCash && cashFormatted) {
@@ -3627,7 +3628,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
         const totalFormatted = formatMoneyRu(totalAmount);
         const currentNumberOnly = formatMoneyRuNumber(rawAmount) || String(cashFormatted).replace(/\s*₽$/, '');
 
-        captionLines.push(`💵 К сдаче в следующую смену: <code>${esc(currentNumberOnly)}</code> ₽`);
+        captionLines.push(`${pe('💵')} К сдаче в следующую смену: <code>${esc(currentNumberOnly)}</code> ₽`);
 
         setPendingCash(telegramId, {
           amount: totalAmount,
@@ -3669,8 +3670,8 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     });
 
     await ctx.replyWithHTML(
-      `✅ Фото <b>1</b> из <b>2</b> (статистика) получено.\n\n` +
-      `📷 Теперь отправьте фото <b>2 из 2</b>: <b>🧾 Чек</b>`,
+      `${pe('✅')} Фото <b>1</b> из <b>2</b> (статистика) получено.\n\n` +
+      `${pe('📷')} Теперь отправьте фото <b>2 из 2</b>: <b>${pe('🧾')} Чек</b>`,
       routeSheetKeyboard()
     );
     return;
@@ -3727,9 +3728,9 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
   const cashFormatted = shouldAttachCash ? formatMoneyRu(cashAmount) : null;
 
   const captionLines = [
-    `📊 Сверки — ${esc(label)}`,
-    `👤 <a href="tg://user?id=${telegramId}">${esc(getEmployeeDisplayName(state.fio))}</a>`,
-    `🏬 ${esc(state.workplace || 'не указано')}`
+    `${pe('📊')} Сверки — ${esc(label)}`,
+    `${pe('👤')} <a href="tg://user?id=${telegramId}">${esc(getEmployeeDisplayName(state.fio))}</a>`,
+    `${pe('🏬')} ${esc(state.workplace || 'не указано')}`
   ];
 
   if (shouldAttachCash && cashFormatted) {
@@ -3747,7 +3748,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       const totalFormatted = formatMoneyRu(totalAmount);
       const currentNumberOnly = formatMoneyRuNumber(rawAmount) || String(cashFormatted).replace(/\s*₽$/, '');
 
-      captionLines.push(`💵 К сдаче в следующую смену: <code>${esc(currentNumberOnly)}</code> ₽`);
+      captionLines.push(`${pe('💵')} К сдаче в следующую смену: <code>${esc(currentNumberOnly)}</code> ₽`);
 
       setPendingCash(telegramId, {
         amount: totalAmount,
@@ -3856,7 +3857,7 @@ async function handleMileagePhoto(ctx, state, fileId) {
     return;
   }
 
-  await ctx.replyWithHTML('📸 Фото принято. Считываю пробег...');
+  await ctx.replyWithHTML(`${pe('📸')} Фото принято. Считываю пробег...`);
 
   const chatId = ctx.chat.id;
   const telegram = ctx.telegram;
@@ -3989,7 +3990,7 @@ async function handleManualTime(ctx, state, text) {
     await updateCourierTime(state.courierRow, state.day, state.stage, timeValue, state.workplace);
     clearState(telegramId);
     console.log('время изменено', state.stage);
-    const icon = state.stage === 'start' ? '🟢' : '🔴';
+    const icon = state.stage === 'start' ? `${pe('🟢')}` : `${pe('🔴')}`;
     const label = state.stage === 'start' ? 'Старт' : 'Конец';
     await ctx.replyWithHTML(`${icon} <b>${label} смены</b> изменён: <code>${esc(timeValue)}</code>`);
     return 'done';
@@ -4014,7 +4015,7 @@ async function requireFio(ctx) {
 async function handleSwitchUser(ctx, state, text, telegramId) {
   setState(telegramId, { awaitingSwitchUser: true });
   await ctx.replyWithHTML(
-    '⚠️ <b>Смена сотрудника</b>\n\nВсе данные (ФИО, номер машины, магазин, устройство) будут удалены.\n\nВы уверены?',
+    `${pe('⚠️')} <b>Смена сотрудника</b>\n\nВсе данные (ФИО, номер машины, магазин, устройство) будут удалены.\n\nВы уверены?`,
     switchUserKeyboard()
   );
 }
@@ -4026,7 +4027,7 @@ async function handleSheetsInfo(ctx, state, text, telegramId) {
     // подменю Управление — пользователь не знал куда идти. Теперь
     // inline-кнопка прямо здесь.
     await ctx.replyWithHTML(
-      '⛔ У вас нет доступа к этому разделу.\n\n' +
+      `${pe('⛔')} У вас нет доступа к этому разделу.\n\n` +
       'Получите ваш Telegram ID и отправьте его администратору.',
       Markup.inlineKeyboard([
         [Markup.button.callback('🆔 Получить мой ID', 'show_my_id')]
@@ -4036,12 +4037,12 @@ async function handleSheetsInfo(ctx, state, text, telegramId) {
   }
   const cm = getCurrentMonthKey();
   const nm = getNextMonthKey();
-  let msg = `📋 <b>Привязка таблиц</b>\n\n🗓 Активный месяц: <code>${cm}</code>\n🗓 Следующий месяц: <code>${nm}</code>\n\n`;
+  let msg = `${pe('📋')} <b>Привязка таблиц</b>\n\n${pe('🗓')} Активный месяц: <code>${cm}</code>\n${pe('🗓')} Следующий месяц: <code>${nm}</code>\n\n`;
   for (const wp of WORKPLACES) {
     const info = resolveSheetInfo(wp);
     const activeId = getWorkplaceSheetIdByMonth(wp, cm);
     const nextId = getWorkplaceSheetIdByMonth(wp, nm);
-    msg += `🏬 <b>${esc(wp)}</b>\n`;
+    msg += `${pe('🏬')} <b>${esc(wp)}</b>\n`;
     msg += `   Текущий: ${activeId ? '✅ привязана' : '❌ нет'}\n`;
     msg += `   Следующий: ${nextId ? '✅ привязана' : '❌ нет'}\n`;
     msg += `   Источник: ${esc(info.source)}\n\n`;
@@ -4063,14 +4064,14 @@ async function handleMyId(ctx) {
   const displayName = [firstName, lastName].filter(Boolean).join(' ') || 'Без имени';
 
   await ctx.replyWithHTML(
-    `🆔 <b>Ваш Telegram ID:</b> <code>${userId}</code>\n\n` +
+    `${pe('🆔')} <b>Ваш Telegram ID:</b> <code>${userId}</code>\n\n` +
     'Сообщите этот ID администратору для получения доступа к разделу «📋 Таблицы».'
   );
 
   await notifyAdmins(
-    `🆔 <b>Запрос доступа к Таблицам</b>\n\n` +
-    `👤 ${esc(displayName)} ${esc(username)}\n` +
-    `🆔 <code>${userId}</code>\n\n` +
+    `${pe('🆔')} <b>Запрос доступа к Таблицам</b>\n\n` +
+    `${pe('👤')} ${esc(displayName)} ${esc(username)}\n` +
+    `${pe('🆔')} <code>${userId}</code>\n\n` +
     `Дать доступ: <code>/sheet_access ${userId}</code>`
   );
 }
@@ -4089,10 +4090,10 @@ async function handleUpdateEditText(ctx, state, text) {
   }
   const customHighlights = text.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 4);
   const fullMessage = (
-    `🆕 <b><i>Обновление бота v${esc(editVersion)}</i></b>\n\n` +
+    `${pe('🆕')} <b><i>Обновление бота v${esc(editVersion)}</i></b>\n\n` +
     '<b>Коротко, что изменили:</b>\n' +
     customHighlights.map((item) => `• ${esc(item)}`).join('\n') +
-    '\n\n💙 Хорошей смены!'
+    `\n\n${pe('💙')} Хорошей смены!`
   );
   _pendingUpdates[editVersion] = { ...pending, message: fullMessage };
   savePendingUpdates();

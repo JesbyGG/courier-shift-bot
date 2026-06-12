@@ -1,4 +1,6 @@
 module.exports = function setupLogist(bot, services) {
+  const { pe } = require('../services/premiumEmoji');
+
   const {
     pokeCourier, showCashHistoryForDate,
     getReminder, updateReminder, deleteReminder,
@@ -47,8 +49,8 @@ module.exports = function setupLogist(bot, services) {
 
     try {
       await ctx.editMessageText(
-        `✅ Отметка получена. Когда сдадите — нажмите «Сдал».\n\n` +
-        `💶 К сдаче: <code>${esc(formatted)}</code> ₽`,
+        `${pe('✅')} Отметка получена. Когда сдадите — нажмите «Сдал».\n\n` +
+        `${pe('💶')} К сдаче: <code>${esc(formatted)}</code> ₽`,
         {
           parse_mode: 'HTML',
           reply_markup: {
@@ -62,7 +64,7 @@ module.exports = function setupLogist(bot, services) {
 
     try {
       await bot.telegram.sendMessage(logistId,
-        `🏃 <b>${esc(courierFio)}</b> уже бежит сдавать <code>${esc(formatted)}</code> ₽`,
+        `${pe('🏃')} <b>${esc(courierFio)}</b> уже бежит сдавать <code>${esc(formatted)}</code> ₽`,
         { parse_mode: 'HTML' }
       );
     } catch (e) {
@@ -81,7 +83,7 @@ module.exports = function setupLogist(bot, services) {
     }
 
     if (reminder.status === 'approved' || reminder.status === 'declined') {
-      try { await ctx.editMessageText('✅ Наличные уже обработаны.'); } catch (e) { /* ignore */ }
+      try { await ctx.editMessageText(`${pe('✅')} Наличные уже обработаны.`); } catch (e) { /* ignore */ }
       return;
     }
 
@@ -96,12 +98,12 @@ module.exports = function setupLogist(bot, services) {
     });
 
     try {
-      await ctx.editMessageText('⏳ Логист проверяет...', { parse_mode: 'HTML' });
+      await ctx.editMessageText(`${pe('⏳')} Логист проверяет...`, { parse_mode: 'HTML' });
     } catch (e) { /* ignore */ }
 
     try {
       const sent = await bot.telegram.sendMessage(reminder.logistId,
-        `✅ <b>${esc(reminder.courierFio)}</b> сдал <code>${esc(reminder.formatted)}</code> ₽\n\nПодтвердите сдачу:`,
+        `${pe('✅')} <b>${esc(reminder.courierFio)}</b> сдал <code>${esc(reminder.formatted)}</code> ₽\n\nПодтвердите сдачу:`,
         {
           parse_mode: 'HTML',
           reply_markup: {
@@ -157,12 +159,12 @@ module.exports = function setupLogist(bot, services) {
     deleteReminder(shortId);
 
     try {
-      await ctx.editMessageText(`✅ Подтверждено: <b>${esc(reminder.courierFio)}</b> сдал <code>${esc(reminder.formatted)}</code> ₽`, { parse_mode: 'HTML' });
+      await ctx.editMessageText(`${pe('✅')} Подтверждено: <b>${esc(reminder.courierFio)}</b> сдал <code>${esc(reminder.formatted)}</code> ₽`, { parse_mode: 'HTML' });
     } catch (e) { /* ignore */ }
 
     try {
       await bot.telegram.sendMessage(reminder.courierId,
-        `✅ <b>${esc(reminder.logistFio)}</b> подтвердил сдачу <code>${esc(reminder.formatted)}</code> ₽\n\nСпасибо!`,
+        `${pe('✅')} <b>${esc(reminder.logistFio)}</b> подтвердил сдачу <code>${esc(reminder.formatted)}</code> ₽\n\nСпасибо!`,
         { parse_mode: 'HTML' }
       );
     } catch (e) {
@@ -193,12 +195,12 @@ module.exports = function setupLogist(bot, services) {
     updateReminder(shortId, { status: 'declined' });
 
     try {
-      await ctx.editMessageText(`❌ Отклонено: <b>${esc(reminder.courierFio)}</b>`, { parse_mode: 'HTML' });
+      await ctx.editMessageText(`${pe('❌')} Отклонено: <b>${esc(reminder.courierFio)}</b>`, { parse_mode: 'HTML' });
     } catch (e) { /* ignore */ }
 
     try {
       await bot.telegram.sendMessage(reminder.courierId,
-        `❌ <b>${esc(reminder.logistFio)}</b> отклонил сдачу.\n\nПроверьте сумму и нажмите «Сдал» снова.`,
+        `${pe('❌')} <b>${esc(reminder.logistFio)}</b> отклонил сдачу.\n\nПроверьте сумму и нажмите «Сдал» снова.`,
         {
           parse_mode: 'HTML',
           reply_markup: {
@@ -215,28 +217,28 @@ module.exports = function setupLogist(bot, services) {
 
   bot.action(/^sc_appr_(\d+)$/, async (ctx) => {
     const courierId = ctx.match[1];
-    await ctx.answerCbQuery('✅ Сдача подтверждена');
+    await ctx.answerCbQuery(`${pe('✅')} Сдача подтверждена`);
 
     const pendingCash = getPendingCash(courierId);
     if (!pendingCash || pendingCash.confirmationStatus !== 'awaiting') {
-      try { await ctx.editMessageText('✅ Уже подтверждено другим логистом.'); } catch (e) { /* ignore */ }
+      try { await ctx.editMessageText(`${pe('✅')} Уже подтверждено другим логистом.`); } catch (e) { /* ignore */ }
       return;
     }
 
     const approverId = String(ctx.from.id);
 
     if (approverId === courierId) {
-      await ctx.answerCbQuery('⛔ Вы не можете подтвердить свою сдачу.');
+      await ctx.answerCbQuery(`${pe('⛔')} Вы не можете подтвердить свою сдачу.`);
       return;
     }
     if (getUserRole(approverId) !== 'logist') {
-      await ctx.answerCbQuery('⛔ Только логист может подтверждать сдачу.');
+      await ctx.answerCbQuery(`${pe('⛔')} Только логист может подтверждать сдачу.`);
       return;
     }
     const approverWorkplace = getUserField(approverId, 'workplace');
     const cashWorkplace = pendingCash.workplace || getUserField(courierId, 'workplace') || '';
     if (approverWorkplace !== cashWorkplace) {
-      await ctx.answerCbQuery('⛔ Вы не привязаны к этому магазину.');
+      await ctx.answerCbQuery(`${pe('⛔')} Вы не привязаны к этому магазину.`);
       return;
     }
 
@@ -274,12 +276,12 @@ module.exports = function setupLogist(bot, services) {
     });
 
     try {
-      await ctx.editMessageText(`✅ Подтверждено: <b>${esc(courierFio)}</b> сдал <code>${esc(formatted)}</code> ₽`, { parse_mode: 'HTML' });
+      await ctx.editMessageText(`${pe('✅')} Подтверждено: <b>${esc(courierFio)}</b> сдал <code>${esc(formatted)}</code> ₽`, { parse_mode: 'HTML' });
     } catch (e) { /* ignore */ }
 
     try {
       await bot.telegram.sendMessage(courierId,
-        `✅ <b>${esc(logistFio)}</b> подтвердил сдачу <code>${esc(formatted)}</code> ₽\n\nСпасибо!`,
+        `${pe('✅')} <b>${esc(logistFio)}</b> подтвердил сдачу <code>${esc(formatted)}</code> ₽\n\nСпасибо!`,
         { parse_mode: 'HTML' }
       );
     } catch (e) {
@@ -289,7 +291,7 @@ module.exports = function setupLogist(bot, services) {
 
   bot.action(/^sc_decl_(\d+)$/, async (ctx) => {
     const courierId = ctx.match[1];
-    await ctx.answerCbQuery('❌ Сдача отклонена');
+    await ctx.answerCbQuery(`${pe('❌')} Сдача отклонена`);
 
     const pendingCash = getPendingCash(courierId);
     if (!pendingCash || pendingCash.confirmationStatus !== 'awaiting') {
@@ -300,16 +302,16 @@ module.exports = function setupLogist(bot, services) {
     const declinerId = String(ctx.from.id);
 
     if (declinerId === courierId) {
-      await ctx.answerCbQuery('⛔ Вы не можете отклонить свою сдачу.');
+      await ctx.answerCbQuery(`${pe('⛔')} Вы не можете отклонить свою сдачу.`);
       return;
     }
     if (getUserRole(declinerId) !== 'logist') {
-      await ctx.answerCbQuery('⛔ Только логист может отклонять сдачу.');
+      await ctx.answerCbQuery(`${pe('⛔')} Только логист может отклонять сдачу.`);
       return;
     }
     const declinerWorkplace = getUserField(declinerId, 'workplace');
     if (declinerWorkplace !== (pendingCash.workplace || '')) {
-      await ctx.answerCbQuery('⛔ Вы не привязаны к этому магазину.');
+      await ctx.answerCbQuery(`${pe('⛔')} Вы не привязаны к этому магазину.`);
       return;
     }
 
@@ -328,12 +330,12 @@ module.exports = function setupLogist(bot, services) {
     });
 
     try {
-      await ctx.editMessageText(`❌ Отклонено: <b>${esc(courierFio)}</b>`, { parse_mode: 'HTML' });
+      await ctx.editMessageText(`${pe('❌')} Отклонено: <b>${esc(courierFio)}</b>`, { parse_mode: 'HTML' });
     } catch (e) { /* ignore */ }
 
     try {
       await bot.telegram.sendMessage(courierId,
-        `❌ <b>${esc(logistFio)}</b> отклонил сдачу.\n\nПроверьте сумму и попробуйте снова.`,
+        `${pe('❌')} <b>${esc(logistFio)}</b> отклонил сдачу.\n\nПроверьте сумму и попробуйте снова.`,
         { parse_mode: 'HTML' }
       );
     } catch (e) {

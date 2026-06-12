@@ -1,4 +1,5 @@
 module.exports = function setupAdmin(bot, services) {
+  const { pe } = require('../services/premiumEmoji');
   const {
     isAdminUser,
     getAdminIds,
@@ -25,12 +26,12 @@ module.exports = function setupAdmin(bot, services) {
     if (args.length === 1 && args[0] === '') {
       const users = getSheetAccessUsers();
       const adminIds = getAdminIds();
-      let msg = '📋 <b>Доступ к Таблицам</b>\n\n';
-      msg += '🔑 <b>Администраторы:</b>\n';
+      let msg = `${pe('📋')} <b>Доступ к Таблицам</b>\n\n`;
+      msg += `${pe('🔑')} <b>Администраторы:</b>\n`;
       for (const id of adminIds) {
         msg += `   • <code>${id}</code>\n`;
       }
-      msg += '\n👥 <b>Допущенные пользователи:</b>\n';
+      msg += `\n${pe('👥')} <b>Допущенные пользователи:</b>\n`;
       if (users.length === 0) {
         msg += '   (пусто)\n';
       } else {
@@ -48,29 +49,29 @@ module.exports = function setupAdmin(bot, services) {
     if (args[0] === '-' || args[0] === 'del' || args[0] === 'remove') {
       const targetId = Number(args[1]);
       if (!Number.isFinite(targetId) || targetId <= 0) {
-        await ctx.replyWithHTML('❌ Неверный Telegram ID.');
+        await ctx.replyWithHTML(`${pe('❌')} Неверный Telegram ID.`);
         return;
       }
       const removed = removeSheetAccessUser(targetId);
       if (removed) {
-        await ctx.replyWithHTML(`✅ Доступ к Таблицам убран для <code>${targetId}</code>`);
+        await ctx.replyWithHTML(`${pe('✅')} Доступ к Таблицам убран для <code>${targetId}</code>`);
       } else {
-        await ctx.replyWithHTML(`ℹ️ Пользователь <code>${targetId}</code> не имел доступа.`);
+        await ctx.replyWithHTML(`${pe('ℹ️')} Пользователь <code>${targetId}</code> не имел доступа.`);
       }
       return;
     }
 
     const targetId = Number(args[0]);
     if (!Number.isFinite(targetId) || targetId <= 0) {
-      await ctx.replyWithHTML('❌ Неверный Telegram ID. Используйте: <code>/sheet_access 123456789</code>');
+      await ctx.replyWithHTML(`${pe('❌')} Неверный Telegram ID. Используйте: <code>/sheet_access 123456789</code>`);
       return;
     }
 
     const added = addSheetAccessUser(targetId);
     if (added) {
-      await ctx.replyWithHTML(`✅ Доступ к Таблицам предоставлен для <code>${targetId}</code>\n\nПользователь увидит кнопку «📋 Таблицы» в Настройках.`);
+      await ctx.replyWithHTML(`${pe('✅')} Доступ к Таблицам предоставлен для <code>${targetId}</code>\n\nПользователь увидит кнопку «${pe('📋')} Таблицы» в Настройках.`);
     } else {
-      await ctx.replyWithHTML(`ℹ️ Пользователь <code>${targetId}</code> уже имеет доступ.`);
+      await ctx.replyWithHTML(`${pe('ℹ️')} Пользователь <code>${targetId}</code> уже имеет доступ.`);
     }
   });
 
@@ -83,7 +84,7 @@ module.exports = function setupAdmin(bot, services) {
 
     if (args.length < 2) {
       await ctx.replyWithHTML(
-        '🔑 <b>Смена роли</b>\n\n' +
+        `${pe('🔑')} <b>Смена роли</b>\n\n` +
         'Использование: <code>/role &lt;telegram_id&gt; &lt;courier|logist&gt;</code>\n\n' +
         'Примеры:\n' +
         '<code>/role 123456789 courier</code> — сделать курьером\n' +
@@ -96,13 +97,13 @@ module.exports = function setupAdmin(bot, services) {
     const newRole = args[1].toLowerCase();
 
     if (newRole !== 'courier' && newRole !== 'logist') {
-      await ctx.replyWithHTML('❌ Роль должна быть <code>courier</code> или <code>logist</code>.');
+      await ctx.replyWithHTML(`${pe('❌')} Роль должна быть <code>courier</code> или <code>logist</code>.`);
       return;
     }
 
     const currentFio = getUserField(targetId, 'fio');
     if (!currentFio) {
-      await ctx.replyWithHTML(`❌ Пользователь <code>${targetId}</code> не найден.`);
+      await ctx.replyWithHTML(`${pe('❌')} Пользователь <code>${targetId}</code> не найден.`);
       return;
     }
 
@@ -120,7 +121,7 @@ module.exports = function setupAdmin(bot, services) {
     }
 
     await ctx.replyWithHTML(
-      `✅ Роль изменена: <b>${esc(currentFio)}</b> (<code>${targetId}</code>)\n\n` +
+      `${pe('✅')} Роль изменена: <b>${esc(currentFio)}</b> (<code>${targetId}</code>)\n\n` +
       `${oldDisplayRole} → ${displayRole}`
     );
   });
@@ -138,10 +139,10 @@ module.exports = function setupAdmin(bot, services) {
     }
     delete _pendingUpdates[version];
     savePendingUpdates();
-    await ctx.editMessageText('✅ Уведомление отправляется...', { parse_mode: 'HTML' });
+    await ctx.editMessageText(`${pe('✅')} Уведомление отправляется...`, { parse_mode: 'HTML' });
     await notifyUsersAboutUpdate(version, pending.changedFiles, pending.updates || []);
     try {
-      await ctx.editMessageText(`✅ Уведомление v${esc(version)} отправлено всем пользователям.`, { parse_mode: 'HTML' });
+      await ctx.editMessageText(`${pe('✅')} Уведомление v${esc(version)} отправлено всем пользователям.`, { parse_mode: 'HTML' });
     } catch {}
   });
 
@@ -157,7 +158,7 @@ module.exports = function setupAdmin(bot, services) {
       return;
     }
     setState(ctx.from.id, { awaitingUpdateEdit: true, editVersion: version });
-    await ctx.replyWithHTML('✏️ <b>Редактирование уведомления</b>\n\nОтправьте новый текст сообщения (без заголовка «Обновление бота v...» и «Хорошей смены» — они добавятся автоматически):');
+    await ctx.replyWithHTML(`${pe('✏️')} <b>Редактирование уведомления</b>\n\nОтправьте новый текст сообщения (без заголовка «Обновление бота v...» и «Хорошей смены» — они добавятся автоматически):`);
     await ctx.answerCbQuery();
   });
 
@@ -170,7 +171,7 @@ module.exports = function setupAdmin(bot, services) {
     delete _pendingUpdates[version];
     savePendingUpdates();
     try {
-      await ctx.editMessageText(`⏭️ Уведомление v${esc(version)} пропущено.`, { parse_mode: 'HTML' });
+      await ctx.editMessageText(`${pe('⏭️')} Уведомление v${esc(version)} пропущено.`, { parse_mode: 'HTML' });
     } catch {}
     await ctx.answerCbQuery('Пропущено');
   });

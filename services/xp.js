@@ -1,4 +1,5 @@
 const db = require('../db');
+const { pe, premiumText } = require('./premiumEmoji');
 
 const AUTO_RANKS = [
   { level: 1, name: '🆕 Новичок', threshold: 0 },
@@ -108,10 +109,10 @@ function formatRankInfo(telegramId, courierType) {
   const xp = getTotalXp(telegramId);
   const prog = getRankProgress(xp, courierType);
   if (!prog.next) {
-    return `${prog.current.name} — ${xp.toLocaleString('ru-RU')} XP (максимальный ранг!)`;
+    return `${premiumText(prog.current.name)} — ${xp.toLocaleString('ru-RU')} XP (максимальный ранг!)`;
   }
   const bar = formatProgressBar(prog.percent);
-  return `${prog.current.name} — ${xp.toLocaleString('ru-RU')} / ${prog.next.threshold.toLocaleString('ru-RU')} XP\n${bar} ${prog.percent}%`;
+  return `${premiumText(prog.current.name)} — ${xp.toLocaleString('ru-RU')} / ${prog.next.threshold.toLocaleString('ru-RU')} XP\n${bar} ${prog.percent}%`;
 }
 
 function getXpForAction(actionKey) {
