@@ -1,7 +1,7 @@
 module.exports = function setupCourier(bot, services) {
   const {
     getState, setState, clearState,
-    isLogist, getMenuForRole,
+    isLogist, getMenuForRoleInline,
     replaceMileageFlow,
     handleRouteSheetPhoto, handleReconciliationPhoto, handleMileagePhoto,
     finalizeReconciliationPostSend, saveMileageFromState,
@@ -22,7 +22,7 @@ module.exports = function setupCourier(bot, services) {
   bot.on('photo', async (ctx) => {
     if (ctx.chat?.type !== 'private') return;
     if (isLogist(ctx.from.id)) {
-      await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
+      await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRoleInline(ctx.from.id));
       return;
     }
     const telegramId = ctx.from.id;
@@ -39,23 +39,23 @@ module.exports = function setupCourier(bot, services) {
     if (state?.awaitingReconciliationPhoto) {
       const res = await handleReconciliationPhoto(ctx, state, fileId);
       if (res?.status === 'photos_sent_terminal') {
-        await ctx.replyWithHTML(`✅ <b>Все фото (2 шт.) отправлены.</b>${res.ocrWarning}`, getMenuForRole(ctx.from.id));
+        await ctx.replyWithHTML(`✅ <b>Все фото (2 шт.) отправлены.</b>${res.ocrWarning}`, getMenuForRoleInline(ctx.from.id));
         if (res.postRes?.status === 'partial_error') {
           await ctx.replyWithHTML(
             `⚠️ <b>Фото отправлены, но не удалось записать:</b>\n` +
             res.postRes.errors.map((e) => `• ${esc(e)}`).join('\n') +
             '\n\nСообщите администратору.',
-            getMenuForRole(ctx.from.id)
+            getMenuForRoleInline(ctx.from.id)
           );
         }
       } else if (res?.status === 'photos_sent') {
-        await ctx.replyWithHTML(`✅ <b>Все фото (${res.total} шт.) отправлены.</b>${res.ocrWarning}`, getMenuForRole(ctx.from.id));
+        await ctx.replyWithHTML(`✅ <b>Все фото (${res.total} шт.) отправлены.</b>${res.ocrWarning}`, getMenuForRoleInline(ctx.from.id));
         if (res.postRes?.status === 'partial_error') {
           await ctx.replyWithHTML(
             `⚠️ <b>Фото отправлены, но не удалось записать:</b>\n` +
             res.postRes.errors.map((e) => `• ${esc(e)}`).join('\n') +
             '\n\nСообщите администратору.',
-            getMenuForRole(ctx.from.id)
+            getMenuForRoleInline(ctx.from.id)
           );
         }
       }
@@ -63,7 +63,7 @@ module.exports = function setupCourier(bot, services) {
     }
 
     if (!state?.awaitingMileagePhoto) {
-      await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.mileage}».`, getMenuForRole(ctx.from.id));
+      await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.mileage}».`, getMenuForRoleInline(ctx.from.id));
       return;
     }
 
@@ -74,7 +74,7 @@ module.exports = function setupCourier(bot, services) {
     await ctx.answerCbQuery();
     try { await ctx.deleteMessage(); } catch (e) { /* сообщение уже удалено */ }
     const res = await backToMainMenu(ctx);
-    if (res.status === 'back_to_menu') await ctx.replyWithHTML(res.message, getMenuForRole(ctx.from.id));
+    if (res.status === 'back_to_menu') await ctx.replyWithHTML(res.message, getMenuForRoleInline(ctx.from.id));
   });
 
   bot.action('help_commands', async (ctx) => {
@@ -99,7 +99,7 @@ module.exports = function setupCourier(bot, services) {
         sent > 0
           ? `✅ Завершено. Отправлено фото: <b>${sent}</b>.`
           : '✅ Завершено. Фото не отправлены.',
-        courierMainMenu(ctx.from.id)
+        getMenuForRoleInline(ctx.from.id)
       );
       return;
     }
@@ -118,7 +118,7 @@ module.exports = function setupCourier(bot, services) {
       const unlocked = checkMilestoneAchievements(ctx.from.id, stats);
       if (unlocked.length > 0) await notifyAchievements(ctx, ctx.from.id, unlocked);
     } catch (_) {}
-    await ctx.replyWithHTML('✅ Завершено. Спасибо.', courierMainMenu(ctx.from.id));
+    await ctx.replyWithHTML('✅ Завершено. Спасибо.', getMenuForRoleInline(ctx.from.id));
   });
 
   bot.action('cash_submit_yes', async (ctx) => {
@@ -128,7 +128,7 @@ module.exports = function setupCourier(bot, services) {
     const amount = Number(pendingCash?.amount || 0);
 
     if (!Number.isFinite(amount) || amount < 1) {
-      await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы.', getMenuForRole(telegramId));
+      await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы.', getMenuForRoleInline(telegramId));
       return;
     }
 
@@ -166,7 +166,7 @@ module.exports = function setupCourier(bot, services) {
         `✅ <b>Сдача подтверждена</b>\n\n` +
         `Вы сдали <code>${esc(formatted)}</code> ₽.\n` +
         `Спасибо!`,
-        getMenuForRole(telegramId)
+        getMenuForRoleInline(telegramId)
       );
       return;
     }
@@ -189,7 +189,7 @@ module.exports = function setupCourier(bot, services) {
       `⏳ <b>Запрос отправлен</b>\n\n` +
       `Вы отметили сдачу <code>${esc(formatted)}</code> ₽.\n` +
       `Ожидайте подтверждения от логиста.`,
-      getMenuForRole(telegramId)
+      getMenuForRoleInline(telegramId)
     );
   });
 
@@ -199,7 +199,7 @@ module.exports = function setupCourier(bot, services) {
     const message = fun
       ? '😼 Тогда бегом сдавать деньги! Котоконтроль не дремлет 🐾\n\nКогда сдадите — нажмите «💵 Деньги к сдаче» и подтвердите.'
       : '⚠️ Не забудьте сдать деньги.\n\nКогда сдадите — нажмите «💵 Деньги к сдаче» и подтвердите.';
-    await ctx.replyWithHTML(message, getMenuForRole(ctx.from.id));
+    await ctx.replyWithHTML(message, getMenuForRoleInline(ctx.from.id));
   });
 
   bot.action('retry_mileage_photo', async (ctx) => {
@@ -207,7 +207,7 @@ module.exports = function setupCourier(bot, services) {
     const state = getState(ctx.from.id);
 
     if (!state?.mileageRow || !state?.day || !state?.stage) {
-      await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.mileage}».`, getMenuForRole(ctx.from.id));
+      await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.mileage}».`, getMenuForRoleInline(ctx.from.id));
       return;
     }
 
@@ -227,21 +227,21 @@ module.exports = function setupCourier(bot, services) {
     await ctx.answerCbQuery();
     const res = await replaceMileageFlow(ctx, 'start');
     if (res.status === 'not_found') await ctx.replyWithHTML(formatNoSheetMessage(res.result, res.workplace));
-    else if (res.status === 'error') await ctx.replyWithHTML('⚠️ Не удалось подготовить замену пробега.\nПопробуйте ещё раз или обратитесь к администратору.', getMenuForRole(ctx.from.id));
+    else if (res.status === 'error') await ctx.replyWithHTML('⚠️ Не удалось подготовить замену пробега.\nПопробуйте ещё раз или обратитесь к администратору.', getMenuForRoleInline(ctx.from.id));
   });
 
   bot.action('replace_mileage_end', async (ctx) => {
     await ctx.answerCbQuery();
     const res = await replaceMileageFlow(ctx, 'end');
     if (res.status === 'not_found') await ctx.replyWithHTML(formatNoSheetMessage(res.result, res.workplace));
-    else if (res.status === 'error') await ctx.replyWithHTML('⚠️ Не удалось подготовить замену пробега.\nПопробуйте ещё раз или обратитесь к администратору.', getMenuForRole(ctx.from.id));
+    else if (res.status === 'error') await ctx.replyWithHTML('⚠️ Не удалось подготовить замену пробега.\nПопробуйте ещё раз или обратитесь к администратору.', getMenuForRoleInline(ctx.from.id));
   });
 
   bot.action('replace_start', async (ctx) => {
     await ctx.answerCbQuery();
     const res = await replaceTimeAction(ctx, 'start');
     if (res.status === 'replaced') {
-      await ctx.replyWithHTML(`🟢 <b>Старт смены</b> заменён: <code>${esc(res.timeValue)}</code>`, getMenuForRole(ctx.from.id));
+      await ctx.replyWithHTML(`🟢 <b>Старт смены</b> заменён: <code>${esc(res.timeValue)}</code>`, getMenuForRoleInline(ctx.from.id));
     } else if (res.status === 'not_found') {
       await ctx.replyWithHTML(formatNoSheetMessage(res.result, res.workplace));
     } else if (res.status === 'error') {
@@ -253,7 +253,7 @@ module.exports = function setupCourier(bot, services) {
     await ctx.answerCbQuery();
     const res = await replaceTimeAction(ctx, 'end');
     if (res.status === 'replaced') {
-      await ctx.replyWithHTML(`🔴 <b>Конец смены</b> заменён: <code>${esc(res.timeValue)}</code>`, getMenuForRole(ctx.from.id));
+      await ctx.replyWithHTML(`🔴 <b>Конец смены</b> заменён: <code>${esc(res.timeValue)}</code>`, getMenuForRoleInline(ctx.from.id));
     } else if (res.status === 'not_found') {
       await ctx.replyWithHTML(formatNoSheetMessage(res.result, res.workplace));
     } else if (res.status === 'error') {
@@ -269,13 +269,13 @@ module.exports = function setupCourier(bot, services) {
     if (state?.mileageProcessing) {
       setState(ctx.from.id, { ...state, mileageProcessing: false, awaitingMileagePhoto: false, awaitingManualMileage: false });
       clearState(ctx.from.id);
-      await ctx.replyWithHTML('⏭️ Обработка фото отменена.', getMenuForRole(ctx.from.id));
+      await ctx.replyWithHTML('⏭️ Обработка фото отменена.', getMenuForRoleInline(ctx.from.id));
       return;
     }
 
     if (savedMileage) {
       clearState(ctx.from.id);
-      await ctx.replyWithHTML('⬅️ Возвращаю в меню.', getMenuForRole(ctx.from.id));
+      await ctx.replyWithHTML('⬅️ Возвращаю в меню.', getMenuForRoleInline(ctx.from.id));
       return;
     }
 
@@ -292,7 +292,7 @@ module.exports = function setupCourier(bot, services) {
     await ctx.answerCbQuery('⏭️ Пропущено');
     clearState(ctx.from.id);
     console.log('пропуск пробега подтверждён');
-    await ctx.replyWithHTML('⏭️ Пробег пропущен.', getMenuForRole(ctx.from.id));
+    await ctx.replyWithHTML('⏭️ Пробег пропущен.', getMenuForRoleInline(ctx.from.id));
   });
 
   bot.action('cancel_skip_mileage', async (ctx) => {
@@ -305,7 +305,7 @@ module.exports = function setupCourier(bot, services) {
     const state = getState(ctx.from.id);
 
     if (!state?.mileageRow || !state?.day || !state?.stage) {
-      await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.mileage}».`, getMenuForRole(ctx.from.id));
+      await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.mileage}».`, getMenuForRoleInline(ctx.from.id));
       return;
     }
 
@@ -318,7 +318,7 @@ module.exports = function setupCourier(bot, services) {
     const state = getState(ctx.from.id);
 
     if (!state?.awaitingTimeChange || !state?.courierRow || !state?.day || !state?.stage) {
-      await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.punchTime}».`, getMenuForRole(ctx.from.id));
+      await ctx.replyWithHTML(`⚠️ Сначала нажмите «${BUTTONS.punchTime}».`, getMenuForRoleInline(ctx.from.id));
       return;
     }
 
@@ -336,7 +336,7 @@ module.exports = function setupCourier(bot, services) {
       `• с половиной — <code>7,5</code> или <code>7.5</code>\n` +
       `• часы:минуты — <code>07:30</code>, <code>07:44</code>, <code>08.46</code>, <code>8 14</code>\n\n` +
       `Минуты округлятся до ближайших 30 (08:14 → 8, 08:46 → 9).`,
-      getMenuForRole(ctx.from.id)
+      getMenuForRoleInline(ctx.from.id)
     );
   });
 };

@@ -27,5 +27,25 @@
     ],
     "updates": [],
     "message": "🆕 <b><i>Обновление бота v2.4.15</i></b>\n\n<b>Коротко, что изменили:</b>\n• 🤖 Обновлена логика бота, улучшена стабильность.\n\n💙 Хорошей смены!"
+  },
+  "2.4.17": {
+    "changedFiles": [
+      "bot.js",
+      "sheetCommand.js"
+    ],
+    "updates": [
+      "↩️ Откат: Удалён premium emoji system - tg-emoji tags not supported by Bot API",
+      "🔧 Исправлено: Guard against undefined category in formatAchievementsCard",
+      "🔧 Исправлено: Обработка undefined input in pe() to prevent crash",
+      "✨ Добавлено: Premium Telegram emojis via <tg-emoji> tag in all user-facing messages"
+    ],
+    "message": "🆕 <b><i>Обновление бота v2.4.17</i></b>\n\n<b>Коротко, что изменили:</b>\n• 🤖 Обновлена логика бота, улучшена стабильность.\n• 🗂 Улучшена работа с таблицами.\n\n<b>Подробности:</b>\n• ↩️ Откат: Удалён premium emoji system - tg-emoji tags not supported by Bot API\n• 🔧 Исправлено: Guard against undefined category in formatAchievementsCard\n• 🔧 Исправлено: Обработка undefined input in pe() to prevent crash\n\n💙 Хорошей смены!"
+  },
+  "2.4.18": {
+    "changedFiles": [
+      "bot.js"
+    ],
+    "updates": [],
+    "message": "🆕 <b><i>Обновление бота v2.4.18</i></b>\n\n<b>Коротко, что изменили:</b>\n• 🤖 Обновлена логика бота, улучшена стабильность.\n\n💙 Хорошей смены!"
   }
 }

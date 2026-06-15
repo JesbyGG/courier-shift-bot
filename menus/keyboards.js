@@ -261,6 +261,107 @@ function debtorListKeyboard(debtors, logistWorkplace) {
   return Markup.inlineKeyboard(buttons);
 }
 
+function courierMainMenuInline(telegramId) {
+  const courierType = getUserField(telegramId, 'courierType') || 'auto';
+  const rows = [
+    [Markup.button.callback(getTimeButtonLabel(telegramId), 'menu_time')]
+  ];
+  if (courierType !== 'pedestrian') {
+    rows.push([Markup.button.callback(getMileageButtonLabel(telegramId), 'menu_mileage')]);
+  }
+  rows.push([
+    Markup.button.callback(BUTTONS.routeSheet, 'menu_route'),
+    Markup.button.callback(BUTTONS.reconciliation, 'menu_reconciliation')
+  ]);
+  rows.push([
+    Markup.button.callback(BUTTONS.cashCheck, 'menu_cash'),
+    Markup.button.callback(BUTTONS.issues, 'menu_issues')
+  ]);
+  rows.push([
+    Markup.button.callback(BUTTONS.leaderBoard, 'menu_leaderboard'),
+    Markup.button.callback(BUTTONS.settings, 'menu_settings')
+  ]);
+  return Markup.inlineKeyboard(rows);
+}
+
+function logistMainMenuInline(telegramId) {
+  const workplace = getUserField(telegramId, 'workplace');
+  const features = WORKPLACE_FEATURES[workplace] || {};
+  const rows = [
+    [Markup.button.callback(getTimeButtonLabel(telegramId), 'menu_time')]
+  ];
+  if (features.cashCollection) {
+    rows.push([
+      Markup.button.callback(BUTTONS.openShop, 'menu_open_shop'),
+      Markup.button.callback(BUTTONS.cashCollect, 'menu_cash_collect')
+    ]);
+    rows.push([Markup.button.callback(BUTTONS.cashHistory, 'menu_cash_history')]);
+  } else {
+    rows.push([Markup.button.callback(BUTTONS.openShop, 'menu_open_shop')]);
+  }
+  rows.push([Markup.button.callback(BUTTONS.sheetInfo, 'menu_sheets')]);
+  rows.push([Markup.button.callback(BUTTONS.settings, 'menu_settings')]);
+  return Markup.inlineKeyboard(rows);
+}
+
+function getMenuForRoleInline(telegramId) {
+  const role = getUserRole(telegramId);
+  if (role === 'logist') {
+    return logistMainMenuInline(telegramId);
+  }
+  return courierMainMenuInline(telegramId);
+}
+
+function getSettingsMenuForRoleInline(telegramId) {
+  const role = getUserRole(telegramId);
+  if (role === 'logist') {
+    return Markup.inlineKeyboard([
+      [Markup.button.callback(BUTTONS.profile, 'menu_profile')],
+      [Markup.button.callback(BUTTONS.myId, 'menu_my_id')],
+      [Markup.button.callback(BUTTONS.help, 'menu_help')],
+      [Markup.button.callback('🏠 В меню', 'menu_back')]
+    ]);
+  }
+  const showSheets = isAdminUser(telegramId) || isSheetAccessUser(telegramId);
+  const buttons = [
+    [Markup.button.callback(BUTTONS.profile, 'menu_profile')]
+  ];
+  if (showSheets) {
+    buttons.push([
+      Markup.button.callback(BUTTONS.sheetInfo, 'menu_sheets'),
+      Markup.button.callback(BUTTONS.myId, 'menu_my_id')
+    ]);
+  } else {
+    buttons.push([Markup.button.callback(BUTTONS.myId, 'menu_my_id')]);
+  }
+  buttons.push([Markup.button.callback(BUTTONS.help, 'menu_help')]);
+  buttons.push([Markup.button.callback('🏠 В меню', 'menu_back')]);
+  return Markup.inlineKeyboard(buttons);
+}
+
+function getProfileMenuForRoleInline(telegramId) {
+  const role = getUserRole(telegramId);
+  if (role === 'logist') {
+    return Markup.inlineKeyboard([
+      [Markup.button.callback(BUTTONS.changeWorkplace, 'menu_change_workplace'),
+       Markup.button.callback(BUTTONS.switchUser, 'menu_switch_user')],
+      [Markup.button.callback('⚙️ К настройкам', 'menu_back_settings')]
+    ]);
+  }
+  const courierType = getUserField(telegramId, 'courierType') || 'auto';
+  const rows = [];
+  if (courierType !== 'pedestrian') {
+    rows.push([Markup.button.callback(BUTTONS.changeCar, 'menu_change_car'),
+               Markup.button.callback(BUTTONS.changeWorkplace, 'menu_change_workplace')]);
+  } else {
+    rows.push([Markup.button.callback(BUTTONS.changeWorkplace, 'menu_change_workplace')]);
+  }
+  rows.push([Markup.button.callback(BUTTONS.changeDevice, 'menu_change_device'),
+             Markup.button.callback(BUTTONS.switchUser, 'menu_switch_user')]);
+  rows.push([Markup.button.callback('⚙️ К настройкам', 'menu_back_settings')]);
+  return Markup.inlineKeyboard(rows);
+}
+
 module.exports = {
   courierMainMenu,
   profileMenu,
@@ -272,6 +373,11 @@ module.exports = {
   getMenuForRole,
   getSettingsMenuForRole,
   getProfileMenuForRole,
+  courierMainMenuInline,
+  logistMainMenuInline,
+  getMenuForRoleInline,
+  getSettingsMenuForRoleInline,
+  getProfileMenuForRoleInline,
   getTimeButtonLabel,
   getMileageButtonLabel,
   isTimeButton,
