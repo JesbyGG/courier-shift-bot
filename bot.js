@@ -111,10 +111,7 @@ const {
   switchUserKeyboard,
   cashSubmitConfirmKeyboard,
   debtorListKeyboard,
-  courierMainMenu,
-  getMenuForRoleInline,
-  getSettingsMenuForRoleInline,
-  getProfileMenuForRoleInline
+  courierMainMenu
 } = require('./menus/keyboards');
 
 const db = require('./db');
@@ -1517,7 +1514,7 @@ async function saveCarNumber(ctx, value) {
   }
 
   clearState(ctx.from.id);
-  await ctx.replyWithHTML(`✅ Номер машины сохранён: <code>${esc(carNumber)}</code>`, getMenuForRoleInline(ctx.from.id));
+  await ctx.replyWithHTML(`✅ Номер машины сохранён: <code>${esc(carNumber)}</code>`, getMenuForRole(ctx.from.id));
   return 'done';
 }
 
@@ -1535,7 +1532,7 @@ async function saveWorkplace(ctx, value) {
 
   if (role === 'logist') {
     clearState(ctx.from.id);
-    await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`, getMenuForRoleInline(ctx.from.id));
+    await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`, getMenuForRole(ctx.from.id));
     return 'done';
   }
 
@@ -1546,7 +1543,7 @@ async function saveWorkplace(ctx, value) {
   }
 
   clearState(ctx.from.id);
-  await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`, getMenuForRoleInline(ctx.from.id));
+  await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`, getMenuForRole(ctx.from.id));
   return 'done';
 }
 
@@ -1561,7 +1558,7 @@ async function saveDevice(ctx, value) {
   setUserField(ctx.from.id, 'device', device);
   clearState(ctx.from.id);
   console.log('устройство сохранено');
-  await ctx.replyWithHTML(`✅ Устройство сохранено: <b>${esc(device)}</b>`, getMenuForRoleInline(ctx.from.id));
+  await ctx.replyWithHTML(`✅ Устройство сохранено: <b>${esc(device)}</b>`, getMenuForRole(ctx.from.id));
   return 'done';
 }
 
@@ -1644,7 +1641,7 @@ async function authorizeFio(ctx, fio) {
       }
       if (auto === 'логист') {
         setUserField(telegramId, 'role', 'logist');
-        await ctx.replyWithHTML('📦 <b>Логист</b>.\n\nТеперь выберите ваш магазин.', getMenuForRoleInline(telegramId));
+        await ctx.replyWithHTML('📦 <b>Логист</b>.\n\nТеперь выберите ваш магазин.', getMenuForRole(telegramId));
         await askForWorkplace(ctx, employee.fio);
         return;
       }
@@ -1658,7 +1655,7 @@ async function authorizeFio(ctx, fio) {
     if (workplace === 'ИМ Восток') {
       if (auto === 'логист') {
         setUserField(telegramId, 'role', 'logist');
-        await ctx.replyWithHTML('📦 <b>Логист</b>.\n\nТеперь выберите ваш магазин.', getMenuForRoleInline(telegramId));
+        await ctx.replyWithHTML('📦 <b>Логист</b>.\n\nТеперь выберите ваш магазин.', getMenuForRole(telegramId));
         await askForWorkplace(ctx, employee.fio);
         return;
       }
@@ -4012,7 +4009,7 @@ async function handleManualTime(ctx, state, text) {
     console.log('время изменено', state.stage);
     const icon = state.stage === 'start' ? '🟢' : '🔴';
     const label = state.stage === 'start' ? 'Старт' : 'Конец';
-    await ctx.replyWithHTML(`${icon} <b>${label} смены</b> изменён: <code>${esc(timeValue)}</code>`, getMenuForRoleInline(telegramId));
+    await ctx.replyWithHTML(`${icon} <b>${label} смены</b> изменён: <code>${esc(timeValue)}</code>`, getMenuForRole(telegramId));
     return 'done';
   } catch (error) {
     console.error('ошибка Google Sheets', error);
@@ -4260,7 +4257,7 @@ const services = {
   saveCarNumber, saveWorkplace, saveDevice, authorizeFio,
   handleManualTime, handleUpdateEditText, handleManualMileageInput,
   requireFio, roleChoiceKeyboard, getSettingsMenuForRole, getProfileMenuForRole,
-  getMenuForRoleInline, getSettingsMenuForRoleInline, getProfileMenuForRoleInline,
+  getMenuForRole,
   // courier helpers
   formatNoSheetMessage, makeMileageState, applyProfile,
   replaceMileageFlow, replaceTimeAction,
@@ -4309,7 +4306,7 @@ const services = {
 };
 
 function sendMenuAfterAction(ctx, text) {
-  return ctx.replyWithHTML(text, getMenuForRoleInline(ctx.from.id));
+  return ctx.replyWithHTML(text, getMenuForRole(ctx.from.id));
 }
 
 bot.action(/^menu_/, async (ctx) => {
@@ -4324,61 +4321,61 @@ bot.action(/^menu_/, async (ctx) => {
     }
     case 'menu_mileage': {
       const res = await mileageFlow(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRoleInline(id));
-      else if (res.status === 'pedestrian_no_mileage') await ctx.replyWithHTML('🚶 Пешим курьерам пробег не требуется.', getMenuForRoleInline(id));
+      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(id));
+      else if (res.status === 'pedestrian_no_mileage') await ctx.replyWithHTML('🚶 Пешим курьерам пробег не требуется.', getMenuForRole(id));
       else if (res.status === 'not_found') await ctx.replyWithHTML(formatNoSheetMessage(res.result, res.workplace));
-      else if (res.status === 'error') await ctx.replyWithHTML('⚠️ Не удалось подготовить запись пробега.\nПопробуйте ещё раз или обратитесь к администратору.', getMenuForRoleInline(id));
+      else if (res.status === 'error') await ctx.replyWithHTML('⚠️ Не удалось подготовить запись пробега.\nПопробуйте ещё раз или обратитесь к администратору.', getMenuForRole(id));
       break;
     }
     case 'menu_route': {
       const res = await routeSheetFlow(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRoleInline(id));
+      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(id));
       break;
     }
     case 'menu_reconciliation': {
       const res = await reconciliationFlow(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRoleInline(id));
+      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(id));
       break;
     }
     case 'menu_cash': {
       const res = await showPendingCashStatus(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRoleInline(id));
-      else if (res.status === 'no_debt') await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы.', getMenuForRoleInline(id));
-      else if (res.status === 'already_submitted') await ctx.replyWithHTML('⏳ Вы уже отметили сдачу. Ожидайте подтверждения логиста.', getMenuForRoleInline(id));
+      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(id));
+      else if (res.status === 'no_debt') await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы.', getMenuForRole(id));
+      else if (res.status === 'already_submitted') await ctx.replyWithHTML('⏳ Вы уже отметили сдачу. Ожидайте подтверждения логиста.', getMenuForRole(id));
       break;
     }
     case 'menu_issues': {
       const res = await showIssuesMenu(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRoleInline(id));
-      else if (res.status === 'unavailable') await ctx.replyWithHTML('⚠️ Раздел «Проблема с заказом» временно недоступен.', getMenuForRoleInline(id));
+      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(id));
+      else if (res.status === 'unavailable') await ctx.replyWithHTML('⚠️ Раздел «Проблема с заказом» временно недоступен.', getMenuForRole(id));
       break;
     }
     case 'menu_leaderboard': {
       const res = await showLeaderboardMenu(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRoleInline(id));
+      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(id));
       break;
     }
     case 'menu_settings': {
-      await ctx.replyWithHTML('⚙️ <b>Настройки</b>', getSettingsMenuForRoleInline(id));
+      await ctx.replyWithHTML('⚙️ <b>Настройки</b>', getSettingsMenuForRole(id));
       break;
     }
     case 'menu_profile': {
-      await ctx.replyWithHTML('✏️ <b>Профиль</b>', getProfileMenuForRoleInline(id));
+      await ctx.replyWithHTML('✏️ <b>Профиль</b>', getProfileMenuForRole(id));
       break;
     }
     case 'menu_back': {
       const res = await backToMainMenu(ctx);
-      if (res.status === 'mileage_processing') await ctx.replyWithHTML('📸 Обработка фото пробега продолжается... результат придёт в новый чат.', getMenuForRoleInline(id));
-      else if (res.status === 'back_to_menu') await ctx.replyWithHTML(res.message, getMenuForRoleInline(id));
+      if (res.status === 'mileage_processing') await ctx.replyWithHTML('📸 Обработка фото пробега продолжается... результат придёт в новый чат.', getMenuForRole(id));
+      else if (res.status === 'back_to_menu') await ctx.replyWithHTML(res.message, getMenuForRole(id));
       break;
     }
     case 'menu_back_settings': {
-      await ctx.replyWithHTML('⚙️ <b>Настройки</b>', getSettingsMenuForRoleInline(id));
+      await ctx.replyWithHTML('⚙️ <b>Настройки</b>', getSettingsMenuForRole(id));
       break;
     }
     case 'menu_change_car': {
       if (isLogist(id)) {
-        await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRoleInline(id));
+        await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(id));
         return;
       }
       const fio = await requireFio(ctx);
@@ -4392,7 +4389,7 @@ bot.action(/^menu_/, async (ctx) => {
     }
     case 'menu_change_device': {
       if (isLogist(id)) {
-        await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRoleInline(id));
+        await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(id));
         return;
       }
       const fio = await requireFio(ctx);
@@ -4417,23 +4414,23 @@ bot.action(/^menu_/, async (ctx) => {
     }
     case 'menu_cash_collect': {
       const res = await showDebtorsList(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRoleInline(id));
-      else if (res.status === 'no_workplace') await ctx.replyWithHTML('⚠️ Сначала выберите магазин в настройках.', getMenuForRoleInline(id));
-      else if (res.status === 'no_cash_collection') await ctx.replyWithHTML('❌ В этом магазине приём наличных не предусмотрен.', getMenuForRoleInline(id));
-      else if (res.status === 'no_debt') await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы.', getMenuForRoleInline(id));
+      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(id));
+      else if (res.status === 'no_workplace') await ctx.replyWithHTML('⚠️ Сначала выберите магазин в настройках.', getMenuForRole(id));
+      else if (res.status === 'no_cash_collection') await ctx.replyWithHTML('❌ В этом магазине приём наличных не предусмотрен.', getMenuForRole(id));
+      else if (res.status === 'no_debt') await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы.', getMenuForRole(id));
       break;
     }
     case 'menu_cash_history': {
       const res = await showHistoryDatePicker(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRoleInline(id));
-      else if (res.status === 'no_cash_collection') await ctx.replyWithHTML('❌ В этом магазине приём наличных не предусмотрен.', getMenuForRoleInline(id));
+      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(id));
+      else if (res.status === 'no_cash_collection') await ctx.replyWithHTML('❌ В этом магазине приём наличных не предусмотрен.', getMenuForRole(id));
       break;
     }
     case 'menu_open_shop': {
       const res = await openShopNotify(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRoleInline(id));
-      else if (res.status === 'no_workplace') await ctx.replyWithHTML('⚠️ Сначала выберите магазин в настройках.', getMenuForRoleInline(id));
-      else if (res.status === 'ok') await ctx.replyWithHTML(`✅ Уведомление отправлено: <b>${esc(res.workplace)} — ОТКРЫТ</b> ✅`, getMenuForRoleInline(id));
+      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(id));
+      else if (res.status === 'no_workplace') await ctx.replyWithHTML('⚠️ Сначала выберите магазин в настройках.', getMenuForRole(id));
+      else if (res.status === 'ok') await ctx.replyWithHTML(`✅ Уведомление отправлено: <b>${esc(res.workplace)} — ОТКРЫТ</b> ✅`, getMenuForRole(id));
       break;
     }
   }

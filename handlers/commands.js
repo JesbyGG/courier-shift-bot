@@ -13,7 +13,7 @@ module.exports = function setupCommands(bot, services) {
     getEmployeeDisplayName,
     askForFio,
     logistMainMenu,
-    getMenuForRoleInline,
+    getMenuForRole,
     isLogist,
     askForCarNumber,
     askForWorkplace,
@@ -74,7 +74,7 @@ module.exports = function setupCommands(bot, services) {
         `💳 <b>Принять наличные</b> — посмотреть курьеров с долгами и отправить напоминание.\n` +
         `📋 <b>Таблицы</b> — информация о привязке таблиц.\n` +
         `⚙️ <b>Настройки</b> — профиль, магазин, смена сотрудника.`,
-        getMenuForRoleInline(ctx.from.id)
+        getMenuForRole(ctx.from.id)
       );
     } else {
       await ctx.replyWithHTML(
@@ -87,7 +87,7 @@ module.exports = function setupCommands(bot, services) {
         `⚠️ <b>Проблема с заказом</b> — сообщить о проблеме, бот предлагает варианты ссылками на нужный чат/бота поддержки.\n` +
         `🏆 <b>Рейтинг</b> — посмотреть рейтинг курьеров.\n` +
         `⚙️ <b>Настройки</b> — профиль, машина, магазин, также смена сотрудника и тд.`,
-        getMenuForRoleInline(ctx.from.id)
+        getMenuForRole(ctx.from.id)
       );
     }
   });
@@ -97,7 +97,7 @@ module.exports = function setupCommands(bot, services) {
   bot.command('car', async (ctx) => {
     if (ctx.chat?.type !== 'private') return;
     if (isLogist(ctx.from.id)) {
-      await ctx.replyWithHTML('❌ Эта команда доступна только курьерам.', getMenuForRoleInline(ctx.from.id));
+      await ctx.replyWithHTML('❌ Эта команда доступна только курьерам.', getMenuForRole(ctx.from.id));
       return;
     }
     const fio = getUserField(ctx.from.id, 'fio');
@@ -115,7 +115,7 @@ module.exports = function setupCommands(bot, services) {
   bot.command('device', async (ctx) => {
     if (ctx.chat?.type !== 'private') return;
     if (isLogist(ctx.from.id)) {
-      await ctx.replyWithHTML('❌ Эта команда доступна только курьерам.', getMenuForRoleInline(ctx.from.id));
+      await ctx.replyWithHTML('❌ Эта команда доступна только курьерам.', getMenuForRole(ctx.from.id));
       return;
     }
     const fio = getUserField(ctx.from.id, 'fio');
@@ -132,8 +132,8 @@ module.exports = function setupCommands(bot, services) {
   bot.command('cancel', async (ctx) => {
     if (ctx.chat?.type !== 'private') return;
     const res = await backToMainMenu(ctx);
-    if (res.status === 'mileage_processing') await ctx.replyWithHTML('📸 Обработка фото пробега продолжается... результат придёт в новый чат.', getMenuForRoleInline(ctx.from.id));
-    else if (res.status === 'back_to_menu') await ctx.replyWithHTML(res.message, getMenuForRoleInline(ctx.from.id));
+    if (res.status === 'mileage_processing') await ctx.replyWithHTML('📸 Обработка фото пробега продолжается... результат придёт в новый чат.', getMenuForRole(ctx.from.id));
+    else if (res.status === 'back_to_menu') await ctx.replyWithHTML(res.message, getMenuForRole(ctx.from.id));
   });
 
   bot.action('close_message', async (ctx) => {
@@ -172,7 +172,7 @@ module.exports = function setupCommands(bot, services) {
     const telegramId = ctx.from.id;
     const state = getState(telegramId);
     if (!state?.awaitingRoleChoice) {
-      await ctx.replyWithHTML('⚠️ Выбор роли устарел. Нажмите /start.', getMenuForRoleInline(telegramId));
+      await ctx.replyWithHTML('⚠️ Выбор роли устарел. Нажмите /start.', getMenuForRole(telegramId));
       return;
     }
     setUserField(telegramId, 'role', 'courier');
@@ -190,12 +190,12 @@ module.exports = function setupCommands(bot, services) {
     const telegramId = ctx.from.id;
     const state = getState(telegramId);
     if (!state?.awaitingRoleChoice) {
-      await ctx.replyWithHTML('⚠️ Выбор роли устарел. Нажмите /start.', getMenuForRoleInline(telegramId));
+      await ctx.replyWithHTML('⚠️ Выбор роли устарел. Нажмите /start.', getMenuForRole(telegramId));
       return;
     }
     setUserField(telegramId, 'role', 'logist');
     clearState(telegramId);
-    await ctx.replyWithHTML('✅ Роль: <b>Логист</b>\n\nТеперь выберите ваш магазин.', getMenuForRoleInline(telegramId));
+    await ctx.replyWithHTML('✅ Роль: <b>Логист</b>\n\nТеперь выберите ваш магазин.', getMenuForRole(telegramId));
     await askForWorkplace(ctx, state.fio);
   });
 };

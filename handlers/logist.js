@@ -7,7 +7,7 @@ module.exports = function setupLogist(bot, services) {
     setCashConfirmationStatus,
     addXp, getXpForAction, updateChallengeProgress, notifyChallengeCompleted, getNotificationSettings,
     checkMilestoneAchievements, getAchievementStats, notifyAchievements,
-    esc, formatMoneyRu, getMenuForRoleInline,
+    esc, formatMoneyRu, getMenuForRole,
     Markup, sendFunReaction
   } = services;
 
