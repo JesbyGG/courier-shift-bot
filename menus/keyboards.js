@@ -281,7 +281,9 @@ function courierMainMenuInline(telegramId) {
     Markup.button.callback(BUTTONS.leaderBoard, 'menu_leaderboard'),
     Markup.button.callback(BUTTONS.settings, 'menu_settings')
   ]);
-  return Markup.inlineKeyboard(rows);
+  const markup = Markup.inlineKeyboard(rows);
+  markup.reply_markup.remove_keyboard = true;
+  return markup;
 }
 
 function logistMainMenuInline(telegramId) {
@@ -301,7 +303,9 @@ function logistMainMenuInline(telegramId) {
   }
   rows.push([Markup.button.callback(BUTTONS.sheetInfo, 'menu_sheets')]);
   rows.push([Markup.button.callback(BUTTONS.settings, 'menu_settings')]);
-  return Markup.inlineKeyboard(rows);
+  const markup = Markup.inlineKeyboard(rows);
+  markup.reply_markup.remove_keyboard = true;
+  return markup;
 }
 
 function getMenuForRoleInline(telegramId) {
@@ -314,52 +318,60 @@ function getMenuForRoleInline(telegramId) {
 
 function getSettingsMenuForRoleInline(telegramId) {
   const role = getUserRole(telegramId);
+  let markup;
   if (role === 'logist') {
-    return Markup.inlineKeyboard([
+    markup = Markup.inlineKeyboard([
       [Markup.button.callback(BUTTONS.profile, 'menu_profile')],
       [Markup.button.callback(BUTTONS.myId, 'menu_my_id')],
       [Markup.button.callback(BUTTONS.help, 'menu_help')],
       [Markup.button.callback('🏠 В меню', 'menu_back')]
     ]);
-  }
-  const showSheets = isAdminUser(telegramId) || isSheetAccessUser(telegramId);
-  const buttons = [
-    [Markup.button.callback(BUTTONS.profile, 'menu_profile')]
-  ];
-  if (showSheets) {
-    buttons.push([
-      Markup.button.callback(BUTTONS.sheetInfo, 'menu_sheets'),
-      Markup.button.callback(BUTTONS.myId, 'menu_my_id')
-    ]);
   } else {
-    buttons.push([Markup.button.callback(BUTTONS.myId, 'menu_my_id')]);
+    const showSheets = isAdminUser(telegramId) || isSheetAccessUser(telegramId);
+    const buttons = [
+      [Markup.button.callback(BUTTONS.profile, 'menu_profile')]
+    ];
+    if (showSheets) {
+      buttons.push([
+        Markup.button.callback(BUTTONS.sheetInfo, 'menu_sheets'),
+        Markup.button.callback(BUTTONS.myId, 'menu_my_id')
+      ]);
+    } else {
+      buttons.push([Markup.button.callback(BUTTONS.myId, 'menu_my_id')]);
+    }
+    buttons.push([Markup.button.callback(BUTTONS.help, 'menu_help')]);
+    buttons.push([Markup.button.callback('🏠 В меню', 'menu_back')]);
+    markup = Markup.inlineKeyboard(buttons);
   }
-  buttons.push([Markup.button.callback(BUTTONS.help, 'menu_help')]);
-  buttons.push([Markup.button.callback('🏠 В меню', 'menu_back')]);
-  return Markup.inlineKeyboard(buttons);
+  markup.reply_markup.remove_keyboard = true;
+  return markup;
 }
 
 function getProfileMenuForRoleInline(telegramId) {
   const role = getUserRole(telegramId);
+  let markup;
   if (role === 'logist') {
-    return Markup.inlineKeyboard([
+    markup = Markup.inlineKeyboard([
       [Markup.button.callback(BUTTONS.changeWorkplace, 'menu_change_workplace'),
        Markup.button.callback(BUTTONS.switchUser, 'menu_switch_user')],
       [Markup.button.callback('⚙️ К настройкам', 'menu_back_settings')]
     ]);
-  }
-  const courierType = getUserField(telegramId, 'courierType') || 'auto';
-  const rows = [];
-  if (courierType !== 'pedestrian') {
-    rows.push([Markup.button.callback(BUTTONS.changeCar, 'menu_change_car'),
-               Markup.button.callback(BUTTONS.changeWorkplace, 'menu_change_workplace')]);
   } else {
-    rows.push([Markup.button.callback(BUTTONS.changeWorkplace, 'menu_change_workplace')]);
+    const courierType = getUserField(telegramId, 'courierType') || 'auto';
+    const rows = [];
+    if (courierType !== 'pedestrian') {
+      rows.push([Markup.button.callback(BUTTONS.changeCar, 'menu_change_car'),
+                 Markup.button.callback(BUTTONS.changeWorkplace, 'menu_change_workplace')]);
+    } else {
+      rows.push([Markup.button.callback(BUTTONS.changeWorkplace, 'menu_change_workplace')]);
+    }
+    rows.push([Markup.button.callback(BUTTONS.changeDevice, 'menu_change_device'),
+               Markup.button.callback(BUTTONS.switchUser, 'menu_switch_user')]);
+    rows.push([Markup.button.callback('⚙️ К настройкам', 'menu_back_settings')]);
+    markup = Markup.inlineKeyboard(rows);
   }
-  rows.push([Markup.button.callback(BUTTONS.changeDevice, 'menu_change_device'),
-             Markup.button.callback(BUTTONS.switchUser, 'menu_switch_user')]);
-  rows.push([Markup.button.callback('⚙️ К настройкам', 'menu_back_settings')]);
-  return Markup.inlineKeyboard(rows);
+  markup.reply_markup.remove_keyboard = true;
+  return markup;
 }
 
 module.exports = {

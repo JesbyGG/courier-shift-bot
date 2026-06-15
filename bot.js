@@ -1777,7 +1777,8 @@ async function punchTimeFlow(ctx, explicitStage = null) {
           inline_keyboard: [
             [{ text: '✏️ Изменить время', callback_data: 'edit_time' }],
             [{ text: '❌ Закрыть', callback_data: 'close_message' }]
-          ]
+          ],
+          remove_keyboard: true
         }
       }
     );
@@ -2413,7 +2414,8 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
           inline_keyboard: [
             [{ text: '✏️ Изменить пробег', callback_data: 'edit_mileage' }],
             [{ text: '❌ Закрыть', callback_data: 'close_message' }]
-          ]
+          ],
+          remove_keyboard: true
         }
       }
     );
