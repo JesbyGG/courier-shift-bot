@@ -1226,9 +1226,11 @@ bot.use(async (ctx, next) => {
     return next(); // Allow group messages to pass through to other handlers
   }
 
-  const originalReplyWithHTML = ctx.replyWithHTML.bind(ctx);
   ctx.replyWithHTML = async (htmlText, extra) => {
-    const response = await originalReplyWithHTML(htmlText, extra);
+    const chatId = ctx.chat?.id || ctx.from?.id;
+    const opts = { parse_mode: 'HTML', ...(extra || {}) };
+    delete opts.reply_to_message_id;
+    const response = await bot.telegram.sendMessage(chatId, htmlText, opts);
     await maybeSendFunReaction(ctx, htmlText);
     return response;
   };
