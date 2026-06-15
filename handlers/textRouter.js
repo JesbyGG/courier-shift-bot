@@ -49,27 +49,22 @@ module.exports = function setupTextRouter(bot, services) {
 
     // 2) State-based: пользователь сейчас что-то вводит
     { state: 'awaitingCarNumber', handler: async (ctx, s, text) => {
-      const result = await saveCarNumber(ctx, text);
-      if (result === 'done') await ctx.replyWithHTML('✅ Готово.', getMenuForRole(ctx.from.id));
+      await saveCarNumber(ctx, text);
     }},
     { state: 'awaitingWorkplace', handler: async (ctx, s, text) => {
-      const result = await saveWorkplace(ctx, text);
-      if (result === 'done') await ctx.replyWithHTML('✅ Готово.', getMenuForRole(ctx.from.id));
+      await saveWorkplace(ctx, text);
     }},
     { state: 'awaitingDevice', handler: async (ctx, s, text) => {
-      const result = await saveDevice(ctx, text);
-      if (result === 'done') await ctx.replyWithHTML('✅ Готово.', getMenuForRole(ctx.from.id));
+      await saveDevice(ctx, text);
     }},
     { state: 'awaitingFio', handler: (ctx, s, text) => authorizeFio(ctx, text) },
     { state: 'awaitingRoleChoice', handler: (ctx) => ctx.replyWithHTML('⚠️ Выберите роль кнопкой выше.', roleChoiceKeyboard()) },
     { state: 'awaitingManualTime', handler: async (ctx, state, text) => {
-      const result = await handleManualTime(ctx, state, text);
-      if (result === 'done') await ctx.replyWithHTML('✅ Готово.', getMenuForRole(ctx.from.id));
+      await handleManualTime(ctx, state, text);
     }},
     { state: 'awaitingUpdateEdit', handler: (ctx, state, text) => handleUpdateEditText(ctx, state, text) },
     { state: 'awaitingManualMileage', handler: async (ctx, state, text) => {
-      const result = await handleManualMileageInput(ctx, state, text);
-      if (result === 'done') await ctx.replyWithHTML('✅ Готово.', getMenuForRole(ctx.from.id));
+      await handleManualMileageInput(ctx, state, text);
     }},
 
     // 3) Кнопки главного меню

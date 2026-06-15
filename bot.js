@@ -1512,7 +1512,7 @@ async function saveCarNumber(ctx, value) {
   }
 
   clearState(ctx.from.id);
-  await ctx.replyWithHTML(`✅ Номер машины сохранён: <code>${esc(carNumber)}</code>`);
+  await ctx.replyWithHTML(`✅ Номер машины сохранён: <code>${esc(carNumber)}</code>`, getMenuForRole(ctx.from.id));
   return 'done';
 }
 
@@ -1530,7 +1530,7 @@ async function saveWorkplace(ctx, value) {
 
   if (role === 'logist') {
     clearState(ctx.from.id);
-    await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`);
+    await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`, getMenuForRole(ctx.from.id));
     return 'done';
   }
 
@@ -1541,7 +1541,7 @@ async function saveWorkplace(ctx, value) {
   }
 
   clearState(ctx.from.id);
-  await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`);
+  await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`, getMenuForRole(ctx.from.id));
   return 'done';
 }
 
@@ -1556,7 +1556,7 @@ async function saveDevice(ctx, value) {
   setUserField(ctx.from.id, 'device', device);
   clearState(ctx.from.id);
   console.log('устройство сохранено');
-  await ctx.replyWithHTML(`✅ Устройство сохранено: <b>${esc(device)}</b>`);
+  await ctx.replyWithHTML(`✅ Устройство сохранено: <b>${esc(device)}</b>`, getMenuForRole(ctx.from.id));
   return 'done';
 }
 
@@ -1766,9 +1766,18 @@ async function punchTimeFlow(ctx, explicitStage = null) {
     await ctx.replyWithHTML(
       `${icon} <b>${label} смены</b>: <code>${esc(result.timeValue)}</code>\n\n` +
       `<i>Если время неверное — нажмите «Изменить время».</i>`,
-      timeChangeKeyboard()
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '✏️ Изменить время', callback_data: 'edit_time' }],
+            [{ text: '❌ Закрыть', callback_data: 'close_message' }]
+          ],
+          keyboard: [[{ text: getTimeButtonLabel(telegramId) }]],
+          resize_keyboard: true
+        }
+      }
     );
-    await ctx.replyWithHTML('✅', getMenuForRole(telegramId));
 
     if (result.stage === 'start') {
       const pendingCash = getPendingCash(telegramId);
@@ -2396,9 +2405,17 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
     });
     await replyFn(
       `✅ <b>Пробег сохранён</b>: <code>${mileageValue}</code> км\n\nЕсли неверно — нажмите «Изменить пробег».`,
-      mileageSavedKeyboard()
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '✏️ Изменить пробег', callback_data: 'edit_mileage' }],
+            [{ text: '❌ Закрыть', callback_data: 'close_message' }]
+          ],
+          keyboard: [[{ text: getMileageButtonLabel(telegramId) }]],
+          resize_keyboard: true
+        }
+      }
     );
-    await replyFn('✅', getMenuForRole(telegramId));
   } catch (error) {
     console.error('ошибка Google Sheets', error);
     await replyFn('⚠️ Не удалось записать пробег.\nПопробуйте ещё раз или обратитесь к администратору.');
@@ -3992,7 +4009,7 @@ async function handleManualTime(ctx, state, text) {
     console.log('время изменено', state.stage);
     const icon = state.stage === 'start' ? '🟢' : '🔴';
     const label = state.stage === 'start' ? 'Старт' : 'Конец';
-    await ctx.replyWithHTML(`${icon} <b>${label} смены</b> изменён: <code>${esc(timeValue)}</code>`);
+    await ctx.replyWithHTML(`${icon} <b>${label} смены</b> изменён: <code>${esc(timeValue)}</code>`, getMenuForRole(telegramId));
     return 'done';
   } catch (error) {
     console.error('ошибка Google Sheets', error);
