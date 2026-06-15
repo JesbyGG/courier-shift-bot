@@ -3601,8 +3601,9 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
   const isTerminalFirstPhoto = isTerminal && photosSent === 1;
 
   if (isTerminalFirstPhoto) {
-    const cashAmount = await recognizeReconciliationCashSimple(ctx, fileId);
-    const shouldAttachCash = cashAmount > 0;
+    const cashInfo = await recognizeReconciliationCashSafe(ctx, fileId, 'Терминал');
+    const cashAmount = cashInfo.amount;
+    const shouldAttachCash = cashInfo.valid && cashAmount > 0;
     const cashFormatted = shouldAttachCash ? formatMoneyRu(cashAmount) : null;
 
     const captionLines = [
@@ -3663,8 +3664,8 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       reconciliationPhotosSent: photosSent,
       reconciliationPhoto1FileId: fileId,
       reconciliationPhoto1Caption: caption,
-      reconciliationPhoto1TotalOrders: null,
-      reconciliationPhoto1OcrReason: shouldAttachCash ? 'ok' : 'no_cash'
+      reconciliationPhoto1TotalOrders: cashInfo.totalOrders || null,
+      reconciliationPhoto1OcrReason: shouldAttachCash ? 'ok' : (cashInfo.reason || 'no_cash')
     });
 
     await ctx.replyWithHTML(
@@ -3721,8 +3722,9 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
   }
 
   const label = 'Пин-Панель';
-  const cashAmount = await recognizeReconciliationCashSimple(ctx, fileId);
-  const shouldAttachCash = cashAmount > 0;
+  const cashInfo = await recognizeReconciliationCashSafe(ctx, fileId, label);
+  const cashAmount = cashInfo.amount;
+  const shouldAttachCash = cashInfo.valid && cashAmount > 0;
   const cashFormatted = shouldAttachCash ? formatMoneyRu(cashAmount) : null;
 
   const captionLines = [

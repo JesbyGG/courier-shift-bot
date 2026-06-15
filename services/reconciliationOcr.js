@@ -133,7 +133,7 @@ function extractCashFromOcrText(text) {
   }
 
   const cashWordSource = 'налич[а-яa-z]*|[Hh]a[нn][лnM][иiч4][нn][ыb][еe]|[Hh]a[лn][иiч][нh][bл][еe]';
-  const cashLineRegex = new RegExp(`(?:${cashWordSource})\s*([0-9]{1,3})?\s*/\s*([0-9\\s.,]{1,20})?[P₽]?`, 'i');
+  const cashLineRegex = new RegExp(`(?:${cashWordSource})\\s*([0-9]{1,3})?\\s*/\\s*([0-9\\s.,]{1,20})?[P₽]?`, 'i');
   const cashMatch = normalized.match(cashLineRegex);
 
   if (cashMatch) {
