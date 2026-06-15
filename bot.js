@@ -2884,7 +2884,6 @@ async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, o
       }
 
       // Проверка сброса с 1-го места
-      const prevLeader = previousRecord ? { telegramId: previousRecord.fio } : null;
       if (previousRecord && previousRecord.fio !== fio && currentTop3[0] && currentTop3[0].telegramId === String(telegramId)) {
         // Найти бывшего лидера по workplace records
         const allIds = getAllUserIds();
@@ -4234,7 +4233,7 @@ const services = {
   clearShiftStatus,
   // text router flows
   punchTimeFlow, mileageFlow, routeSheetFlow, reconciliationFlow,
-  showPendingCashStatus, showIssuesMenu, showLeaderboardMenu,
+  showPendingCashStatus, showIssuesMenu,
   handleSwitchUser, handleSheetsInfo, handleMyId, showHistoryDatePicker, showDebtorsList,
   saveCarNumber, saveWorkplace, saveDevice, authorizeFio,
   handleManualTime, handleUpdateEditText, handleManualMileageInput,
@@ -4277,7 +4276,7 @@ const services = {
   checkGeminiOcrHealth, recognizeMileage, downloadTelegramFile,
   isGeminiOcrEnabled, recognizeTextWithGemini, getMinMileageThreshold,
   logOcrFeedback, isEmptyCell, isScheduleMarker, getMileageColumns: getMileageColumnsByDay,
-  roundTimeToHalfHour, getColumnLetter, getCourierColumnsByDay, manualMileageKeyboard,
+  roundTimeToHalfHour, getColumnLetter, getCourierColumnsByDay, manualMileageKeyboard, skipMileageKeyboard,
   prepareMileage, replaceTime, punchTime,
   updateCourierTime, updateMileage,
   // misc
@@ -4304,8 +4303,8 @@ async function startBot(retry = 0) {
     setNotifyAdminCallback(notifyAdmins);
     loadPendingUpdatesFromDb();
     const removedMonths = cleanupOldMonths();
-    if (removedMonths > 0) {
-      console.log(`cleaned up ${removedMonths} old month(s) from storage`);
+    if (removedMonths) {
+      console.log('cleaned up old month(s) from storage');
     }
     cleanupOldChallenges();
     cleanupInvalidChallenges();

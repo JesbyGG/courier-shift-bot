@@ -133,13 +133,11 @@ function registerSheetCommand(bot, options = {}) {
         const active = resolveSheetInfo(workplace);
         const currentId = getWorkplaceSheetIdByMonth(workplace, currentMonth);
         const nextId = getWorkplaceSheetIdByMonth(workplace, nextMonth);
-        const sourceText = active.source === 'monthly'
+        const sourceText = active.isMonthly
           ? 'помесячная привязка'
-          : active.source === 'legacy'
+          : active.sheetId
             ? 'legacy (старый формат)'
-            : active.source === 'fallback'
-              ? 'fallback из .env'
-              : 'не задано';
+            : 'не задано';
 
         message += `🏬 <b>${esc(workplace)}</b>\n`;
         message += `   Активная (${esc(currentMonth)}): <code>${esc(active.sheetId || 'не задана')}</code>\n`;
@@ -150,7 +148,7 @@ function registerSheetCommand(bot, options = {}) {
           message += '   ⚠️ На активный месяц таблица не привязана — запись блокируется\n';
         }
 
-        if (active.source !== 'monthly') {
+        if (!active.isMonthly) {
           message += '   ⚠️ Рекомендуется задать <code>active</code> и <code>next</code> вручную\n';
         }
 

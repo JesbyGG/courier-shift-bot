@@ -149,15 +149,8 @@ function cleanupInvalidChallenges() {
   }
 }
 
-function notifyChallengeCompleted(ctx, telegramId, challenge) {
+async function notifyChallengeCompleted(ctx, telegramId, challenge) {
   if (!challenge) return;
-  const sendMsg = async (id, msg) => {
-    try {
-      await ctx.telegram.sendMessage(id, msg, { parse_mode: 'HTML' });
-    } catch (e) {
-      console.error('notifyChallengeCompleted send error', e.message);
-    }
-  };
   const msg = (
     `🔥 <b>Челлендж выполнен!</b>\n\n` +
     `${challenge.name}\n` +
@@ -165,7 +158,11 @@ function notifyChallengeCompleted(ctx, telegramId, challenge) {
     `Награда: <b>+${challenge.reward} XP</b>\n\n` +
     `💪 Так держать! Ты настоящий профи! 🚀`
   );
-  sendMsg(telegramId, msg);
+  try {
+    await ctx.telegram.sendMessage(telegramId, msg, { parse_mode: 'HTML' });
+  } catch (e) {
+    console.error('notifyChallengeCompleted send error', e.message);
+  }
 }
 
 module.exports = {

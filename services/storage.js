@@ -369,15 +369,15 @@ function resolveSheetInfo(workplace, options = {}) {
   let sheetId = getWorkplaceSheetIdByMonth(workplace, targetMonthKey);
   
   if (sheetId) {
-    return { sheetId, isMonthly: true, monthKey: targetMonthKey };
+    return { sheetId, isMonthly: true, monthKey: targetMonthKey, noSheetForMonth: false };
   }
 
   const fallbackSheetId = getWorkplaceSheetId(workplace);
   if (fallbackSheetId) {
-    return { sheetId: fallbackSheetId, isMonthly: false, monthKey: null };
+    return { sheetId: fallbackSheetId, isMonthly: false, monthKey: null, noSheetForMonth: true };
   }
 
-  return { sheetId: null, isMonthly: false, monthKey: null };
+  return { sheetId: null, isMonthly: false, monthKey: targetMonthKey, noSheetForMonth: true };
 }
 
 function cleanupOldMonths(retentionMonths = 3) {
@@ -409,6 +409,8 @@ function cleanupOldMonths(retentionMonths = 3) {
   if (hasChanges) {
     _setRecord(WORKPLACE_SHEETS_MONTHLY_KEY, monthlyRoot);
   }
+
+  return hasChanges;
 }
 
 const SHEET_ACCESS_USERS = '__sheetAccessUsers__';

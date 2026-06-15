@@ -261,7 +261,7 @@ function getAchievementStats(telegramId) {
   };
 }
 
-function formatProgressBar(current, target) {
+function formatAchievementProgress(current, target) {
   if (!Number.isFinite(target) || target <= 0) return '';
   const pct = Math.min(1, Math.max(0, current / target));
   const filled = Math.round(pct * 10);
@@ -447,7 +447,7 @@ function formatAchievementsCard(telegramId, category) {
         text += `⏳ <b>${ach.name}</b>\n`;
         text += `   ${ach.desc}\n`;
         if (!progress.isBoolean && progress.target > 0) {
-          const bar = formatProgressBar(progress.current, progress.target);
+          const bar = formatAchievementProgress(progress.current, progress.target);
           text += `   ${bar} ${progress.current.toLocaleString('ru-RU')}/${progress.target.toLocaleString('ru-RU')}\n`;
         }
         if (ach === nextActive && nextProgress) {
@@ -489,10 +489,10 @@ function formatShowcase(telegramId) {
   text += `╚═══════════════════════╝\n\n`;
   text += `🏅 <b>${doneAll}</b> / ${totalAll} медалей  •  <b>${earnedXp.toLocaleString('ru-RU')}</b> XP\n\n`;
 
-  const tierLine1 = `🥉 <code>${formatProgressBar(counts.bronze, totals.bronze)}</code> ${counts.bronze}`;
-  const tierLine2 = `🥈 <code>${formatProgressBar(counts.silver, totals.silver)}</code> ${counts.silver}`;
-  const tierLine3 = `🥇 <code>${formatProgressBar(counts.gold, totals.gold)}</code> ${counts.gold}`;
-  const tierLine4 = `💎 <code>${formatProgressBar(counts.platinum, totals.platinum)}</code> ${counts.platinum}`;
+  const tierLine1 = `🥉 <code>${formatAchievementProgress(counts.bronze, totals.bronze)}</code> ${counts.bronze}`;
+  const tierLine2 = `🥈 <code>${formatAchievementProgress(counts.silver, totals.silver)}</code> ${counts.silver}`;
+  const tierLine3 = `🥇 <code>${formatAchievementProgress(counts.gold, totals.gold)}</code> ${counts.gold}`;
+  const tierLine4 = `💎 <code>${formatAchievementProgress(counts.platinum, totals.platinum)}</code> ${counts.platinum}`;
   text += `${tierLine1}   ${tierLine2}\n`;
   text += `${tierLine3}   ${tierLine4}\n`;
 
@@ -506,7 +506,7 @@ function formatShowcase(telegramId) {
     const tier = RARITY_TIERS[getRarityTier(next.reward)];
     const pct = next.progress.target > 0 ? Math.round((next.progress.current / next.progress.target) * 100) : 0;
     text += `\n⏭ <b>Ближайший:</b> ${next.name} ${tier.emoji}\n`;
-    text += `   <code>${formatProgressBar(next.progress.current, next.progress.target)}</code> ${next.progress.current.toLocaleString('ru-RU')}/${next.progress.target.toLocaleString('ru-RU')}\n`;
+    text += `   <code>${formatAchievementProgress(next.progress.current, next.progress.target)}</code> ${next.progress.current.toLocaleString('ru-RU')}/${next.progress.target.toLocaleString('ru-RU')}\n`;
   }
 
   return text.trim();
@@ -552,7 +552,7 @@ function formatRarityGallery(telegramId, tierKey) {
     } else {
       text += `⏳ <b>${ach.name}</b> — ${ach.desc}\n`;
       if (!progress.isBoolean && progress.target > 0) {
-        text += `   <code>${formatProgressBar(progress.current, progress.target)}</code> ${progress.current.toLocaleString('ru-RU')}/${progress.target.toLocaleString('ru-RU')}\n`;
+        text += `   <code>${formatAchievementProgress(progress.current, progress.target)}</code> ${progress.current.toLocaleString('ru-RU')}/${progress.target.toLocaleString('ru-RU')}\n`;
       }
       text += `   Награда: +${ach.reward.toLocaleString('ru-RU')} XP\n`;
     }
@@ -578,7 +578,7 @@ function formatTrophyCard(telegramId, achievementId) {
   text += `${ach.desc}\n\n`;
 
   if (!progress.isBoolean && progress.target > 0) {
-    text += `<code>${formatProgressBar(progress.current, progress.target)}</code> ${progress.current.toLocaleString('ru-RU')} / ${progress.target.toLocaleString('ru-RU')}\n`;
+    text += `<code>${formatAchievementProgress(progress.current, progress.target)}</code> ${progress.current.toLocaleString('ru-RU')} / ${progress.target.toLocaleString('ru-RU')}\n`;
     if (!isDone) {
       const remaining = progress.target - progress.current;
       text += `💡 ${remaining.toLocaleString('ru-RU')} до следующего!\n`;
@@ -623,7 +623,7 @@ module.exports = {
   checkMilestoneAchievements,
   getAchievementStats,
   notifyAchievements,
-  formatProgressBar,
+  formatAchievementProgress,
   formatAchievementsCard,
   formatShowcase,
   formatRarityGallery,
