@@ -1141,6 +1141,7 @@ function getFunReactionTypeFromMessage(htmlText) {
     .replace(/<[^>]*>/g, '')
     .trim();
 
+  if (plainText.startsWith('✅')) return 'success';
   if (plainText.startsWith('❌') || plainText.startsWith('⚠️')) return 'error';
   return null;
 }
