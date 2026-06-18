@@ -1136,6 +1136,15 @@ function isFunReactionsEnabled() {
   return hasAnyFunReactionContent();
 }
 
+function getFunReactionTypeFromMessage(htmlText) {
+  const plainText = String(htmlText || '')
+    .replace(/<[^>]*>/g, '')
+    .trim();
+
+  if (plainText.startsWith('❌') || plainText.startsWith('⚠️')) return 'error';
+  return null;
+}
+
 function getFunReactionCooldownMs() {
   const value = Number(process.env.FUN_REACTION_COOLDOWN_MS || 30000);
   return Number.isFinite(value) && value >= 0 ? value : 30000;
@@ -1194,6 +1203,12 @@ async function sendFunReaction(ctx, reactionType) {
   }
 }
 
+async function maybeSendFunReaction(ctx, htmlText) {
+  const reactionType = getFunReactionTypeFromMessage(htmlText);
+  if (!reactionType) return;
+  await sendFunReaction(ctx, reactionType);
+}
+
 bot.use(async (ctx, next) => {
   if (ctx.chat?.type !== 'private') {
     if (ctx.message?.text?.startsWith('/chatid')) {
@@ -1201,6 +1216,13 @@ bot.use(async (ctx, next) => {
     }
     return next(); // Allow group messages to pass through to other handlers
   }
+
+  const originalReplyWithHTML = ctx.replyWithHTML.bind(ctx);
+  ctx.replyWithHTML = async (htmlText, extra) => {
+    const response = await originalReplyWithHTML(htmlText, extra);
+    await maybeSendFunReaction(ctx, htmlText);
+    return response;
+  };
 
   await next();
 });
