@@ -173,11 +173,12 @@ def recognize_with_gemini(image_bytes):
 
 
 def recognize_text_with_gemini(image_bytes):
-    """Text OCR for reconciliation: returns (lines, error)."""
-    return _call_gemini(image_bytes, "You are analyzing a terminal or pin-panel screenshot from a courier. "
-                         "Extract ALL visible text and numbers exactly as shown, "
-                         "preserving Russian language and original formatting. "
-                         "Each line should contain one piece of text.")
+    """Reconciliation OCR: returns (lines, error)."""
+    return _call_gemini(image_bytes, "Analyze this courier terminal or pin-panel screenshot. "
+                         "Find two values: 1) cash amount near the word 'наличные', "
+                         "2) order count near the word 'заказов'. "
+                         "Reply ONLY in this exact format: CASH:<number> ORDERS:<number>. "
+                         "If a value is not found, use 0.")
 
 
 # ===== Response formatting =====

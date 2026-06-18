@@ -5,11 +5,9 @@ const { withTimeout } = require('../utils');
 function parseMoneyRu(value) {
   const raw = String(value || '').trim();
   if (!raw) return null;
-  // Preserve comma as decimal separator if present
   const hasComma = raw.includes(',');
   const cleaned = raw.replace(/[\s\u00A0]/g, '').replace(/₽/g, '');
   if (hasComma) {
-    // Replace comma with dot for parsing, but keep original format
     const normalized = cleaned.replace(/,/g, '.');
     const number = Number(normalized.replace(/[^0-9.]/g, ''));
     if (!Number.isFinite(number) || number < 0) return null;
@@ -21,132 +19,34 @@ function parseMoneyRu(value) {
   return number;
 }
 
-// Simple reconciliation: just get cash amount
-async function recognizeReconciliationCashSimple(ctx, fileId) {
-  try {
-    const geminiOcrUrl = process.env.GEMINI_OCR_URL || '';
-    if (!geminiOcrUrl) {
-      console.error('Gemini OCR URL not configured');
-      return null;
-    }
-
-    const link = await ctx.telegram.getFileLink(fileId);
-    const response = await axios.get(link.href, { responseType: 'arraybuffer', timeout: 30000 });
-    const imageBuffer = Buffer.from(response.data);
-
-    const recUrl = geminiOcrUrl.replace(/\/+$/, '') + '/reconciliation';
-    const ocrResponse = await axios.post(recUrl, imageBuffer, {
-      timeout: 30000,
-      headers: { 'Content-Type': 'application/octet-stream' }
-    });
-
-    const data = ocrResponse.data;
-    console.log('reconciliation simple OCR:', JSON.stringify(data));
-
-    if (data.cash_amount) {
-      const amount = parseMoneyRu(data.cash_amount);
-      if (amount && amount > 0) {
-        return amount;
-      }
-    }
-
-    return null;
-  } catch (error) {
-    console.error('reconciliation simple OCR error:', error.message || error);
-    return null;
-  }
-}
-
-function extractOrdersCountFromOcrText(text) {
-  const raw = String(text || '')
-    .replace(/\u00A0/g, ' ')
-    .trim();
-
+function extractCashFromGemini(text) {
+  const raw = String(text || '').trim();
   if (!raw) {
-    return { totalOrders: null, reason: 'empty_text' };
+    return { amount: 0, totalOrders: 0, valid: false, reason: 'empty_text' };
   }
 
-  const normalized = raw.replace(/\s+/g, ' ');
+  let amount = 0;
+  let totalOrders = 0;
 
-  const strictPatterns = [
-    /заказо[кв]\s+за\s*(?:сегодня|сутки)\s*:?\s*(\d{1,5})/i,
-    /за\s*(?:сегодня|сутки)\s*:?\s*(\d{1,5})/i,
-  ];
-
-  for (const pattern of strictPatterns) {
-    const match = normalized.match(pattern);
-    if (match && Number.isFinite(Number(match[1])) && Number(match[1]) > 0) {
-      return { totalOrders: Number(match[1]), reason: 'ok' };
-    }
-  }
-
-  const lines = raw.split(/\n/);
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i].trim();
-    if (/заказо[кв]/i.test(line)) {
-      for (let j = i + 1; j < Math.min(lines.length, i + 5); j += 1) {
-        const candidate = lines[j].trim();
-        const numMatch = candidate.match(/^(\d{1,5})$/);
-        if (numMatch && Number.isFinite(Number(numMatch[1])) && Number(numMatch[1]) > 0) {
-          return { totalOrders: Number(numMatch[1]), reason: 'ok' };
-        }
-      }
-    }
-  }
-
-  const fallbackPatterns = [
-    /заказо[кв]\s*:?\s*(\d{1,5})(?:\s|$)/i,
-    /(\d{1,5})\s*заказо[кв]/i,
-  ];
-
-  for (const pattern of fallbackPatterns) {
-    const match = normalized.match(pattern);
-    if (match && Number.isFinite(Number(match[1])) && Number(match[1]) > 0) {
-      return { totalOrders: Number(match[1]), reason: 'ok' };
-    }
-  }
-
-  return { totalOrders: null, reason: 'no_orders_line' };
-}
-
-function extractCashFromOcrText(text) {
-  const normalized = String(text || '')
-    .replace(/\u00A0/g, ' ')
-    .replace(/[|¦]/g, '/')
-    .replace(/₽/g, ' ₽')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  if (!normalized) {
-    return { orders: null, amount: null, valid: false, reason: 'empty_text' };
-  }
-
-  const cashWordSource = 'налич[а-яa-z]*|[Hh]a[нn][лnM][иiч4][нn][ыb][еe]|[Hh]a[лn][иiч][нh][bл][еe]';
-  const cashLineRegex = new RegExp(`(?:${cashWordSource})\\s*([0-9]{1,3})?\\s*/\\s*([0-9\\s.,]{1,20})?[P₽]?`, 'i');
-  const cashMatch = normalized.match(cashLineRegex);
-
+  const cashMatch = raw.match(/CASH:\s*(\d+(?:[.,]\d+)?)/i);
   if (cashMatch) {
-    const ordersRaw = cashMatch[1] || '';
-    const amountRaw = cashMatch[2] || '';
-    const orders = Number(String(ordersRaw).replace(/\D/g, ''));
-    const amount = parseMoneyRu(amountRaw);
-    const hasOrders = Number.isFinite(orders) && orders > 0;
-    const hasAmount = Number.isFinite(amount) && amount >= 1;
-
-    return {
-      orders: Number.isFinite(orders) ? orders : 0,
-      amount: Number.isFinite(amount) ? amount : null,
-      valid: hasOrders && hasAmount,
-      reason: hasOrders && hasAmount ? 'ok' : 'insufficient'
-    };
+    amount = parseMoneyRu(cashMatch[1]) || 0;
   }
 
-  const hasCashWord = new RegExp(`(?:${cashWordSource})`, 'i').test(normalized);
-  if (hasCashWord) {
-    return { orders: 0, amount: null, valid: false, reason: 'cash_line_empty' };
+  const ordersMatch = raw.match(/ORDERS:\s*(\d+)/i);
+  if (ordersMatch) {
+    totalOrders = Number(ordersMatch[1]) || 0;
   }
 
-  return { orders: null, amount: null, valid: false, reason: 'no_cash_line' };
+  const hasAmount = amount >= 1;
+  const hasOrders = totalOrders > 0;
+
+  return {
+    amount: hasAmount ? amount : 0,
+    totalOrders,
+    valid: hasAmount,
+    reason: hasAmount ? 'ok' : (cashMatch ? 'amount_too_small' : 'no_cash_line')
+  };
 }
 
 function getReconciliationOcrTimeoutMs() {
@@ -159,7 +59,7 @@ function roundMoney(value) {
 }
 
 function emptyReconciliationCash(reason, source = 'none') {
-  return { orders: null, amount: null, totalOrders: null, valid: false, reason, source };
+  return { amount: 0, totalOrders: 0, valid: false, reason, source };
 }
 
 async function recognizeReconciliationCashSafe(ctx, fileId, label) {
@@ -179,7 +79,7 @@ function shouldWarnAboutReconciliationOcr(cashInfo) {
   if (!cashInfo) return true;
   if (cashInfo.valid) return false;
   if (cashInfo.totalOrders && cashInfo.totalOrders > 0) return false;
-  return ['ocr_timeout', 'error', 'local_ocr_error', 'local_ocr_timeout', 'no_ocr_result'].includes(cashInfo.reason);
+  return ['ocr_timeout', 'error', 'no_ocr_result'].includes(cashInfo.reason);
 }
 
 async function recognizeReconciliationCash(ctx, fileId) {
@@ -188,33 +88,22 @@ async function recognizeReconciliationCash(ctx, fileId) {
     const response = await axios.get(link.href, { responseType: 'arraybuffer', timeout: 30000 });
     const imageBuffer = Buffer.from(response.data);
 
-    let totalOrdersFromGemini = null;
-
     if (isGeminiOcrEnabled()) {
       const geminiText = await recognizeTextWithGemini(imageBuffer);
       if (geminiText) {
-        const parsed = extractCashFromOcrText(geminiText);
-        const ordersParsed = extractOrdersCountFromOcrText(geminiText);
-        totalOrdersFromGemini = ordersParsed.totalOrders;
-        console.log('сверка OCR:', JSON.stringify({ cashValid: parsed.valid, cashReason: parsed.reason, cashOrders: parsed.orders, cashAmount: parsed.amount, totalOrders: ordersParsed.totalOrders, ordersReason: ordersParsed.reason, source: 'gemini' }));
-
-        if (parsed.valid) {
-          return { ...parsed, totalOrders: ordersParsed.totalOrders, source: 'gemini' };
-        }
-
-        if (parsed.reason === 'cash_line_empty') {
-          return { ...parsed, totalOrders: ordersParsed.totalOrders, source: 'gemini' };
-        }
+        const parsed = extractCashFromGemini(geminiText);
+        console.log('сверка OCR:', JSON.stringify({ cashValid: parsed.valid, cashReason: parsed.reason, cashAmount: parsed.amount, totalOrders: parsed.totalOrders, source: 'gemini' }));
+        return { ...parsed, source: 'gemini' };
       } else {
         console.log('сверка OCR: Gemini OCR вернул пустой текст');
       }
     }
 
-    console.log('сверка OCR: Gemini OCR не дал результата, fallback-OCR не подключён');
-    return { orders: null, amount: null, totalOrders: totalOrdersFromGemini, valid: false, reason: 'no_ocr_result', source: 'none' };
+    console.log('сверка OCR: Gemini OCR не дал результата');
+    return { amount: 0, totalOrders: 0, valid: false, reason: 'no_ocr_result', source: 'none' };
   } catch (error) {
     console.error('reconciliation cash recognition error', error.message || error);
-    return { orders: null, amount: null, totalOrders: null, valid: false, reason: 'error', source: 'none' };
+    return { amount: 0, totalOrders: 0, valid: false, reason: 'error', source: 'none' };
   }
 }
 
@@ -225,8 +114,6 @@ module.exports = {
   recognizeReconciliationCashSafe,
   shouldWarnAboutReconciliationOcr,
   recognizeReconciliationCash,
-  recognizeReconciliationCashSimple,
-  extractCashFromOcrText,
-  extractOrdersCountFromOcrText,
+  extractCashFromGemini,
   parseMoneyRu
 };

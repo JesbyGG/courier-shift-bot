@@ -69,9 +69,7 @@ const {
   roundMoney,
   emptyReconciliationCash,
   recognizeReconciliationCashSafe,
-  recognizeReconciliationCashSimple,
-  shouldWarnAboutReconciliationOcr,
-  recognizeReconciliationCash
+  shouldWarnAboutReconciliationOcr
 } = require('./services/reconciliationOcr');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, getCourierColumnsByDay, roundMinutesToHalfHour, roundTimeToHalfHour, isEmptyCell, isScheduleMarker, withTimeout } = require('./utils');
 const { registerSheetCommand } = require('./sheetCommand');
@@ -2748,17 +2746,11 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     ];
 
     if (shouldAttachCash && cashFormatted) {
-      const rawAmount = Number(cashAmount);
+        const rawAmount = Number(cashAmount);
       if (!Number.isFinite(rawAmount) || rawAmount < 1 || rawAmount > MAX_REASONABLE_CASH_AMOUNT) {
         console.log('сверка OCR: сумма наличных вне допустимого диапазона', rawAmount);
       } else {
-        const previousPending = getPendingCash(telegramId);
-        const previousAmount = Number(previousPending?.amount || 0);
-        const totalAmount = roundMoney(
-          Number.isFinite(previousAmount) && previousAmount >= 1
-            ? previousAmount + rawAmount
-            : rawAmount
-        );
+        const totalAmount = roundMoney(rawAmount);
         const totalFormatted = formatMoneyRu(totalAmount);
         const currentNumberOnly = formatMoneyRuNumber(rawAmount) || String(cashFormatted).replace(/\s*₽$/, '');
 
@@ -2869,17 +2861,11 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
   ];
 
   if (shouldAttachCash && cashFormatted) {
-    const rawAmount = Number(cashAmount);
+      const rawAmount = Number(cashAmount);
     if (!Number.isFinite(rawAmount) || rawAmount < 1 || rawAmount > MAX_REASONABLE_CASH_AMOUNT) {
       console.log('сверка OCR: сумма наличных вне допустимого диапазона', rawAmount);
     } else {
-      const previousPending = getPendingCash(telegramId);
-      const previousAmount = Number(previousPending?.amount || 0);
-      const totalAmount = roundMoney(
-        Number.isFinite(previousAmount) && previousAmount >= 1
-          ? previousAmount + rawAmount
-          : rawAmount
-      );
+      const totalAmount = roundMoney(rawAmount);
       const totalFormatted = formatMoneyRu(totalAmount);
       const currentNumberOnly = formatMoneyRuNumber(rawAmount) || String(cashFormatted).replace(/\s*₽$/, '');
 
@@ -2925,10 +2911,10 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     savePhotoThread(forwarded, telegramId, 'reconciliation');
 
     clearState(telegramId);
-    const ocrWarning = !shouldAttachCash
+    const ocrWarning = !shouldAttachCash && !cashInfo.totalOrders
       ? `\n\n⚠️ OCR не распознал сумму наличных. Фото отправлено, но данные не записаны автоматически.`
       : '';
-    const postRes = await finalizeReconciliationPostSend(ctx, state, telegramId, null);
+    const postRes = await finalizeReconciliationPostSend(ctx, state, telegramId, cashInfo.totalOrders);
     return { status: 'photos_sent', total, ocrWarning, postRes };
   } catch (error) {
     console.error('telegram send reconciliation photo error', error);
@@ -3402,7 +3388,7 @@ const services = {
   db, checkpoint, saveThread, findThreadByGroupMessage, findThreadById, saveForwardedMessage, findForwardedMessage, cleanupOldThreads,
   isSheetAccessUser,
   WORKPLACES, LIMITS,
-  getMileageStageCell, buildMileageRecognitionOptions, parseMileageNumber, getMaxShiftMileageDelta,
+  getMileageStageCell, buildMileageRecognitionOptions, parseMileageNumber,
   checkGeminiOcrHealth, recognizeMileage, downloadTelegramFile,
   isGeminiOcrEnabled, recognizeTextWithGemini, getMinMileageThreshold,
   logOcrFeedback, isEmptyCell, isScheduleMarker, getMileageColumns: getMileageColumnsByDay,
