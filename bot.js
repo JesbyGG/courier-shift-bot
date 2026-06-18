@@ -388,8 +388,10 @@ async function showDebtorsList(ctx) {
   const formattedTotal = formatMoneyRu(totalAmount);
 
   await ctx.replyWithHTML(
-    `💳 <b>Курьеры с долгами</b> (${esc(workplace)})\n` +
-    `Всего к сдаче: <code>${formattedTotal}</code> ₽\n\n` +
+    `💳 Курьеры с долгами\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `🏬 ${esc(workplace)}\n` +
+    `💰 Всего: <code>${formattedTotal}</code> ₽\n\n` +
     debtors.map((d) => `• ${esc(d.fio)} — <code>${formatMoneyRu(d.amount)}</code> ₽`).join('\n'),
     debtorListKeyboard(debtors, workplace)
   );
@@ -414,7 +416,7 @@ async function pokeCourier(ctx, courierId) {
   if (selfClearance) {
     await ctx.answerCbQuery();
     await ctx.replyWithHTML(
-      `⏳ ${esc(courierRecord.fio)} уже отметил сдачу.\n` +
+      `⏳ ${esc(courierRecord.fio)} уже отметил сдачу\n\n` +
       `Ожидает подтверждения: <code>${esc(selfClearance.formatted || String(selfClearance.amount))}</code> ₽`,
       Markup.inlineKeyboard([
         [Markup.button.callback('✅ Подтвердить', `sc_appr_${courierId}`)],
@@ -465,9 +467,10 @@ async function pokeCourier(ctx, courierId) {
   });
 
   const workplaceLabel = courierRecord.workplace || 'не указано';
-  const courierMsg = `🔔 <b>Логист ${esc(logistFio)} напоминает:</b>\n\n` +
-    `💵 У вас <code>${esc(formatted)}</code> ₽ к сдаче.\n` +
-    `🏬 <b>${esc(workplaceLabel)}</b>\n\n` +
+  const courierMsg = `🔔 Логист ${esc(logistFio)} напоминает\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `💰 Сумма: <code>${esc(formatted)}</code> ₽\n` +
+    `🏬 Магазин: <b>${esc(workplaceLabel)}</b>\n\n` +
     `Сдали деньги?`;
 
   try {
@@ -487,18 +490,18 @@ async function pokeCourier(ctx, courierId) {
     if (ctx.callbackQuery) {
       await ctx.answerCbQuery('✅ Напоминание отправлено');
       try {
-        await ctx.editMessageText(`✅ Напоминание отправлено: <b>${esc(courierRecord.fio)}</b> — <code>${esc(formatted)}</code> ₽`, { parse_mode: 'HTML' });
+        await ctx.editMessageText(`✅ Напоминание отправлено\n\n${esc(courierRecord.fio)} — <code>${esc(formatted)}</code> ₽`, { parse_mode: 'HTML' });
       } catch (e) { /* ignore */ }
     } else {
-      await ctx.replyWithHTML(`✅ Напоминание отправлено: <b>${esc(courierRecord.fio)}</b> — <code>${esc(formatted)}</code> ₽`);
+      await ctx.replyWithHTML(`✅ Напоминание отправлено\n\n${esc(courierRecord.fio)} — <code>${esc(formatted)}</code> ₽`);
     }
   } catch (e) {
     console.error('failed to send reminder to courier', e);
     deleteReminder(shortId);
     if (ctx.callbackQuery) {
-      await ctx.answerCbQuery('⚠️ Не удалось отправить уведомление курьеру.');
+      await ctx.answerCbQuery('⚠️ Не удалось отправить уведомление');
     } else {
-      await ctx.replyWithHTML('⚠️ Не удалось отправить уведомление курьеру. Возможно, он заблокировал бота.');
+      await ctx.replyWithHTML('⚠️ Не удалось отправить уведомление курьеру\n\nВозможно, он заблокировал бота.');
     }
   }
 }
@@ -528,7 +531,7 @@ async function showHistoryDatePicker(ctx) {
   }
   buttons.push([Markup.button.callback('❌ Закрыть', 'close_message')]);
 
-  await ctx.replyWithHTML('📋 <b>История сборов</b>\n\nВыберите дату:', Markup.inlineKeyboard(buttons));
+  await ctx.replyWithHTML('📋 История сборов\n━━━━━━━━━━━━━━━━━━━━━━\n\nВыберите дату:', Markup.inlineKeyboard(buttons));
   return { status: 'showing_history' };
 }
 
@@ -540,13 +543,13 @@ async function showCashHistoryForDate(ctx, dateStr) {
   const approvedRows = rows.filter(r => r.action === 'approved' || r.action === 'self_cleared' || r.action === 'logist_approved');
 
   if (approvedRows.length === 0) {
-    await ctx.replyWithHTML(`📋 <b>История сборов за ${dateStr}</b>\n\nНет подтверждённых сдач за эту дату.`);
+    await ctx.replyWithHTML(`📋 История сборов\n━━━━━━━━━━━━━━━━━━━━━━\n\n📅 ${dateStr}\n\nНет подтверждённых сдач за эту дату.`);
     return;
   }
 
   const total = approvedRows.reduce((sum, r) => sum + r.amount, 0);
-  let msg = `📋 <b>История сборов за ${dateStr}</b>\n` +
-    `Всего собрано: <code>${formatMoneyRu(total)}</code> ₽\n\n`;
+  let msg = `📋 История сборов\n━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `📅 ${dateStr}\n💰 Всего: <code>${formatMoneyRu(total)}</code> ₽\n\n`;
 
   for (const row of approvedRows) {
     let icon = '✅';
@@ -1695,10 +1698,11 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       console.log('нужна замена');
       setState(telegramId, { awaitingReplaceChoice: true, fio: profile.fio });
       await ctx.replyWithHTML(
-        `⚠️ За сегодня уже внесены начало и конец смены.\n\n` +
+        `⚠️ Время уже записано\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
         `🟢 Старт: <code>${esc(result.from)}</code>\n` +
         `🔴 Конец: <code>${esc(result.to)}</code>\n\n` +
-        `Выберите, что заменить:`,
+        `Что заменить?`,
         replaceKeyboard()
       );
       return;
@@ -1732,8 +1736,10 @@ async function punchTimeFlow(ctx, explicitStage = null) {
     });
 
     await ctx.replyWithHTML(
-      `${icon} <b>${label} смены</b>: <code>${esc(result.timeValue)}</code>\n\n` +
-      `<i>Если время неверное — нажмите «Изменить время».</i>`,
+      `${icon} <b>${label} смены</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `⏰ <code>${esc(result.timeValue)}</code>\n\n` +
+      `📝 Неверно? → «Изменить время»`,
       timeChangeKeyboard()
     );
     await ctx.replyWithHTML('✅', getMenuForRole(telegramId));
@@ -1746,15 +1752,17 @@ async function punchTimeFlow(ctx, explicitStage = null) {
         const formattedAmount = pendingCash?.formatted || formatMoneyRu(pendingAmount);
         const numberOnly = formatMoneyRuNumber(pendingAmount) || String(formattedAmount || '').replace(/\s*₽$/, '');
         await ctx.replyWithHTML(
-          `⚠️ <b>Не забудьте сдать деньги</b>: <code>${esc(numberOnly)}</code> ₽\n` +
-          `🏬 <b>${esc(pendingCash?.workplace || profile.workplace || 'не указано')}</b>`,
+          `⚠️ Не забудьте сдать деньги\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+          `💰 Сумма: <code>${esc(numberOnly)}</code> ₽\n` +
+          `🏬 Магазин: <b>${esc(pendingCash?.workplace || profile.workplace || 'не указано')}</b>`,
           cashSubmitConfirmKeyboard()
         );
       }
     }
   } catch (error) {
     console.error('ошибка Google Sheets', error);
-    await ctx.replyWithHTML('⚠️ Не удалось записать время.\nПопробуйте ещё раз или обратитесь к администратору.');
+    await ctx.replyWithHTML('⚠️ Не удалось записать время\n\nПопробуйте ещё раз.');
   }
 }
 
@@ -1784,10 +1792,11 @@ async function mileageFlow(ctx, explicitStage = null) {
       console.log('нужна замена пробега');
       setState(telegramId, { awaitingMileageReplaceChoice: true, fio: profile.fio });
       await ctx.replyWithHTML(
-        `⚠️ За сегодня уже внесён пробег.\n\n` +
+        `⚠️ Пробег уже записан\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
         `🟢 Старт: <code>${esc(result.startMileage)}</code>\n` +
         `🔴 Конец: <code>${esc(result.endMileage)}</code>\n\n` +
-        `Выберите, что заменить:`,
+        `Что заменить?`,
         mileageReplaceKeyboard()
       );
       return { status: 'needs_replace_choice' };
@@ -1796,9 +1805,10 @@ async function mileageFlow(ctx, explicitStage = null) {
     setState(telegramId, makeMileageState(telegramId, applyProfile(result, profile), { source: 'mileage' }));
     console.log('ожидание пробега', result.stage);
     await ctx.replyWithHTML(
-      `📷 <b>Отправьте фото одометра</b>\n\n` +
-      `Этап: <b>${esc(formatStage(result.stage))}</b>\n\n` +
-      `📎 <i>Нажмите на скрепку → Камера или Галерея</i>`,
+      `📸 Пробег — <b>${esc(formatStage(result.stage))}</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `📷 Отправьте фото одометра\n\n` +
+      `📎 Скрепка → 📷 Камера или 🖼 Галерея`,
       skipMileageKeyboard()
     );
     return { status: 'awaiting_photo' };
@@ -1827,9 +1837,11 @@ async function routeSheetFlow(ctx) {
   });
 
   await ctx.replyWithHTML(
-    `📄 <b>Маршрутный лист</b>\n\n` +
-    `Отправьте фото. Можно отправить несколько фото подряд.\n\n` +
-    `📎 <i>Нажмите на скрепку → Камера или Галерея</i>`,
+    `📄 Маршрутный лист\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `📷 Отправьте фото документа\n` +
+    `📎 Можно отправить несколько подряд\n\n` +
+    `📎 Скрепка → 📷 Камера или 🖼 Галерея`,
     routeSheetKeyboard()
   );
   return { status: 'awaiting_photo' };
@@ -1865,16 +1877,16 @@ async function reconciliationFlow(ctx) {
     : '';
 
   const lines = [
-    `📸 <b>Сверки</b>`,
-    '',
-    `📷 Фото <b>1 из ${totalPhotos}</b>: <b>${firstLabel}</b>`,
+    `📊 Сверка\n`,
+    `━━━━━━━━━━━━━━━━━━━━━━\n`,
+    `📷 Фото <b>1 из ${totalPhotos}</b>: ${firstLabel}`,
   ];
   if (orderHint) {
     lines.push('');
-    lines.push(orderHint);
+    lines.push(`💡 ${orderHint}`);
   }
   lines.push('');
-  lines.push('📎 <i>Нажмите на скрепку → Камера или Галерея</i>');
+  lines.push('📎 Скрепка → 📷 Камера или 🖼 Галерея');
 
   await ctx.replyWithHTML(lines.join('\n'), routeSheetKeyboard());
   return { status: 'awaiting_photo' };
@@ -1903,8 +1915,10 @@ async function showPendingCashStatus(ctx) {
   const workplace = pendingCash?.workplace || profile.workplace || 'не указано';
   const fun = String(process.env.FUN_TONE || '').toLowerCase() === 'true';
   const lines = [
-    `💵 <b>Деньги к сдаче</b>: <code>${esc(numberOnly)}</code> ₽`,
-    `🏬 <b>${esc(workplace)}</b>`,
+    `💵 Сдача наличных\n`,
+    `━━━━━━━━━━━━━━━━━━━━━━\n`,
+    `💰 Сумма: <code>${esc(numberOnly)}</code> ₽`,
+    `🏬 Магазин: <b>${esc(workplace)}</b>`,
     ''
   ];
   if (fun) lines.push('😼 Ай-ай, денюжки надо сдать!', '');
@@ -2233,7 +2247,7 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
   // Если пользователь начал новое фото (fileId изменился) — не пишем старый результат.
   if (!state || !state.mileageRow || !state.day) {
     if (!fallbackState) {
-      await replyFn('⚠️ Не удалось записать пробег.\nПопробуйте ещё раз или обратитесь к администратору.');
+      await replyFn('⚠️ Не удалось записать пробег\n\nПопробуйте ещё раз.');
       return;
     }
     const live = getState(telegramId);
@@ -2245,17 +2259,17 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
   } else if (state.fileId && fallbackState && state.fileId !== fallbackState.fileId) {
     // Живое состояние есть, но fileId разный — пользователь начал новый пробег
     console.log('mileage: live state has different fileId, skipping old save');
-    await replyFn('⚠️ <b>Пробег распознан, но вы начали новое действие.</b>\nЕсли нужно, отправьте фото повторно.', mileageConfirmKeyboard());
+    await replyFn('⚠️ Пробег распознан, но вы начали новое действие\n\nОтправьте фото повторно, если нужно.', mileageConfirmKeyboard());
     return;
   }
 
   if (!state || !state.mileageRow || !state.day || !state.stage) {
-    await replyFn('⚠️ Не удалось записать пробег.\nПопробуйте ещё раз или обратитесь к администратору.');
+    await replyFn('⚠️ Не удалось записать пробег\n\nПопробуйте ещё раз.');
     return;
   }
 
   if (!mileageValue) {
-    await replyFn('❌ Неверный пробег. Допустимы только 2-6 цифр.\nНапример: <code>25408</code>');
+    await replyFn('❌ Неверный формат\n\nВведите от 2 до 6 цифр. Например: <code>25408</code>');
     return;
   }
 
@@ -2285,13 +2299,16 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
       mileageProcessing: false
     });
     await replyFn(
-      `✅ <b>Пробег сохранён</b>: <code>${mileageValue}</code> км\n\nЕсли неверно — нажмите «Изменить пробег».`,
+      `✅ Пробег записан\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `🚗 <code>${mileageValue}</code> км\n\n` +
+      `📝 Неверно? → «Изменить пробег»`,
       mileageSavedKeyboard()
     );
     await replyFn('✅', getMenuForRole(telegramId));
   } catch (error) {
     console.error('ошибка Google Sheets', error);
-    await replyFn('⚠️ Не удалось записать пробег.\nПопробуйте ещё раз или обратитесь к администратору.');
+    await replyFn('⚠️ Не удалось записать пробег\n\nПопробуйте ещё раз.');
   } finally {
     if (telegram) {
       const finalState = getState(telegramId);
@@ -2648,7 +2665,12 @@ async function replaceMileageFlow(ctx, stage) {
 
     setState(ctx.from.id, makeMileageState(ctx.from.id, applyProfile(result, profile), { source: 'mileage' }));
     console.log('ожидание замены пробега', stage);
-    await ctx.replyWithHTML(`📷 <b>Замена пробега</b>\n\nОтправьте фото для: <b>${esc(formatStage(stage))}</b>`, skipMileageKeyboard());
+    await ctx.replyWithHTML(
+      `📸 Замена пробега\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `📷 Фото для: <b>${esc(formatStage(stage))}</b>`,
+      skipMileageKeyboard()
+    );
     return { status: 'awaiting_photo' };
   } catch (error) {
     console.error('ошибка Google Sheets', error);
@@ -2688,14 +2710,19 @@ async function handleRouteSheetPhoto(ctx, state, fileId) {
     savePhotoThread(forwarded, ctx.from.id, 'route_sheet');
 
     if (!forwarded) {
-      await ctx.replyWithHTML('⚠️ Временные проблемы с отправкой.\nСообщите администратору.', routeSheetKeyboard());
+      await ctx.replyWithHTML('⚠️ Проблема с отправкой\n\nСообщите администратору.', routeSheetKeyboard());
       return;
     }
 
-    await ctx.replyWithHTML(`✅ <b>Маршрутный лист №${routeSheetNumber}</b> отправлен.\n\nМожно отправить ещё одно фото.`, routeSheetKeyboard());
+    await ctx.replyWithHTML(
+      `✅ Маршрутный лист №${routeSheetNumber}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `Фото отправлено. Можно добавить ещё.`,
+      routeSheetKeyboard()
+    );
   } catch (error) {
     console.error('telegram send route sheet photo error', error);
-    await ctx.replyWithHTML('⚠️ Не удалось отправить фото.\nПопробуйте ещё раз или обратитесь к администратору.', routeSheetKeyboard());
+    await ctx.replyWithHTML('⚠️ Не удалось отправить фото\n\nПопробуйте ещё раз.', routeSheetKeyboard());
   }
 }
 
@@ -2796,8 +2823,9 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     });
 
     await ctx.replyWithHTML(
-      `✅ Фото <b>1</b> из <b>2</b> (статистика) получено.\n\n` +
-      `📷 Теперь отправьте фото <b>2 из 2</b>: <b>🧾 Чек</b>`,
+      `✅ Фото 1 из 2 получено\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `📷 Теперь отправьте фото <b>2 из 2</b>: 🧾 Чек`,
       routeSheetKeyboard()
     );
     return;
@@ -2829,7 +2857,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       ]);
 
       if (!forwarded || !Array.isArray(forwarded) || forwarded.length === 0) {
-        await ctx.replyWithHTML('⚠️ Временные проблемы с отправкой.\nСообщите администратору.', routeSheetKeyboard());
+        await ctx.replyWithHTML('⚠️ Проблема с отправкой\n\nСообщите администратору.', routeSheetKeyboard());
         return;
       }
       savePhotoThread(forwarded[0], ctx.from.id, 'reconciliation');
@@ -2843,7 +2871,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       return { status: 'photos_sent_terminal', ocrWarning, postRes };
     } catch (error) {
       console.error('telegram send reconciliation album error', error);
-      await ctx.replyWithHTML('⚠️ Не удалось отправить фото.\nПопробуйте ещё раз или обратитесь к администратору.', routeSheetKeyboard());
+      await ctx.replyWithHTML('⚠️ Не удалось отправить фото\n\nПопробуйте ещё раз.', routeSheetKeyboard());
     }
     return;
   }
@@ -2905,7 +2933,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     const forwarded = await sendPhotoToReconciliationChat(ctx, fileId, caption);
 
     if (!forwarded) {
-      await ctx.replyWithHTML('⚠️ Временные проблемы с отправкой.\nСообщите администратору.', routeSheetKeyboard());
+      await ctx.replyWithHTML('⚠️ Проблема с отправкой\n\nСообщите администратору.', routeSheetKeyboard());
       return;
     }
     savePhotoThread(forwarded, telegramId, 'reconciliation');
@@ -2918,7 +2946,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     return { status: 'photos_sent', total, ocrWarning, postRes };
   } catch (error) {
     console.error('telegram send reconciliation photo error', error);
-    await ctx.replyWithHTML('⚠️ Не удалось отправить фото.\nПопробуйте ещё раз или обратитесь к администратору.', routeSheetKeyboard());
+    await ctx.replyWithHTML('⚠️ Не удалось отправить фото\n\nПопробуйте ещё раз.', routeSheetKeyboard());
   }
 }
 
@@ -2953,7 +2981,7 @@ async function handleMileagePhoto(ctx, state, fileId) {
     } catch (error) {
       console.error('telegram send photo error', error);
     }
-    await ctx.replyWithHTML('⚠️ Авто-распознавание сейчас недоступно.\nВведите пробег вручную или нажмите «⏭️ Пропустить».', mileageConfirmKeyboard());
+    await ctx.replyWithHTML('⚠️ Сервер распознавания недоступен\n\nВведите пробег вручную или отправьте фото повторно.', mileageConfirmKeyboard());
     return;
   }
 
@@ -2974,7 +3002,7 @@ async function handleMileagePhoto(ctx, state, fileId) {
     } catch (error) {
       console.error('telegram send photo error', error);
     }
-    await ctx.replyWithHTML('⚠️ Сервер распознавания недоступен.\nВведите пробег вручную или нажмите «⏭️ Пропустить».', mileageConfirmKeyboard());
+    await ctx.replyWithHTML('⚠️ Сервер распознавания недоступен\n\nВведите пробег вручную или отправьте фото повторно.', mileageConfirmKeyboard());
     return;
   }
 
@@ -2986,7 +3014,7 @@ async function handleMileagePhoto(ctx, state, fileId) {
   withTimeout(processMileagePhotoInBackground(telegram, chatId, telegramId, photoState, fileId, photoState), 120000, 'mileage processing').catch((err) => {
     if (err.message && err.message.includes('timeout')) {
       console.error('mileage processing timeout');
-      telegram.sendMessage(chatId, '⚠️ Превышено время распознавания. Введите пробег вручную или нажмите «⏭️ Пропустить».', { parse_mode: 'HTML' }).catch(() => {});
+      telegram.sendMessage(chatId, '⚠️ Время распознавания истекло\n\nВведите пробег вручную или отправьте фото повторно.', { parse_mode: 'HTML' }).catch(() => {});
     } else {
       console.error('mileage bg error:', err.message);
     }
@@ -3056,12 +3084,12 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
         });
       }
 
-      let failMsg = '⚠️ <b>Не удалось распознать пробег</b>\n\n';
+      let failMsg = '⚠️ Не удалось распознать пробег\n━━━━━━━━━━━━━━━━━━━━━━\n\n';
       if (ocrCandidates.length > 0) {
         const candidateList = ocrCandidates.slice(0, 3).map((c) => `<code>${c.mileage}</code> км`).join(', ');
         failMsg += `Возможные значения: ${candidateList}\n\n`;
       }
-      failMsg += 'Отправьте фото повторно крупным планом, введите вручную или нажмите «⏭️ Пропустить».';
+      failMsg += 'Отправьте фото повторно крупным планом или введите вручную.';
       await sendMsg(failMsg, mileageConfirmKeyboard());
       return;
     }
@@ -3080,7 +3108,7 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
     );
   } catch (error) {
     console.error('background mileage processing error', error);
-    await sendMsg('⚠️ <b>Ошибка обработки фото</b>\nПопробуйте ещё раз.', mileageConfirmKeyboard());
+    await sendMsg('⚠️ Ошибка обработки фото\n\nПопробуйте отправить ещё раз.', mileageConfirmKeyboard());
   } finally {
     const cs = getState(telegramId);
     if (cs && cs.fileId === fileId && cs.mileageProcessing) {
@@ -3100,8 +3128,11 @@ async function handleManualTime(ctx, state, text) {
 
   if (!timeValue) {
     await ctx.replyWithHTML(
-      '❌ Неверный формат времени.\n\n' +
-      'Поддерживаются: <code>7</code>, <code>7,5</code>, <code>07:30</code>, <code>08:46</code>, <code>08.46</code>, <code>8 14</code> (часы 0–24).\n' +
+      '❌ Неверный формат времени\n\n' +
+      'Допустимые форматы:\n' +
+      '• <code>7</code> или <code>7,5</code>\n' +
+      '• <code>07:30</code> или <code>08:46</code>\n' +
+      '• <code>8 14</code> (часы 0–24)\n\n' +
       'Минуты округляются до ближайших 30.'
     );
     return 'error';
@@ -3113,11 +3144,11 @@ async function handleManualTime(ctx, state, text) {
     console.log('время изменено', state.stage);
     const icon = state.stage === 'start' ? '🟢' : '🔴';
     const label = state.stage === 'start' ? 'Старт' : 'Конец';
-    await ctx.replyWithHTML(`${icon} <b>${label} смены</b> изменён: <code>${esc(timeValue)}</code>`);
+    await ctx.replyWithHTML(`${icon} <b>${label} смены</b> изменён\n\n⏰ <code>${esc(timeValue)}</code>`);
     return 'done';
   } catch (error) {
     console.error('ошибка Google Sheets', error);
-    await ctx.replyWithHTML('⚠️ Не удалось изменить время.\nПопробуйте ещё раз или обратитесь к администратору.');
+    await ctx.replyWithHTML('⚠️ Не удалось изменить время\n\nПопробуйте ещё раз.');
     return 'error';
   }
 }
@@ -3137,7 +3168,7 @@ async function handleSwitchUser(ctx, state, text, telegramId) {
   const id = telegramId || ctx.from.id;
   setState(id, { awaitingSwitchUser: true });
   await ctx.replyWithHTML(
-    '⚠️ <b>Смена сотрудника</b>\n\nВсе данные (ФИО, номер машины, магазин, устройство) будут удалены.\n\nВы уверены?',
+    '⚠️ Смена сотрудника\n━━━━━━━━━━━━━━━━━━━━━━\n\nВсе данные будут удалены:\n• ФИО\n• Номер машины\n• Магазин\n• Устройство\n\nВы уверены?',
     switchUserKeyboard()
   );
 }
@@ -3231,7 +3262,7 @@ async function handleUpdateEditText(ctx, state, text) {
 
 async function handleManualMileageInput(ctx, state, text) {
   if (!/^\d{2,6}$/.test(text)) {
-    await ctx.replyWithHTML('❌ Введите пробег от <b>2 до 6 цифр</b>.\n\nНапример: <code>25408</code>');
+    await ctx.replyWithHTML('❌ Неверный формат\n\nВведите от 2 до 6 цифр. Например: <code>25408</code>');
     return 'error';
   }
   await saveMileageFromState(ctx, Number(text));
