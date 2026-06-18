@@ -84,7 +84,7 @@ module.exports = function setupCourier(bot, services) {
     await ctx.answerCbQuery();
     deleteUser(ctx.from.id);
     setState(ctx.from.id, { awaitingFio: true });
-    await ctx.replyWithHTML('👤 Смена сотрудника\n━━━━━━━━━━━━━━━━━━━━━━\n\nДанные удалены. Введите имя и фамилию как в таблице.');
+    await ctx.replyWithHTML('👤 Смена сотрудника\n──────────────────────\n\nДанные удалены. Введите имя и фамилию как в таблице.');
   });
 
   bot.action('route_sheet_done', async (ctx) => {
@@ -136,7 +136,7 @@ module.exports = function setupCourier(bot, services) {
       } catch (e) { /* ignore */ }
       await ctx.replyWithHTML(
         `✅ Сдача подтверждена\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `──────────────────────\n\n` +
         `💰 <code>${esc(formatted)}</code> ₽\n\n` +
         `Спасибо!`,
         getMenuForRole(telegramId)
@@ -160,7 +160,7 @@ module.exports = function setupCourier(bot, services) {
 
     await ctx.replyWithHTML(
       `⏳ Запрос отправлен\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `──────────────────────\n\n` +
       `💰 <code>${esc(formatted)}</code> ₽\n` +
       `Ожидайте подтверждения от логиста.`,
       getMenuForRole(telegramId)
@@ -254,7 +254,7 @@ module.exports = function setupCourier(bot, services) {
     }
 
     await ctx.replyWithHTML(
-      '⚠️ Пропустить пробег?\n━━━━━━━━━━━━━━━━━━━━━━\n\nПробег не будет записан в таблицу.',
+      '⚠️ Пропустить пробег?\n──────────────────────\n\nПробег не будет записан в таблицу.',
       Markup.inlineKeyboard([
         [Markup.button.callback('✅ Да, пропустить', 'confirm_skip_mileage')],
         [Markup.button.callback('❌ Отмена', 'cancel_skip_mileage')]
@@ -284,7 +284,7 @@ module.exports = function setupCourier(bot, services) {
     }
 
     setState(ctx.from.id, { ...state, mileageProcessing: false, awaitingManualMileage: true, awaitingMileagePhoto: false });
-    await ctx.replyWithHTML('✏️ Ввод пробега\n━━━━━━━━━━━━━━━━━━━━━━\n\nВведите пробег цифрами или загрузите фото повторно.', manualMileageKeyboard());
+    await ctx.replyWithHTML('✏️ Ввод пробега\n──────────────────────\n\nВведите пробег цифрами или загрузите фото повторно.', manualMileageKeyboard());
   });
 
   bot.action('edit_time', async (ctx) => {
@@ -304,7 +304,7 @@ module.exports = function setupCourier(bot, services) {
 
       await ctx.replyWithHTML(
         `✏️ Изменение времени\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `──────────────────────\n\n` +
         `Этап: <b>${esc(formatStage(state.stage))}</b>\n\n` +
         `Формат: <code>7</code>, <code>7,5</code>, <code>07:30</code>, <code>08:46</code>\n\n` +
         `Минуты округлятся до ближайших 30.`,

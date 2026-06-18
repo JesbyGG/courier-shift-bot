@@ -389,7 +389,7 @@ async function showDebtorsList(ctx) {
 
   await ctx.replyWithHTML(
     `💳 Курьеры с долгами\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `──────────────────────\n\n` +
     `🏬 ${esc(workplace)}\n` +
     `💰 Всего: <code>${formattedTotal}</code> ₽\n\n` +
     debtors.map((d) => `• ${esc(d.fio)} — <code>${formatMoneyRu(d.amount)}</code> ₽`).join('\n'),
@@ -468,7 +468,7 @@ async function pokeCourier(ctx, courierId) {
 
   const workplaceLabel = courierRecord.workplace || 'не указано';
   const courierMsg = `🔔 Логист ${esc(logistFio)} напоминает\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `──────────────────────\n\n` +
     `💰 Сумма: <code>${esc(formatted)}</code> ₽\n` +
     `🏬 Магазин: <b>${esc(workplaceLabel)}</b>\n\n` +
     `Сдали деньги?`;
@@ -531,7 +531,7 @@ async function showHistoryDatePicker(ctx) {
   }
   buttons.push([Markup.button.callback('❌ Закрыть', 'close_message')]);
 
-  await ctx.replyWithHTML('📋 История сборов\n━━━━━━━━━━━━━━━━━━━━━━\n\nВыберите дату:', Markup.inlineKeyboard(buttons));
+  await ctx.replyWithHTML('📋 История сборов\n──────────────────────\n\nВыберите дату:', Markup.inlineKeyboard(buttons));
   return { status: 'showing_history' };
 }
 
@@ -543,12 +543,12 @@ async function showCashHistoryForDate(ctx, dateStr) {
   const approvedRows = rows.filter(r => r.action === 'approved' || r.action === 'self_cleared' || r.action === 'logist_approved');
 
   if (approvedRows.length === 0) {
-    await ctx.replyWithHTML(`📋 История сборов\n━━━━━━━━━━━━━━━━━━━━━━\n\n📅 ${dateStr}\n\nНет подтверждённых сдач за эту дату.`);
+    await ctx.replyWithHTML(`📋 История сборов\n──────────────────────\n\n📅 ${dateStr}\n\nНет подтверждённых сдач за эту дату.`);
     return;
   }
 
   const total = approvedRows.reduce((sum, r) => sum + r.amount, 0);
-  let msg = `📋 История сборов\n━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+  let msg = `📋 История сборов\n──────────────────────\n\n` +
     `📅 ${dateStr}\n💰 Всего: <code>${formatMoneyRu(total)}</code> ₽\n\n`;
 
   for (const row of approvedRows) {
@@ -1699,7 +1699,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       setState(telegramId, { awaitingReplaceChoice: true, fio: profile.fio });
       await ctx.replyWithHTML(
         `⚠️ Время уже записано\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `──────────────────────\n\n` +
         `🟢 Старт: <code>${esc(result.from)}</code>\n` +
         `🔴 Конец: <code>${esc(result.to)}</code>\n\n` +
         `Что заменить?`,
@@ -1737,7 +1737,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
 
     await ctx.replyWithHTML(
       `${icon} <b>${label} смены</b>\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `──────────────────────\n\n` +
       `⏰ <code>${esc(result.timeValue)}</code>\n\n` +
       `📝 Неверно? → «Изменить время»`,
       timeChangeKeyboard()
@@ -1753,7 +1753,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
         const numberOnly = formatMoneyRuNumber(pendingAmount) || String(formattedAmount || '').replace(/\s*₽$/, '');
         await ctx.replyWithHTML(
           `⚠️ Не забудьте сдать деньги\n` +
-          `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+          `──────────────────────\n\n` +
           `💰 Сумма: <code>${esc(numberOnly)}</code> ₽\n` +
           `🏬 Магазин: <b>${esc(pendingCash?.workplace || profile.workplace || 'не указано')}</b>`,
           cashSubmitConfirmKeyboard()
@@ -1793,7 +1793,7 @@ async function mileageFlow(ctx, explicitStage = null) {
       setState(telegramId, { awaitingMileageReplaceChoice: true, fio: profile.fio });
       await ctx.replyWithHTML(
         `⚠️ Пробег уже записан\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `──────────────────────\n\n` +
         `🟢 Старт: <code>${esc(result.startMileage)}</code>\n` +
         `🔴 Конец: <code>${esc(result.endMileage)}</code>\n\n` +
         `Что заменить?`,
@@ -1806,7 +1806,7 @@ async function mileageFlow(ctx, explicitStage = null) {
     console.log('ожидание пробега', result.stage);
     await ctx.replyWithHTML(
       `📸 Пробег — <b>${esc(formatStage(result.stage))}</b>\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `──────────────────────\n\n` +
       `📷 Отправьте фото одометра\n\n` +
       `📎 Скрепка → 📷 Камера или 🖼 Галерея`,
       skipMileageKeyboard()
@@ -1838,7 +1838,7 @@ async function routeSheetFlow(ctx) {
 
   await ctx.replyWithHTML(
     `📄 Маршрутный лист\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `──────────────────────\n\n` +
     `📷 Отправьте фото документа\n` +
     `📎 Можно отправить несколько подряд\n\n` +
     `📎 Скрепка → 📷 Камера или 🖼 Галерея`,
@@ -1878,7 +1878,7 @@ async function reconciliationFlow(ctx) {
 
   const lines = [
     `📊 Сверка\n`,
-    `━━━━━━━━━━━━━━━━━━━━━━\n`,
+    `──────────────────────\n`,
     `📷 Фото <b>1 из ${totalPhotos}</b>: ${firstLabel}`,
   ];
   if (orderHint) {
@@ -1916,7 +1916,7 @@ async function showPendingCashStatus(ctx) {
   const fun = String(process.env.FUN_TONE || '').toLowerCase() === 'true';
   const lines = [
     `💵 Сдача наличных\n`,
-    `━━━━━━━━━━━━━━━━━━━━━━\n`,
+    `──────────────────────\n`,
     `💰 Сумма: <code>${esc(numberOnly)}</code> ₽`,
     `🏬 Магазин: <b>${esc(workplace)}</b>`,
     ''
@@ -1935,7 +1935,7 @@ async function sendHelp(ctx) {
     const features = WORKPLACE_FEATURES[workplace] || {};
     const hasCash = features.cashCollection;
     let logistHelp = '❓ <b>Помощь</b>\n' +
-      '━━━━━━━━━━━━━━━\n\n' +
+      '───────────────\n\n' +
       `1️⃣ <b>Записать время</b> — «${BUTTONS.punchTime}» отметить начало или конец смены.\n` +
       `2️⃣ <b>Открыть ИМ</b> — «${BUTTONS.openShop}» отправить уведомление об открытии магазина в группу.\n`;
     if (hasCash) {
@@ -1957,7 +1957,7 @@ async function sendHelp(ctx) {
 
   await ctx.replyWithHTML(
     '❓ <b>Помощь</b>\n' +
-    '━━━━━━━━━━━━━━━\n\n' +
+    '───────────────\n\n' +
     '1️⃣ <b>Первый вход</b> — введите ФИО, номер машины, магазин и устройство.\n' +
     `2️⃣ <b>Записать время</b> — «${BUTTONS.punchTime}» отметить начало или конец смены.\n` +
     `3️⃣ <b>Фото пробега</b> — «${BUTTONS.mileage}» отправьте фото одометра или введите вручную.\n` +
@@ -1979,7 +1979,7 @@ async function sendCommandsList(ctx) {
   const isAdmin = isAdminUser(ctx.from.id);
   const role = getUserRole(ctx.from.id);
   let msg = '📋 <b>Команды</b>\n' +
-    '━━━━━━━━━━━━━━━\n\n' +
+    '───────────────\n\n' +
     '<b>Основные:</b>\n' +
     '/help — помощь\n' +
     '/cancel — отмена текущего действия\n\n';
@@ -2300,7 +2300,7 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
     });
     await replyFn(
       `✅ Пробег записан\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `──────────────────────\n\n` +
       `🚗 <code>${mileageValue}</code> км\n\n` +
       `📝 Неверно? → «Изменить пробег»`,
       mileageSavedKeyboard()
@@ -2667,7 +2667,7 @@ async function replaceMileageFlow(ctx, stage) {
     console.log('ожидание замены пробега', stage);
     await ctx.replyWithHTML(
       `📸 Замена пробега\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `──────────────────────\n\n` +
       `📷 Фото для: <b>${esc(formatStage(stage))}</b>`,
       skipMileageKeyboard()
     );
@@ -2716,7 +2716,7 @@ async function handleRouteSheetPhoto(ctx, state, fileId) {
 
     await ctx.replyWithHTML(
       `✅ Маршрутный лист №${routeSheetNumber}\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `──────────────────────\n\n` +
       `Фото отправлено. Можно добавить ещё.`,
       routeSheetKeyboard()
     );
@@ -2824,7 +2824,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
 
     await ctx.replyWithHTML(
       `✅ Фото 1 из 2 получено\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `──────────────────────\n\n` +
       `📷 Теперь отправьте фото <b>2 из 2</b>: 🧾 Чек`,
       routeSheetKeyboard()
     );
@@ -3084,7 +3084,7 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
         });
       }
 
-      let failMsg = '⚠️ Не удалось распознать пробег\n━━━━━━━━━━━━━━━━━━━━━━\n\n';
+      let failMsg = '⚠️ Не удалось распознать пробег\n──────────────────────\n\n';
       if (ocrCandidates.length > 0) {
         const candidateList = ocrCandidates.slice(0, 3).map((c) => `<code>${c.mileage}</code> км`).join(', ');
         failMsg += `Возможные значения: ${candidateList}\n\n`;
@@ -3168,7 +3168,7 @@ async function handleSwitchUser(ctx, state, text, telegramId) {
   const id = telegramId || ctx.from.id;
   setState(id, { awaitingSwitchUser: true });
   await ctx.replyWithHTML(
-    '⚠️ Смена сотрудника\n━━━━━━━━━━━━━━━━━━━━━━\n\nВсе данные будут удалены:\n• ФИО\n• Номер машины\n• Магазин\n• Устройство\n\nВы уверены?',
+    '⚠️ Смена сотрудника\n──────────────────────\n\nВсе данные будут удалены:\n• ФИО\n• Номер машины\n• Магазин\n• Устройство\n\nВы уверены?',
     switchUserKeyboard()
   );
 }
