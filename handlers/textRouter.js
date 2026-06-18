@@ -40,7 +40,7 @@ module.exports = function setupTextRouter(bot, services) {
 
   const TEXT_ROUTES = [
     // 1) «Назад в меню» — общая кнопка
-    { match: (text) => ['🏠 В меню', '⬅️ Назад', 'Назад'].includes(text) || text === BUTTONS.back, handler: async (ctx) => {
+    { match: (text) => ['🏠 В меню', '◀️ Назад', '⬅️ Назад', 'Назад'].includes(text) || text === BUTTONS.back, handler: async (ctx) => {
       const res = await backToMainMenu(ctx);
       if (res.status === 'mileage_processing') await ctx.replyWithHTML('📸 Обработка фото пробега продолжается... результат придёт в новый чат.', getMenuForRole(ctx.from.id));
       else if (res.status === 'back_to_menu') await ctx.replyWithHTML(res.message, getMenuForRole(ctx.from.id));
@@ -80,15 +80,15 @@ module.exports = function setupTextRouter(bot, services) {
       else if (res.status === 'not_found') await ctx.replyWithHTML(formatNoSheetMessage(res.result, res.workplace));
       else if (res.status === 'error') await ctx.replyWithHTML('⚠️ Не удалось подготовить запись пробега.\nПопробуйте ещё раз или обратитесь к администратору.', getMenuForRole(ctx.from.id));
     }},
-    { button: BUTTONS.routeSheet, legacy: ['Маршрутный лист', '📄 Маршрутник'], handler: async (ctx) => {
+    { button: BUTTONS.routeSheet, legacy: ['Отправить маршрутник', 'Маршрутный лист', '📄 Маршрутник'], handler: async (ctx) => {
       const res = await routeSheetFlow(ctx);
       if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
     }},
-    { button: BUTTONS.reconciliation, legacy: ['Сверки', '📊 Сверки'], handler: async (ctx) => {
+    { button: BUTTONS.reconciliation, legacy: ['Отправить сверку', 'Сверки', '📊 Сверки'], handler: async (ctx) => {
       const res = await reconciliationFlow(ctx);
       if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
     }},
-    { button: BUTTONS.cashCheck, legacy: ['Деньги к сдаче', '💵 Наличные'], handler: async (ctx) => {
+    { button: BUTTONS.cashCheck, legacy: ['Сдать наличные', 'Деньги к сдаче', '💵 Наличные'], handler: async (ctx) => {
       const res = await showPendingCashStatus(ctx);
       if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
       else if (res.status === 'no_debt') await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы.', getMenuForRole(ctx.from.id));
@@ -99,7 +99,7 @@ module.exports = function setupTextRouter(bot, services) {
       if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
       else if (res.status === 'unavailable') await ctx.replyWithHTML('⚠️ Раздел «Проблема с заказом» временно недоступен.', getMenuForRole(ctx.from.id));
     }},
-    { button: BUTTONS.cashCollect, handler: async (ctx) => {
+    { button: BUTTONS.cashCollect, legacy: ['💳 Принять наличные'], handler: async (ctx) => {
       const res = await showDebtorsList(ctx);
       if (res.status === 'access_denied') {
         await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(ctx.from.id));
@@ -111,7 +111,7 @@ module.exports = function setupTextRouter(bot, services) {
         await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы.', getMenuForRole(ctx.from.id));
       }
     }},
-    { button: BUTTONS.cashHistory, handler: async (ctx) => {
+    { button: BUTTONS.cashHistory, legacy: ['📋 История сборов'], handler: async (ctx) => {
       const res = await showHistoryDatePicker(ctx);
       if (res.status === 'access_denied') {
         await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(ctx.from.id));
@@ -119,7 +119,7 @@ module.exports = function setupTextRouter(bot, services) {
         await ctx.replyWithHTML('❌ В этом магазине приём наличных не предусмотрен.', getMenuForRole(ctx.from.id));
       }
     }},
-    { button: BUTTONS.openShop, handler: async (ctx) => {
+    { button: BUTTONS.openShop, legacy: ['🔓 Открыть ИМ'], handler: async (ctx) => {
       const res = await openShopNotify(ctx);
       if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(ctx.from.id));
       else if (res.status === 'no_workplace') await ctx.replyWithHTML('⚠️ Сначала выберите магазин в настройках.', getMenuForRole(ctx.from.id));
@@ -128,12 +128,12 @@ module.exports = function setupTextRouter(bot, services) {
 
     // 4) Меню настроек
     { button: BUTTONS.settings, legacy: ['Настройки'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ <b>Настройки</b>', getSettingsMenuForRole(id)) },
-    { button: BUTTONS.profile, legacy: ['Профиль'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('✏️ <b>Профиль</b>', getProfileMenuForRole(ctx.from.id)) },
-    { button: BUTTONS.backToSettings, handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ <b>Настройки</b>', getSettingsMenuForRole(id)) },
+    { button: BUTTONS.profile, legacy: ['✏️ Профиль', 'Профиль'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('👤 <b>Профиль</b>', getProfileMenuForRole(ctx.from.id)) },
+    { button: BUTTONS.backToSettings, legacy: ['↩️ К настройкам'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ <b>Настройки</b>', getSettingsMenuForRole(id)) },
     { button: BUTTONS.help, legacy: ['Помощь'], handler: (ctx) => sendHelp(ctx) },
 
     // 5) Профиль (требуют ФИО)
-    { button: BUTTONS.changeCar, legacy: ['Изменить номер машины', 'Номер машины'], handler: async (ctx) => {
+    { button: BUTTONS.changeCar, legacy: ['✏️ Изменить номер машины', 'Изменить номер машины', 'Номер машины'], handler: async (ctx) => {
       if (isLogist(ctx.from.id)) {
         await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
         return;
@@ -141,11 +141,11 @@ module.exports = function setupTextRouter(bot, services) {
       const fio = await requireFio(ctx);
       if (fio) await askForCarNumber(ctx, fio);
     }},
-    { button: BUTTONS.changeWorkplace, legacy: ['Изменить интернет-магазин', 'Поменять магазин', 'Магазин'], handler: async (ctx) => {
+    { button: BUTTONS.changeWorkplace, legacy: ['✏️ Поменять магазин', 'Изменить интернет-магазин', 'Поменять магазин', 'Магазин'], handler: async (ctx) => {
       const fio = await requireFio(ctx);
       if (fio) await askForWorkplace(ctx, fio);
     }},
-    { button: BUTTONS.changeDevice, legacy: ['Изменить устройство', 'Устройство'], handler: async (ctx) => {
+    { button: BUTTONS.changeDevice, legacy: ['✏️ Изменить устройство', 'Изменить устройство', 'Устройство'], handler: async (ctx) => {
       if (isLogist(ctx.from.id)) {
         await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
         return;
@@ -153,7 +153,7 @@ module.exports = function setupTextRouter(bot, services) {
       const fio = await requireFio(ctx);
       if (fio) await askForDevice(ctx, fio);
     }},
-    { button: BUTTONS.switchUser, legacy: ['Поменять сотрудника', 'Сменить сотрудника', 'Сотрудник'], handler: handleSwitchUser },
+    { button: BUTTONS.switchUser, legacy: ['✏️ Поменять сотрудника', 'Поменять сотрудника', 'Сменить сотрудника', 'Сотрудник'], handler: handleSwitchUser },
 
     // 6) Настройки (Таблицы, Мой ID, История сборов)
     { button: BUTTONS.sheetInfo, legacy: ['Таблицы'], handler: handleSheetsInfo },

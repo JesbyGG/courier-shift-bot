@@ -44,21 +44,26 @@ function isMileageButton(text) {
 
 function courierMainMenu(telegramId) {
   const courierType = getUserField(telegramId, 'courierType') || 'auto';
+  const timeBtn = getTimeButtonLabel(telegramId);
+  const mileageBtn = getMileageButtonLabel(telegramId);
   const rows = [
-    [getTimeButtonLabel(telegramId)]
+    [timeBtn]
   ];
   if (courierType !== 'pedestrian') {
-    rows.push([getMileageButtonLabel(telegramId)]);
+    rows.push([mileageBtn, BUTTONS.routeSheet]);
+  } else {
+    rows.push([BUTTONS.routeSheet]);
   }
-  rows.push([BUTTONS.routeSheet, BUTTONS.reconciliation]);
-  rows.push([BUTTONS.cashCheck, BUTTONS.issues]);
-  rows.push([BUTTONS.settings]);
+  rows.push([BUTTONS.reconciliation, BUTTONS.cashCheck]);
+  rows.push([BUTTONS.issues, BUTTONS.settings]);
   return Markup.keyboard(rows).resize();
 }
 
 function profileMenu(telegramId) {
   const courierType = getUserField(telegramId, 'courierType') || 'auto';
-  const rows = [];
+  const rows = [
+    [BUTTONS.profile]
+  ];
   if (courierType !== 'pedestrian') {
     rows.push([BUTTONS.changeCar, BUTTONS.changeWorkplace]);
   } else {

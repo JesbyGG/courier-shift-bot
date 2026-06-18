@@ -70,32 +70,32 @@ const SHEET_TEMPLATE = {
 };
 
 const BUTTONS = {
-  punchTime: '⏱ Записать время',
+  punchTime: '⏱ Время',
   punchTimeStart: '⏱ Старт смены',
   punchTimeEnd: '⏱ Конец смены',
   punchTimeReplace: '⏱ Заменить время',
-  mileage: '🚗 Фото пробега',
+  mileage: '🚗 Пробег',
   mileageStart: '🚗 Пробег старт',
   mileageEnd: '🚗 Пробег конец',
   mileageReplace: '🚗 Заменить пробег',
-  routeSheet: '📄 Отправить маршрутник',
-  reconciliation: '📊 Отправить сверку',
-  cashCheck: '💵 Сдать наличные',
-  issues: '⚠️ Проблема с заказом',
+  routeSheet: '📄 Маршрутник',
+  reconciliation: '📊 Сверка',
+  cashCheck: '💵 Наличные',
+  issues: '⚠️ Проблема',
   settings: '⚙️ Настройки',
   help: '❓ Помощь',
-  profile: '✏️ Профиль',
-  changeCar: '✏️ Изменить номер машины',
-  changeWorkplace: '✏️ Поменять магазин',
-  changeDevice: '✏️ Изменить устройство',
-  switchUser: '✏️ Поменять сотрудника',
+  profile: '👤 Профиль',
+  changeCar: '🚗 Машина',
+  changeWorkplace: '🏪 Магазин',
+  changeDevice: '📱 Устройство',
+  switchUser: '👥 Сотрудник',
   sheetInfo: '📋 Таблицы',
   myId: '🆔 Мой ID',
-  cashCollect: '💳 Принять наличные',
-  cashHistory: '📋 История сборов',
-  openShop: '🔓 Открыть ИМ',
-  backToSettings: '↩️ К настройкам',
-  back: '🏠 В меню'
+  cashCollect: '💳 Наличные',
+  cashHistory: '📋 История',
+  openShop: '🔓 Магазин',
+  backToSettings: '◀️ Назад',
+  back: '◀️ Назад'
 };
 
 // Имя файла, в который переименовываются битые файлы при загрузке.
