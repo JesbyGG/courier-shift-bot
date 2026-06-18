@@ -133,6 +133,18 @@ function isScheduleMarker(value) {
   return s === '1';
 }
 
+function withTimeout(promise, timeoutMs, label) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timeout after ${timeoutMs}ms`)), timeoutMs);
+    })
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 module.exports = {
   normalizeFio,
   normalizeFioWords,
@@ -143,5 +155,6 @@ module.exports = {
   roundMinutesToHalfHour,
   getCurrentDateInfo,
   isEmptyCell,
-  isScheduleMarker
+  isScheduleMarker,
+  withTimeout
 };

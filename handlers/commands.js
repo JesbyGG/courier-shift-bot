@@ -74,7 +74,7 @@ module.exports = function setupCommands(bot, services) {
         `💳 <b>Принять наличные</b> — посмотреть курьеров с долгами и отправить напоминание.\n` +
         `📋 <b>Таблицы</b> — информация о привязке таблиц.\n` +
         `⚙️ <b>Настройки</b> — профиль, магазин, смена сотрудника.`,
-        getMenuForRole(ctx.from.id)
+        logistMainMenu(ctx.from.id)
       );
     } else {
       await ctx.replyWithHTML(
@@ -85,7 +85,6 @@ module.exports = function setupCommands(bot, services) {
         `📊 <b>Отправить сверку</b> — отправить фото сверки, бот отправит фото в нужный чат.\n` +
         `💵 <b>Сдать наличные</b> — отметить сдачу наличных, также укажет сумму нужную сдать и подтверждение сдал/не сдал.\n` +
         `⚠️ <b>Проблема с заказом</b> — сообщить о проблеме, бот предлагает варианты ссылками на нужный чат/бота поддержки.\n` +
-        `🏆 <b>Рейтинг</b> — посмотреть рейтинг курьеров.\n` +
         `⚙️ <b>Настройки</b> — профиль, машина, магазин, также смена сотрудника и тд.`,
         getMenuForRole(ctx.from.id)
       );
@@ -195,7 +194,7 @@ module.exports = function setupCommands(bot, services) {
     }
     setUserField(telegramId, 'role', 'logist');
     clearState(telegramId);
-    await ctx.replyWithHTML('✅ Роль: <b>Логист</b>\n\nТеперь выберите ваш магазин.', getMenuForRole(telegramId));
+    await ctx.replyWithHTML('✅ Роль: <b>Логист</b>\n\nТеперь выберите ваш магазин.', logistMainMenu(ctx.from.id));
     await askForWorkplace(ctx, state.fio);
   });
 };

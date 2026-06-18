@@ -52,7 +52,7 @@ function courierMainMenu(telegramId) {
   }
   rows.push([BUTTONS.routeSheet, BUTTONS.reconciliation]);
   rows.push([BUTTONS.cashCheck, BUTTONS.issues]);
-  rows.push([BUTTONS.leaderBoard, BUTTONS.settings]);
+  rows.push([BUTTONS.settings]);
   return Markup.keyboard(rows).resize();
 }
 
@@ -261,119 +261,6 @@ function debtorListKeyboard(debtors, logistWorkplace) {
   return Markup.inlineKeyboard(buttons);
 }
 
-function courierMainMenuInline(telegramId) {
-  const courierType = getUserField(telegramId, 'courierType') || 'auto';
-  const rows = [
-    [Markup.button.callback(getTimeButtonLabel(telegramId), 'menu_time')]
-  ];
-  if (courierType !== 'pedestrian') {
-    rows.push([Markup.button.callback(getMileageButtonLabel(telegramId), 'menu_mileage')]);
-  }
-  rows.push([
-    Markup.button.callback(BUTTONS.routeSheet, 'menu_route'),
-    Markup.button.callback(BUTTONS.reconciliation, 'menu_reconciliation')
-  ]);
-  rows.push([
-    Markup.button.callback(BUTTONS.cashCheck, 'menu_cash'),
-    Markup.button.callback(BUTTONS.issues, 'menu_issues')
-  ]);
-  rows.push([
-    Markup.button.callback(BUTTONS.leaderBoard, 'menu_leaderboard'),
-    Markup.button.callback(BUTTONS.settings, 'menu_settings')
-  ]);
-  const markup = Markup.inlineKeyboard(rows);
-  markup.reply_markup.remove_keyboard = true;
-  return markup;
-}
-
-function logistMainMenuInline(telegramId) {
-  const workplace = getUserField(telegramId, 'workplace');
-  const features = WORKPLACE_FEATURES[workplace] || {};
-  const rows = [
-    [Markup.button.callback(getTimeButtonLabel(telegramId), 'menu_time')]
-  ];
-  if (features.cashCollection) {
-    rows.push([
-      Markup.button.callback(BUTTONS.openShop, 'menu_open_shop'),
-      Markup.button.callback(BUTTONS.cashCollect, 'menu_cash_collect')
-    ]);
-    rows.push([Markup.button.callback(BUTTONS.cashHistory, 'menu_cash_history')]);
-  } else {
-    rows.push([Markup.button.callback(BUTTONS.openShop, 'menu_open_shop')]);
-  }
-  rows.push([Markup.button.callback(BUTTONS.sheetInfo, 'menu_sheets')]);
-  rows.push([Markup.button.callback(BUTTONS.settings, 'menu_settings')]);
-  const markup = Markup.inlineKeyboard(rows);
-  markup.reply_markup.remove_keyboard = true;
-  return markup;
-}
-
-function getMenuForRoleInline(telegramId) {
-  const role = getUserRole(telegramId);
-  if (role === 'logist') {
-    return logistMainMenuInline(telegramId);
-  }
-  return courierMainMenuInline(telegramId);
-}
-
-function getSettingsMenuForRoleInline(telegramId) {
-  const role = getUserRole(telegramId);
-  let markup;
-  if (role === 'logist') {
-    markup = Markup.inlineKeyboard([
-      [Markup.button.callback(BUTTONS.profile, 'menu_profile')],
-      [Markup.button.callback(BUTTONS.myId, 'menu_my_id')],
-      [Markup.button.callback(BUTTONS.help, 'menu_help')],
-      [Markup.button.callback('🏠 В меню', 'menu_back')]
-    ]);
-  } else {
-    const showSheets = isAdminUser(telegramId) || isSheetAccessUser(telegramId);
-    const buttons = [
-      [Markup.button.callback(BUTTONS.profile, 'menu_profile')]
-    ];
-    if (showSheets) {
-      buttons.push([
-        Markup.button.callback(BUTTONS.sheetInfo, 'menu_sheets'),
-        Markup.button.callback(BUTTONS.myId, 'menu_my_id')
-      ]);
-    } else {
-      buttons.push([Markup.button.callback(BUTTONS.myId, 'menu_my_id')]);
-    }
-    buttons.push([Markup.button.callback(BUTTONS.help, 'menu_help')]);
-    buttons.push([Markup.button.callback('🏠 В меню', 'menu_back')]);
-    markup = Markup.inlineKeyboard(buttons);
-  }
-  markup.reply_markup.remove_keyboard = true;
-  return markup;
-}
-
-function getProfileMenuForRoleInline(telegramId) {
-  const role = getUserRole(telegramId);
-  let markup;
-  if (role === 'logist') {
-    markup = Markup.inlineKeyboard([
-      [Markup.button.callback(BUTTONS.changeWorkplace, 'menu_change_workplace'),
-       Markup.button.callback(BUTTONS.switchUser, 'menu_switch_user')],
-      [Markup.button.callback('⚙️ К настройкам', 'menu_back_settings')]
-    ]);
-  } else {
-    const courierType = getUserField(telegramId, 'courierType') || 'auto';
-    const rows = [];
-    if (courierType !== 'pedestrian') {
-      rows.push([Markup.button.callback(BUTTONS.changeCar, 'menu_change_car'),
-                 Markup.button.callback(BUTTONS.changeWorkplace, 'menu_change_workplace')]);
-    } else {
-      rows.push([Markup.button.callback(BUTTONS.changeWorkplace, 'menu_change_workplace')]);
-    }
-    rows.push([Markup.button.callback(BUTTONS.changeDevice, 'menu_change_device'),
-               Markup.button.callback(BUTTONS.switchUser, 'menu_switch_user')]);
-    rows.push([Markup.button.callback('⚙️ К настройкам', 'menu_back_settings')]);
-    markup = Markup.inlineKeyboard(rows);
-  }
-  markup.reply_markup.remove_keyboard = true;
-  return markup;
-}
-
 module.exports = {
   courierMainMenu,
   profileMenu,
@@ -385,11 +272,6 @@ module.exports = {
   getMenuForRole,
   getSettingsMenuForRole,
   getProfileMenuForRole,
-  courierMainMenuInline,
-  logistMainMenuInline,
-  getMenuForRoleInline,
-  getSettingsMenuForRoleInline,
-  getProfileMenuForRoleInline,
   getTimeButtonLabel,
   getMileageButtonLabel,
   isTimeButton,

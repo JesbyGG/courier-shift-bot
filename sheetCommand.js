@@ -179,14 +179,18 @@ function registerSheetCommand(bot, options = {}) {
       const resetTarget = (parts[3] || 'active').toLowerCase();
 
       if (targetToken === 'all' || targetToken === 'все') {
-        for (const item of workplaces) {
-          const monthMap = getWorkplaceMonthMap(item);
-          for (const monthKey of Object.keys(monthMap)) {
-            setWorkplaceSheetIdByMonth(item, monthKey, '');
+        await ctx.replyWithHTML(
+          '⚠️ <b>Вы собираетесь сбросить привязки ВСЕХ таблиц для ВСЕХ магазинов.</b>\n\nЭто действие необратимо. Подтвердите:',
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '✅ Да, сбросить всё', callback_data: 'sheet_reset_all_confirm' }],
+                [{ text: '❌ Отмена', callback_data: 'close_message' }]
+              ]
+            }
           }
-          setWorkplaceSheetId(item, '');
-        }
-        await ctx.replyWithHTML('✅ Все привязки для всех магазинов сброшены.');
+        );
         return;
       }
 
@@ -322,7 +326,7 @@ function registerSheetCommand(bot, options = {}) {
       const active = resolveSheetInfo(workplace);
       if (active.sheetId) {
         message += `\n\n✅ Активная сейчас (${esc(currentMonth)}): <code>${esc(active.sheetId)}</code>`;
-      } else if (active.missingForMonth) {
+      } else if (active.noSheetForMonth) {
         message += `\n\n⚠️ Для текущего месяца <code>${esc(active.monthKey)}</code> таблица не задана.`;
       }
 
@@ -332,6 +336,19 @@ function registerSheetCommand(bot, options = {}) {
       console.error('sheet command error', error);
       await ctx.replyWithHTML('⚠️ Произошла ошибка при проверке таблицы.\nПопробуйте ещё раз.');
     }
+  });
+
+  bot.action('sheet_reset_all_confirm', async (ctx) => {
+    if (!isAdminUser(ctx.from.id)) { await ctx.answerCbQuery(); return; }
+    await ctx.answerCbQuery();
+    for (const item of workplaces) {
+      const monthMap = getWorkplaceMonthMap(item);
+      for (const monthKey of Object.keys(monthMap)) {
+        setWorkplaceSheetIdByMonth(item, monthKey, '');
+      }
+      setWorkplaceSheetId(item, '');
+    }
+    await ctx.editMessageText('✅ Все привязки для всех магазинов сброшены.', { parse_mode: 'HTML' });
   });
 }
 

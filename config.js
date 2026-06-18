@@ -15,8 +15,8 @@ const WORKPLACE_KEY_MAP = {
 // Фичи по магазинам (чтобы не хардкодить 'ИМ Восток' / 'ИМ Центр' в бизнес-логике).
 // Добавляя новый магазин — просто укажи здесь, какие функции доступны.
 const WORKPLACE_FEATURES = {
-  'ИМ Восток': { cashCollection: true, leaderboard: true },
-  'ИМ Центр': { cashCollection: false, leaderboard: true }
+  'ИМ Восток': { cashCollection: true },
+  'ИМ Центр': { cashCollection: false }
 };
 
 // Жёсткие ограничения окружения. Можно переопределять через .env.
@@ -82,7 +82,6 @@ const BUTTONS = {
   reconciliation: '📊 Отправить сверку',
   cashCheck: '💵 Сдать наличные',
   issues: '⚠️ Проблема с заказом',
-  leaderBoard: '🏆 Рейтинг',
   settings: '⚙️ Настройки',
   help: '❓ Помощь',
   profile: '✏️ Профиль',

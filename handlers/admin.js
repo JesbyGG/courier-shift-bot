@@ -112,6 +112,13 @@ module.exports = function setupAdmin(bot, services) {
 
     setUserField(targetId, 'role', newRole);
 
+    try {
+      await ctx.telegram.sendMessage(Number(targetId),
+        `🔑 Ваша роль изменена: <b>${displayRole}</b>\n\nДля обновления меню нажмите /start.`,
+        { parse_mode: 'HTML' }
+      );
+    } catch (e) { /* пользователь мог заблокировать бота */ }
+
     if (newRole === 'logist') {
       const carNumber = getUserField(targetId, 'carNumber');
       const device = getUserField(targetId, 'device');

@@ -206,7 +206,4 @@ module.exports = function setupReplyForwarding(bot, services) {
 
     return next();
   });
-
-  bot.context = bot.context || {};
-  bot.context.cleanupOldThreads = cleanupOldThreads;
 };

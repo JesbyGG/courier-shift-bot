@@ -1,17 +1,6 @@
 const axios = require('axios');
 const { isGeminiOcrEnabled, recognizeTextWithGemini } = require('./mileageOcr');
-
-function withTimeout(promise, timeoutMs, label) {
-  let timer;
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`${label} timeout after ${timeoutMs}ms`)), timeoutMs);
-    })
-  ]).finally(() => {
-    if (timer) clearTimeout(timer);
-  });
-}
+const { withTimeout } = require('../utils');
 
 function parseMoneyRu(value) {
   const raw = String(value || '').trim();

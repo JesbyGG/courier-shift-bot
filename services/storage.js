@@ -101,7 +101,7 @@ function clearPendingCashAndReminders(telegramId) {
   const allReminders = _getAllReminders();
   for (const reminder of allReminders) {
     if (reminder.courierId === String(telegramId)) {
-      _deleteReminder(reminder._shortId);
+      deleteReminder(reminder._shortId);
     }
   }
 }
@@ -209,10 +209,6 @@ function updateReminder(shortId, updates) {
 function deleteReminder(shortId) {
   const key = _reminderKey(shortId);
   db.prepare('DELETE FROM states WHERE telegramId = ?').run(key);
-}
-
-function _deleteReminder(shortId) {
-  deleteReminder(shortId);
 }
 
 function _getAllReminders() {
@@ -422,16 +418,18 @@ function getSheetAccessUsers() {
 
 function addSheetAccessUser(telegramId) {
   const users = getSheetAccessUsers();
-  if (!users.includes(String(telegramId))) {
-    users.push(String(telegramId));
-    _setRecord(SHEET_ACCESS_USERS, users);
-  }
+  if (users.includes(String(telegramId))) return false;
+  users.push(String(telegramId));
+  _setRecord(SHEET_ACCESS_USERS, users);
+  return true;
 }
 
 function removeSheetAccessUser(telegramId) {
-  let users = getSheetAccessUsers();
-  users = users.filter((id) => id !== String(telegramId));
-  _setRecord(SHEET_ACCESS_USERS, users);
+  const users = getSheetAccessUsers();
+  const filtered = users.filter((id) => id !== String(telegramId));
+  if (filtered.length === users.length) return false;
+  _setRecord(SHEET_ACCESS_USERS, filtered);
+  return true;
 }
 
 function isSheetAccessUser(telegramId) {
@@ -440,9 +438,12 @@ function isSheetAccessUser(telegramId) {
 }
 
 function markUserSeen(telegramId) {
-  const record = _getRecord(telegramId) || {};
+  const existing = _getRecord(telegramId);
+  const isNew = !existing;
+  const record = existing || {};
   record.lastSeen = new Date().toISOString();
   _setRecord(telegramId, record);
+  return isNew;
 }
 
 function _todayKey() {

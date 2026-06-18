@@ -5,7 +5,7 @@ function getAdminIds() {
   const raw = String(process.env.ADMIN_IDS || '');
   if (raw === _adminIdsRaw && _adminIdsCache) return _adminIdsCache;
   _adminIdsRaw = raw;
-  _adminIdsCache = raw.split(',').map((id) => Number(id.trim())).filter(Number.isFinite);
+  _adminIdsCache = raw.split(',').map((id) => Number(id.trim())).filter(n => Number.isFinite(n) && n > 0);
   return _adminIdsCache;
 }
 

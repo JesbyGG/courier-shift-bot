@@ -7,11 +7,9 @@ module.exports = function setupCourier(bot, services) {
     finalizeReconciliationPostSend, saveMileageFromState,
     formatStage, formatMoneyRu, formatNoSheetMessage,
     notifyLogistsAboutSelfClearance, sendFunReaction,
-    getUserField, getPendingCash, setCashConfirmationStatus,
+    getUserField, setUserField, getPendingCash, setCashConfirmationStatus,
     clearPendingCashAndReminders, logCashAction,
     deleteUser,
-    addXp, getXpForAction, updateChallengeProgress, notifyChallengeCompleted, getNotificationSettings,
-    checkMilestoneAchievements, getAchievementStats, notifyAchievements,
     backToMainMenu,
     replaceTimeAction,
     WORKPLACE_FEATURES, sendCommandsList,
@@ -99,26 +97,13 @@ module.exports = function setupCourier(bot, services) {
         sent > 0
           ? `✅ Завершено. Отправлено фото: <b>${sent}</b>.`
           : '✅ Завершено. Фото не отправлены.',
-        getMenuForRole(ctx.from.id)
+        courierMainMenu(ctx.from.id)
       );
       return;
     }
-    addXp(ctx.from.id, getXpForAction('routeSheet'), 'Маршрутник');
     const curSheets = Number(getUserField(ctx.from.id, 'routeSheetsSubmitted') || 0);
     setUserField(ctx.from.id, 'routeSheetsSubmitted', curSheets + 1);
-    const routeChallengeCompleted = updateChallengeProgress(ctx.from.id, 'routeSheets');
-    for (const ch of routeChallengeCompleted) {
-      addXp(ctx.from.id, ch.reward, `Челлендж: ${ch.name}`);
-      if (getNotificationSettings(ctx.from.id).challengeCompleted) {
-        notifyChallengeCompleted(ctx, ctx.from.id, ch);
-      }
-    }
-    try {
-      const stats = getAchievementStats(ctx.from.id);
-      const unlocked = checkMilestoneAchievements(ctx.from.id, stats);
-      if (unlocked.length > 0) await notifyAchievements(ctx, ctx.from.id, unlocked);
-    } catch (_) {}
-    await ctx.replyWithHTML('✅ Завершено. Спасибо.', getMenuForRole(ctx.from.id));
+    await ctx.replyWithHTML('✅ Завершено. Спасибо.', courierMainMenu(ctx.from.id));
   });
 
   bot.action('cash_submit_yes', async (ctx) => {
@@ -144,21 +129,8 @@ module.exports = function setupCourier(bot, services) {
         courierId: String(telegramId), courierFio,
         workplace, amount, action: 'self_cleared'
       });
-      addXp(telegramId, getXpForAction('cashSubmit'), 'Сдача наличных');
       const curCash = Number(getUserField(telegramId, 'cashSubmits') || 0);
       setUserField(telegramId, 'cashSubmits', curCash + 1);
-      const cashChallengeCompleted = updateChallengeProgress(telegramId, 'cashSubmits');
-      for (const ch of cashChallengeCompleted) {
-        addXp(telegramId, ch.reward, `Челлендж: ${ch.name}`);
-        if (getNotificationSettings(telegramId).challengeCompleted) {
-          notifyChallengeCompleted(ctx, telegramId, ch);
-        }
-      }
-      try {
-        const stats = getAchievementStats(telegramId);
-        const unlocked = checkMilestoneAchievements(telegramId, stats);
-        if (unlocked.length > 0) await notifyAchievements(ctx, telegramId, unlocked);
-      } catch (_) {}
       try {
         await ctx.editMessageText(`✅ <b>${esc(courierFio)}</b>, сдача <code>${esc(formatted)}</code> ₽ подтверждена.`);
       } catch (e) { /* ignore */ }

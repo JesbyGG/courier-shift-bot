@@ -13,9 +13,14 @@ function _format(level, ...args) {
   return `${ts} [${level}] ${msg}\n`;
 }
 
+let _writeCount = 0;
+const CHECK_INTERVAL = 200;
+
 function _write(line) {
   try {
     fs.appendFileSync(logPath, line, 'utf8');
+    _writeCount++;
+    if (_writeCount % CHECK_INTERVAL !== 0) return;
     const stat = fs.statSync(logPath);
     if (stat.size > MAX_LOG_SIZE) {
       const content = fs.readFileSync(logPath, 'utf8');

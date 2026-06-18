@@ -10,8 +10,9 @@ function findLatestBackup() {
   if (!fs.existsSync(backupsDir)) return null;
   const files = fs.readdirSync(backupsDir)
     .filter(f => f.startsWith('database.sqlite-') && !f.endsWith('.shm') && !f.endsWith('.wal'))
-    .sort()
-    .reverse();
+    .map(f => ({ name: f, mtime: fs.statSync(path.join(backupsDir, f)).mtimeMs }))
+    .sort((a, b) => b.mtime - a.mtime)
+    .map(f => f.name);
   if (files.length === 0) return null;
   return path.join(backupsDir, files[0]);
 }
@@ -117,7 +118,6 @@ try {
 }
 
 // Initialize tables
-db.pragma('journal_mode = WAL');
 db.pragma('wal_autocheckpoint = 1000');
 db.pragma('synchronous = NORMAL');
 
@@ -132,10 +132,12 @@ db.exec(`
     data TEXT
   );
   
-  CREATE TABLE IF NOT EXISTS leaderboard (
-    telegramId TEXT PRIMARY KEY,
-    data TEXT
-  );
+  DROP TABLE IF EXISTS leaderboard;
+  DROP TABLE IF EXISTS daily_orders;
+  DROP TABLE IF EXISTS xp_log;
+  DROP TABLE IF EXISTS user_achievements;
+  DROP TABLE IF EXISTS challenges;
+  DROP TABLE IF EXISTS streaks;
 
   CREATE TABLE IF NOT EXISTS cash_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -162,48 +164,6 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_pending_cash_workplace ON pending_cash(workplace);
-
-  CREATE TABLE IF NOT EXISTS xp_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegramId TEXT,
-    amount INTEGER,
-    reason TEXT,
-    createdAt TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS user_achievements (
-    telegramId TEXT,
-    achievementId TEXT,
-    unlockedAt TEXT,
-    PRIMARY KEY (telegramId, achievementId)
-  );
-
-  CREATE TABLE IF NOT EXISTS challenges (
-    weekId TEXT,
-    telegramId TEXT,
-    type TEXT,
-    target INTEGER,
-    current INTEGER DEFAULT 0,
-    completed INTEGER DEFAULT 0,
-    reward INTEGER,
-    PRIMARY KEY (weekId, telegramId, type)
-  );
-
-  CREATE TABLE IF NOT EXISTS streaks (
-    telegramId TEXT PRIMARY KEY,
-    currentStreak INTEGER,
-    maxStreak INTEGER,
-    lastShiftDate TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS daily_orders (
-    telegramId TEXT,
-    date TEXT,
-    orders INTEGER,
-    PRIMARY KEY (telegramId, date)
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_daily_orders_date ON daily_orders(date);
 
   CREATE TABLE IF NOT EXISTS pending_sheet_updates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -254,9 +214,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_fwd_chat_msg ON forwarded_messages(chat_id, message_id);
   CREATE INDEX IF NOT EXISTS idx_fwd_thread ON forwarded_messages(thread_id);
 
-  CREATE INDEX IF NOT EXISTS idx_xp_log_telegramId_createdAt ON xp_log(telegramId, createdAt);
   CREATE INDEX IF NOT EXISTS idx_cash_audit_timestamp ON cash_audit(timestamp);
-  CREATE INDEX IF NOT EXISTS idx_daily_orders_telegramId_date ON daily_orders(telegramId, date);
 `);
 
 function checkpoint() {
@@ -331,9 +289,11 @@ function findForwardedMessage(chatId, messageId) {
 function cleanupOldThreads(days) {
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   try {
-    db.prepare(`DELETE FROM forwarded_messages WHERE created_at < ?`).run(cutoff);
-    db.prepare(`DELETE FROM message_threads WHERE created_at < ?`).run(cutoff);
-    console.log(`cleaned up threads older than ${days} days`);
+    const r1 = db.prepare(`DELETE FROM forwarded_messages WHERE created_at < ?`).run(cutoff);
+    const r2 = db.prepare(`DELETE FROM message_threads WHERE created_at < ?`).run(cutoff);
+    if (r1.changes + r2.changes > 0) {
+      console.log(`cleaned up ${r1.changes + r2.changes} thread record(s) older than ${days} days`);
+    }
   } catch (e) {
     console.error('cleanupOldThreads error:', e.message);
   }

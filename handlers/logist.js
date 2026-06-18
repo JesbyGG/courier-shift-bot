@@ -2,11 +2,9 @@ module.exports = function setupLogist(bot, services) {
   const {
     pokeCourier, showCashHistoryForDate,
     getReminder, updateReminder, deleteReminder,
-    getPendingCash, getUserField, getUserRole,
+    getPendingCash, getUserField, setUserField, getUserRole,
     logCashAction, clearPendingCashAndReminders,
     setCashConfirmationStatus,
-    addXp, getXpForAction, updateChallengeProgress, notifyChallengeCompleted, getNotificationSettings,
-    checkMilestoneAchievements, getAchievementStats, notifyAchievements,
     esc, formatMoneyRu, getMenuForRole,
     Markup, sendFunReaction
   } = services;
@@ -122,6 +120,11 @@ module.exports = function setupLogist(bot, services) {
     const shortId = ctx.match[1];
     await ctx.answerCbQuery();
 
+    if (getUserRole(String(ctx.from.id)) !== 'logist') {
+      await ctx.answerCbQuery('⛔ Только логист может подтверждать сдачу.', { show_alert: true });
+      return;
+    }
+
     const reminder = getReminder(shortId);
     if (!reminder) {
       try { await ctx.editMessageText('⚠️ Напоминание устарело.'); } catch (e) { /* ignore */ }
@@ -138,21 +141,8 @@ module.exports = function setupLogist(bot, services) {
       action: 'approved'
     });
 
-    addXp(reminder.courierId, getXpForAction('cashSubmit'), 'Сдача наличных (подтверждено)');
     const curCash1 = Number(getUserField(reminder.courierId, 'cashSubmits') || 0);
     setUserField(reminder.courierId, 'cashSubmits', curCash1 + 1);
-    const cashChallengeCompleted1 = updateChallengeProgress(reminder.courierId, 'cashSubmits');
-    for (const ch of cashChallengeCompleted1) {
-      addXp(reminder.courierId, ch.reward, `Челлендж: ${ch.name}`);
-      if (getNotificationSettings(reminder.courierId).challengeCompleted) {
-        notifyChallengeCompleted(ctx, reminder.courierId, ch);
-      }
-    }
-    try {
-      const stats = getAchievementStats(reminder.courierId);
-      const unlocked = checkMilestoneAchievements(reminder.courierId, stats);
-      if (unlocked.length > 0) await notifyAchievements(ctx, reminder.courierId, unlocked);
-    } catch (_) {}
 
     deleteReminder(shortId);
 
@@ -175,6 +165,11 @@ module.exports = function setupLogist(bot, services) {
   bot.action(/^decl_([0-9a-f]+)$/, async (ctx) => {
     const shortId = ctx.match[1];
     await ctx.answerCbQuery();
+
+    if (getUserRole(String(ctx.from.id)) !== 'logist') {
+      await ctx.answerCbQuery('⛔ Только логист может отклонять сдачу.', { show_alert: true });
+      return;
+    }
 
     const reminder = getReminder(shortId);
     if (!reminder) {
@@ -215,10 +210,10 @@ module.exports = function setupLogist(bot, services) {
 
   bot.action(/^sc_appr_(\d+)$/, async (ctx) => {
     const courierId = ctx.match[1];
-    await ctx.answerCbQuery('✅ Сдача подтверждена');
 
     const pendingCash = getPendingCash(courierId);
     if (!pendingCash || pendingCash.confirmationStatus !== 'awaiting') {
+      await ctx.answerCbQuery('⚠️ Уже обработано другим логистом.');
       try { await ctx.editMessageText('✅ Уже подтверждено другим логистом.'); } catch (e) { /* ignore */ }
       return;
     }
@@ -240,6 +235,8 @@ module.exports = function setupLogist(bot, services) {
       return;
     }
 
+    await ctx.answerCbQuery('✅ Сдача подтверждена');
+
     const courierFio = getUserField(courierId, 'fio') || 'Неизвестный';
     const amount = Number(pendingCash.amount || 0);
     const formatted = pendingCash.formatted || formatMoneyRu(amount);
@@ -249,21 +246,8 @@ module.exports = function setupLogist(bot, services) {
 
     clearPendingCashAndReminders(courierId);
 
-    addXp(courierId, getXpForAction('cashSubmit'), 'Сдача наличных (self-clearance)');
     const curCash2 = Number(getUserField(courierId, 'cashSubmits') || 0);
     setUserField(courierId, 'cashSubmits', curCash2 + 1);
-    const cashChallengeCompleted2 = updateChallengeProgress(courierId, 'cashSubmits');
-    for (const ch of cashChallengeCompleted2) {
-      addXp(courierId, ch.reward, `Челлендж: ${ch.name}`);
-      if (getNotificationSettings(courierId).challengeCompleted) {
-        notifyChallengeCompleted(ctx, courierId, ch);
-      }
-    }
-    try {
-      const stats = getAchievementStats(courierId);
-      const unlocked = checkMilestoneAchievements(courierId, stats);
-      if (unlocked.length > 0) await notifyAchievements(ctx, courierId, unlocked);
-    } catch (_) {}
 
     logCashAction({
       logistId, logistFio,
@@ -289,10 +273,10 @@ module.exports = function setupLogist(bot, services) {
 
   bot.action(/^sc_decl_(\d+)$/, async (ctx) => {
     const courierId = ctx.match[1];
-    await ctx.answerCbQuery('❌ Сдача отклонена');
 
     const pendingCash = getPendingCash(courierId);
     if (!pendingCash || pendingCash.confirmationStatus !== 'awaiting') {
+      await ctx.answerCbQuery('⚠️ Запрос уже обработан.');
       try { await ctx.editMessageText('⚠️ Запрос уже обработан.'); } catch (e) { /* ignore */ }
       return;
     }
@@ -312,6 +296,8 @@ module.exports = function setupLogist(bot, services) {
       await ctx.answerCbQuery('⛔ Вы не привязаны к этому магазину.');
       return;
     }
+
+    await ctx.answerCbQuery('❌ Сдача отклонена');
 
     setCashConfirmationStatus(courierId, null);
 

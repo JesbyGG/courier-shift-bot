@@ -15,7 +15,6 @@ module.exports = function setupTextRouter(bot, services) {
     reconciliationFlow,
     showPendingCashStatus,
     showIssuesMenu,
-    showLeaderboardMenu,
     handleSwitchUser,
     handleSheetsInfo,
     handleMyId,
@@ -49,22 +48,27 @@ module.exports = function setupTextRouter(bot, services) {
 
     // 2) State-based: пользователь сейчас что-то вводит
     { state: 'awaitingCarNumber', handler: async (ctx, s, text) => {
-      await saveCarNumber(ctx, text);
+      const result = await saveCarNumber(ctx, text);
+      if (result === 'done') await ctx.replyWithHTML('✅ Готово.', getMenuForRole(ctx.from.id));
     }},
     { state: 'awaitingWorkplace', handler: async (ctx, s, text) => {
-      await saveWorkplace(ctx, text);
+      const result = await saveWorkplace(ctx, text);
+      if (result === 'done') await ctx.replyWithHTML('✅ Готово.', getMenuForRole(ctx.from.id));
     }},
     { state: 'awaitingDevice', handler: async (ctx, s, text) => {
-      await saveDevice(ctx, text);
+      const result = await saveDevice(ctx, text);
+      if (result === 'done') await ctx.replyWithHTML('✅ Готово.', getMenuForRole(ctx.from.id));
     }},
     { state: 'awaitingFio', handler: (ctx, s, text) => authorizeFio(ctx, text) },
     { state: 'awaitingRoleChoice', handler: (ctx) => ctx.replyWithHTML('⚠️ Выберите роль кнопкой выше.', roleChoiceKeyboard()) },
     { state: 'awaitingManualTime', handler: async (ctx, state, text) => {
-      await handleManualTime(ctx, state, text);
+      const result = await handleManualTime(ctx, state, text);
+      if (result === 'done') await ctx.replyWithHTML('✅ Готово.', getMenuForRole(ctx.from.id));
     }},
     { state: 'awaitingUpdateEdit', handler: (ctx, state, text) => handleUpdateEditText(ctx, state, text) },
     { state: 'awaitingManualMileage', handler: async (ctx, state, text) => {
-      await handleManualMileageInput(ctx, state, text);
+      const result = await handleManualMileageInput(ctx, state, text);
+      if (result === 'done') await ctx.replyWithHTML('✅ Готово.', getMenuForRole(ctx.from.id));
     }},
 
     // 3) Кнопки главного меню
@@ -94,10 +98,6 @@ module.exports = function setupTextRouter(bot, services) {
       const res = await showIssuesMenu(ctx);
       if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
       else if (res.status === 'unavailable') await ctx.replyWithHTML('⚠️ Раздел «Проблема с заказом» временно недоступен.', getMenuForRole(ctx.from.id));
-    }},
-    { button: BUTTONS.leaderBoard, legacy: ['Лидерборд', '🏆 Лидерборд'], handler: async (ctx) => {
-      const res = await showLeaderboardMenu(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
     }},
     { button: BUTTONS.cashCollect, handler: async (ctx) => {
       const res = await showDebtorsList(ctx);

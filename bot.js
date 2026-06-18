@@ -73,12 +73,7 @@ const {
   shouldWarnAboutReconciliationOcr,
   recognizeReconciliationCash
 } = require('./services/reconciliationOcr');
-const { recordOrders: recordLeaderboardOrders, calculateLeaderboard, formatLeaderboard, checkNotifications: checkLeaderboardNotifications, getDayOrders: getLbDayOrders, getWorkplaceRecord, setWorkplaceRecord, getDailyTop3, findOvertakenCouriers, getTodayKey: getLbTodayKey, _getAllRecords } = require('./services/leaderboard');
-const { addXp, getTotalXp, formatRankInfo, getXpForAction } = require('./services/xp');
-const { getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements, formatAchievementsCard, formatShowcase, formatRarityGallery, formatTrophyCard, formatUnlockNotification, getRarityTier, RARITY_TIERS, RARITY_ORDER, CATEGORY_MAP } = require('./services/achievements');
-const { updateStreak, getStreak, getStreakBonusesDescription, formatStreakInfo } = require('./services/streak');
-const { updateChallengeProgress, generateWeeklyChallenges, getChallenges, cleanupOldChallenges, cleanupInvalidChallenges, notifyChallengeCompleted, formatProgressBar } = require('./services/challenges');
-const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, getCourierColumnsByDay, roundMinutesToHalfHour, roundTimeToHalfHour, isEmptyCell, isScheduleMarker } = require('./utils');
+const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, getCourierColumnsByDay, roundMinutesToHalfHour, roundTimeToHalfHour, isEmptyCell, isScheduleMarker, withTimeout } = require('./utils');
 const { registerSheetCommand } = require('./sheetCommand');
 const { WORKPLACES, DEVICES, ROLES, LIMITS, WORKPLACE_FEATURES, WORKPLACE_KEY_MAP, BUTTONS } = require('./config');
 const { isAdminUser, getAdminIds } = require('./services/auth');
@@ -152,9 +147,21 @@ function _getCurrentVersion() {
 }
 
 function _getSourceFiles() {
-  return fs.readdirSync(_sourceDir)
-    .filter((f) => f.endsWith('.js') && f !== 'version.js')
-    .sort();
+  const dirs = [
+    _sourceDir,
+    path.join(_sourceDir, 'services'),
+    path.join(_sourceDir, 'handlers'),
+    path.join(_sourceDir, 'menus')
+  ];
+  const files = [];
+  for (const dir of dirs) {
+    if (!fs.existsSync(dir)) continue;
+    const dirFiles = fs.readdirSync(dir)
+      .filter(f => f.endsWith('.js') && f !== 'version.js')
+      .map(f => path.relative(_sourceDir, path.join(dir, f)));
+    files.push(...dirFiles);
+  }
+  return files.sort();
 }
 
 function _computeSourceSnapshot() {
@@ -859,19 +866,6 @@ async function runBackupCycle() {
   await cleanOldBackups();
 }
 
-function withTimeout(promise, timeoutMs, label) {
-  let timer;
-
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`${label} timeout after ${timeoutMs}ms`)), timeoutMs);
-    })
-  ]).finally(() => {
-    if (timer) clearTimeout(timer);
-  });
-}
-
 function parseEnvList(value) {
   return String(value || '')
     .split(',')
@@ -1226,11 +1220,9 @@ bot.use(async (ctx, next) => {
     return next(); // Allow group messages to pass through to other handlers
   }
 
+  const originalReplyWithHTML = ctx.replyWithHTML.bind(ctx);
   ctx.replyWithHTML = async (htmlText, extra) => {
-    const chatId = ctx.chat?.id || ctx.from?.id;
-    const opts = { parse_mode: 'HTML', ...(extra || {}) };
-    delete opts.reply_to_message_id;
-    const response = await bot.telegram.sendMessage(chatId, htmlText, opts);
+    const response = await originalReplyWithHTML(htmlText, extra);
     await maybeSendFunReaction(ctx, htmlText);
     return response;
   };
@@ -1419,7 +1411,6 @@ function isMenuText(text) {
     BUTTONS.reconciliation,
     BUTTONS.cashCheck,
     BUTTONS.issues,
-    BUTTONS.leaderBoard,
     BUTTONS.settings,
     BUTTONS.help,
     BUTTONS.profile,
@@ -1514,7 +1505,7 @@ async function saveCarNumber(ctx, value) {
   }
 
   clearState(ctx.from.id);
-  await ctx.replyWithHTML(`✅ Номер машины сохранён: <code>${esc(carNumber)}</code>`, getMenuForRole(ctx.from.id));
+  await ctx.replyWithHTML(`✅ Номер машины сохранён: <code>${esc(carNumber)}</code>`);
   return 'done';
 }
 
@@ -1532,7 +1523,7 @@ async function saveWorkplace(ctx, value) {
 
   if (role === 'logist') {
     clearState(ctx.from.id);
-    await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`, getMenuForRole(ctx.from.id));
+    await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`);
     return 'done';
   }
 
@@ -1543,7 +1534,7 @@ async function saveWorkplace(ctx, value) {
   }
 
   clearState(ctx.from.id);
-  await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`, getMenuForRole(ctx.from.id));
+  await ctx.replyWithHTML(`✅ Магазин сохранён: <b>${esc(workplace)}</b>`);
   return 'done';
 }
 
@@ -1558,7 +1549,7 @@ async function saveDevice(ctx, value) {
   setUserField(ctx.from.id, 'device', device);
   clearState(ctx.from.id);
   console.log('устройство сохранено');
-  await ctx.replyWithHTML(`✅ Устройство сохранено: <b>${esc(device)}</b>`, getMenuForRole(ctx.from.id));
+  await ctx.replyWithHTML(`✅ Устройство сохранено: <b>${esc(device)}</b>`);
   return 'done';
 }
 
@@ -1641,7 +1632,7 @@ async function authorizeFio(ctx, fio) {
       }
       if (auto === 'логист') {
         setUserField(telegramId, 'role', 'logist');
-        await ctx.replyWithHTML('📦 <b>Логист</b>.\n\nТеперь выберите ваш магазин.', getMenuForRole(telegramId));
+        await ctx.replyWithHTML('📦 <b>Логист</b>.\n\nТеперь выберите ваш магазин.', logistMainMenu(telegramId));
         await askForWorkplace(ctx, employee.fio);
         return;
       }
@@ -1655,7 +1646,7 @@ async function authorizeFio(ctx, fio) {
     if (workplace === 'ИМ Восток') {
       if (auto === 'логист') {
         setUserField(telegramId, 'role', 'logist');
-        await ctx.replyWithHTML('📦 <b>Логист</b>.\n\nТеперь выберите ваш магазин.', getMenuForRole(telegramId));
+        await ctx.replyWithHTML('📦 <b>Логист</b>.\n\nТеперь выберите ваш магазин.', logistMainMenu(telegramId));
         await askForWorkplace(ctx, employee.fio);
         return;
       }
@@ -1723,33 +1714,10 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       setShiftStatus(telegramId, 'time', currentTimeStatus === 'start' || currentTimeStatus === 'both' ? 'both' : 'end');
     }
 
-    const xpKey = result.stage === 'start' ? 'punchStart' : 'punchEnd';
-    const xpLabel = result.stage === 'start' ? 'Старт' : 'Конец';
-    addXp(telegramId, getXpForAction(xpKey), `${xpLabel} смены`);
-    const todayIso = new Date().toISOString().split('T')[0];
-    const streak = updateStreak(telegramId, todayIso);
-    if (streak.bonuses && streak.bonuses.length > 0) {
-      for (const b of streak.bonuses) {
-        addXp(telegramId, b.xp, `Бонус за стрик ${b.threshold} смен`);
-      }
-    }
-    // Считаем количество смен
     if (result.stage === 'start') {
       const cur = Number(getUserField(telegramId, 'shiftCount') || 0);
       setUserField(telegramId, 'shiftCount', cur + 1);
-      const challengeCompleted = updateChallengeProgress(telegramId, 'shifts');
-      for (const ch of challengeCompleted) {
-        addXp(telegramId, ch.reward, `Челлендж: ${ch.name}`);
-        if (getNotificationSettings(telegramId).challengeCompleted) {
-          notifyChallengeCompleted(ctx, telegramId, ch);
-        }
-      }
     }
-    try {
-      const stats = getAchievementStats(telegramId);
-      const unlocked = checkMilestoneAchievements(telegramId, stats);
-      if (unlocked.length > 0) await notifyAchievements(ctx, telegramId, unlocked);
-    } catch (_) {}
 
     const icon = result.stage === 'start' ? '🟢' : '🔴';
     const label = result.stage === 'start' ? 'Старт' : 'Конец';
@@ -1768,17 +1736,9 @@ async function punchTimeFlow(ctx, explicitStage = null) {
     await ctx.replyWithHTML(
       `${icon} <b>${label} смены</b>: <code>${esc(result.timeValue)}</code>\n\n` +
       `<i>Если время неверное — нажмите «Изменить время».</i>`,
-      {
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '✏️ Изменить время', callback_data: 'edit_time' }],
-            [{ text: '❌ Закрыть', callback_data: 'close_message' }]
-          ],
-          remove_keyboard: true
-        }
-      }
+      timeChangeKeyboard()
     );
+    await ctx.replyWithHTML('✅', getMenuForRole(telegramId));
 
     if (result.stage === 'start') {
       const pendingCash = getPendingCash(telegramId);
@@ -1994,8 +1954,7 @@ async function sendHelp(ctx) {
     `5️⃣ <b>Отправить сверку</b> — «${BUTTONS.reconciliation}» Терминал — 2 фото, Пин-Панель — 1 фото.\n` +
     `6️⃣ <b>Сдать наличные</b> — «${BUTTONS.cashCheck}» показать сумму к сдаче и подтвердить.\n` +
     `7️⃣ <b>Проблема с заказом</b> — «${BUTTONS.issues}» ссылки для решения проблем с заказами.\n` +
-    `8️⃣ <b>Рейтинг</b> — «${BUTTONS.leaderBoard}» рейтинг курьеров по заказам.\n` +
-    `9️⃣ <b>Настройки</b> — «${BUTTONS.settings}» номер машины, магазин, устройство, сотрудник.\n\n` +
+    `8️⃣ <b>Настройки</b> — «${BUTTONS.settings}» номер машины, магазин, устройство, сотрудник.\n\n` +
     '📋 Команды:',
     Markup.inlineKeyboard([
       [Markup.button.callback('📋 Команды', 'help_commands')],
@@ -2048,7 +2007,6 @@ async function sendCommandsList(ctx) {
       `📊 <b>Сверки</b> — фото терминала/пин-панели\n` +
       `💵 <b>Наличные</b> — сумма к сдаче\n` +
       `⚠️ <b>Проблема</b> — решить проблему с заказом\n` +
-      `🏆 <b>Лидерборд</b> — рейтинг курьеров\n` +
       `⚙️ <b>Настройки</b> — машина, магазин, устройство, сотрудник`;
   }
 
@@ -2120,7 +2078,7 @@ function buildUpdateHighlights(changedFiles = [], version, updates = []) {
     highlights.push('📸 Улучшено распознавание пробега.');
   }
 
-  if (includesAny(['achievements.js', 'xp.js', 'challenges.js', 'leaderboard.js', 'streak.js'])) {
+  if (includesAny(['achievements.js', 'xp.js', 'challenges.js', 'streak.js'])) {
     highlights.push('🏆 Обновлена система достижений и рейтинга.');
   }
 
@@ -2304,69 +2262,6 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
   }
 
   try {
-    if (state.stage === 'end') {
-      const startCell = getMileageStageCell(state, 'start');
-
-      if (startCell) {
-        const sheetContext = resolveSheetInfo(startCell.workplace);
-        if (!sheetContext.sheetId) {
-          await replyFn(formatNoSheetMessage({
-            noSheet: true,
-            noSheetForMonth: sheetContext.noSheetForMonth,
-            monthKey: sheetContext.monthKey
-          }, startCell.workplace));
-          return;
-        }
-
-        const startRaw = await readCell(startCell.sheetName, startCell.cell, sheetContext.sheetId);
-        const startValue = parseMileageNumber(startRaw);
-        const maxDelta = getMaxShiftMileageDelta();
-
-        if (startValue && mileageValue < startValue) {
-          await replyFn(
-            `❌ Пробег конца смены не может быть меньше старта.\n` +
-            `Старт: <code>${startValue}</code> км\n` +
-            `Введено: <code>${mileageValue}</code> км`
-          );
-          return;
-        }
-
-        if (startValue && (mileageValue - startValue) > maxDelta) {
-          await replyFn(
-            `❌ Слишком большой прирост пробега за смену.\n` +
-            `Старт: <code>${startValue}</code> км\n` +
-            `Введено: <code>${mileageValue}</code> км\n` +
-            `Максимум за смену: <code>${maxDelta}</code> км`
-          );
-          return;
-        }
-      }
-    }
-
-    if (state.stage === 'start') {
-      const prevEndMileage = await findPreviousEndMileage(state);
-      if (prevEndMileage && mileageValue < prevEndMileage) {
-        const restored = tryRestoreMissingDigit(mileageValue, prevEndMileage);
-        if (restored && restored > mileageValue && restored >= prevEndMileage) {
-          await replyFn(
-            `⚠️ <b>Пробег скорректирован</b>\n` +
-            `Распознано: <code>${mileageValue}</code> км\n` +
-            `Восстановлено: <code>${restored}</code> км (добавлена потерянная цифра)\n` +
-            `Предыдущий конец: <code>${prevEndMileage}</code> км`
-          );
-          mileageValue = restored;
-        } else {
-          await replyFn(
-            `❌ Пробег начала смены не может быть меньше предыдущего конечного.\n` +
-            `Предыдущий конец: <code>${prevEndMileage}</code> км\n` +
-            `Введено: <code>${mileageValue}</code> км\n\n` +
-            `Проверьте фото и отправьте заново.`
-          );
-          return;
-        }
-      }
-    }
-
     await updateMileage(state.mileageRow, state.day, state.stage, mileageValue, state.workplace);
     console.log('пробег записан');
     const currentMileageStatus = getShiftStatus(telegramId, 'mileage');
@@ -2375,21 +2270,8 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
     } else {
       setShiftStatus(telegramId, 'mileage', currentMileageStatus === 'start' || currentMileageStatus === 'both' ? 'both' : 'end');
     }
-    addXp(telegramId, getXpForAction('mileage'), 'Запись пробега');
     const curMileage = Number(getUserField(telegramId, 'mileageRecords') || 0);
     setUserField(telegramId, 'mileageRecords', curMileage + 1);
-    const mileageChallengeCompleted = updateChallengeProgress(telegramId, 'mileages');
-    for (const ch of mileageChallengeCompleted) {
-      addXp(telegramId, ch.reward, `Челлендж: ${ch.name}`);
-      if (getNotificationSettings(telegramId).challengeCompleted) {
-        notifyChallengeCompleted(ctx, telegramId, ch);
-      }
-    }
-    try {
-      const stats = getAchievementStats(telegramId);
-      const unlocked = checkMilestoneAchievements(telegramId, stats);
-      if (unlocked.length > 0) await notifyAchievements(ctx, telegramId, unlocked);
-    } catch (_) {}
     logOcrFeedback(telegramId, state.ocrValue || null, mileageValue, sourceBuffer, {
       stage: state.stage,
       workplace: state.workplace,
@@ -2406,16 +2288,9 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
     });
     await replyFn(
       `✅ <b>Пробег сохранён</b>: <code>${mileageValue}</code> км\n\nЕсли неверно — нажмите «Изменить пробег».`,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '✏️ Изменить пробег', callback_data: 'edit_mileage' }],
-            [{ text: '❌ Закрыть', callback_data: 'close_message' }]
-          ],
-          remove_keyboard: true
-        }
-      }
+      mileageSavedKeyboard()
     );
+    await replyFn('✅', getMenuForRole(telegramId));
   } catch (error) {
     console.error('ошибка Google Sheets', error);
     await replyFn('⚠️ Не удалось записать пробег.\nПопробуйте ещё раз или обратитесь к администратору.');
@@ -2596,456 +2471,6 @@ async function backToMainMenu(ctx) {
   return { status: 'back_to_menu', message };
 }
 
-async function showLeaderboardMenu(ctx) {
-  if (isLogist(ctx.from.id)) {
-    return { status: 'access_denied' };
-  }
-  // Сразу показываем рейтинг за неделю
-  await showLeaderboardResult(ctx, 7, 'sum');
-  return { status: 'showing_leaderboard' };
-}
-
-async function showTrophyRoom(ctx) {
-  const telegramId = ctx.from.id;
-  const text = formatShowcase(telegramId);
-
-  const buttons = [
-    [Markup.button.callback('👑 Легенды', 'ach_rarity_diamond'),
-     Markup.button.callback('💎 Платина', 'ach_rarity_platinum'),
-     Markup.button.callback('🥇 Золото', 'ach_rarity_gold')],
-    [Markup.button.callback('🥈 Серебро', 'ach_rarity_silver'),
-     Markup.button.callback('🥉 Бронза', 'ach_rarity_bronze')],
-    [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
-  ];
-
-  try {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
-  } catch (e) {
-    if (!e.message?.includes('message is not modified')) throw e;
-  }
-}
-
-async function showRarityGallery(ctx, tierKey) {
-  const telegramId = ctx.from.id;
-  const text = formatRarityGallery(telegramId, tierKey);
-
-  try {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-      [Markup.button.callback('⬅️ Назад в витрину', 'ach_back_showcase')]
-    ]) });
-  } catch (e) {
-    if (!e.message?.includes('message is not modified')) throw e;
-  }
-}
-
-async function showTrophyCard(ctx, achievementId, backCallback) {
-  const telegramId = ctx.from.id;
-  const text = formatTrophyCard(telegramId, achievementId);
-
-  try {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-      [Markup.button.callback('⬅️ Назад', backCallback || 'ach_back_showcase')]
-    ]) });
-  } catch (e) {
-    if (!e.message?.includes('message is not modified')) throw e;
-  }
-}
-
-async function showAchievementsCategory(ctx, category) {
-  const telegramId = ctx.from.id;
-  const text = formatAchievementsCard(telegramId, category);
-
-  try {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-      [Markup.button.callback('⬅️ Назад в витрину', 'ach_back_showcase')]
-    ]) });
-  } catch (e) {
-    if (!e.message?.includes('message is not modified')) throw e;
-  }
-}
-
-async function showMyProgress(ctx) {
-  const telegramId = ctx.from.id;
-  const profile = getFullProfile(telegramId);
-  const xp = getTotalXp(telegramId);
-  const rankInfo = formatRankInfo(telegramId, profile.courierType);
-  const streakInfo = formatStreakInfo(telegramId);
-
-  let text = '📈 <b>Мой прогресс</b>\n\n';
-  text += `👤 <b>${esc(profile.fio || 'Курьер')}</b>\n`;
-  text += `🚗 Тип: ${profile.courierType === 'pedestrian' ? '🚶 Пеший' : '🚗 Авто'}\n\n`;
-  text += `⭐ ${rankInfo}\n\n`;
-  text += `${streakInfo}\n`;
-  text += `💰 Всего XP: ${xp.toLocaleString('ru-RU')}\n`;
-
-  await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-    [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
-  ]) });
-}
-
-async function showXpInfo(ctx) {
-  const text =
-    '❓ <b>Как работает XP</b>\n\n' +
-    'За каждое действие вы получаете очки опыта (XP):\n\n' +
-    '⏱ Начало/конец смены — <b>15 XP</b>\n' +
-    '📄 Маршрутник — <b>30 XP</b>\n' +
-    '📊 Сверка — <b>50 XP</b>\n' +
-    '💵 Сдача наличных — <b>80 XP</b>\n' +
-    '🚗 Пробег — <b>30 XP</b>\n\n' +
-    '🏆 <b>Бонусы:</b>\n' +
-    'Топ-10 дня — <b>150 XP</b>\n' +
-    'Топ-3 дня — <b>300 XP</b>\n' +
-    '🥇 1-е место — <b>800 XP</b>\n\n' +
-    '🔥 <b>Стрик:</b> каждые 5 смен подряд — <b>+50 XP</b>\n\n' +
-    'С накоплением XP растёт ваш ранг — от Новичка до Короля рейтинга! 👑';
-
-  await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-    [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
-  ]) });
-}
-
-async function showNotificationSettings(ctx) {
-  const telegramId = ctx.from.id;
-  const settings = getNotificationSettings(telegramId);
-
-  // Проверяем группы
-  const personalOn = settings.personalRecord && settings.workplaceRecord && settings.challengeCompleted;
-  const rankingOn = settings.overtake && settings.dailyLeader;
-
-  const toggleGroup = (isOn, label, callback) => {
-    return Markup.button.callback(`${isOn ? '✅' : '❌'} ${label}`, callback);
-  };
-
-  await ctx.editMessageText(
-    '🔔 <b>Настройки уведомлений</b>\n\n' +
-    'Группы уведомлений:\n\n' +
-    '🏆 <b>Личные рекорды</b> — личный рекорд, рекорд точки, выполнение челленджа\n' +
-    '📊 <b>Рейтинг</b> — обгоны, лидер дня\n\n' +
-    '✅ — включено, ❌ — выключено',
-    { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-      [toggleGroup(personalOn, 'Личные рекорды', 'notif_personal')],
-      [toggleGroup(rankingOn, 'Рейтинг', 'notif_ranking')],
-      [Markup.button.callback('🌟 Включить всё', 'notif_all_on'), Markup.button.callback('❌ Выключить всё', 'notif_all_off')],
-      [Markup.button.callback('⬅️ Назад к рейтингу', 'lb_back_menu')]
-    ]) }
-  );
-}
-
-async function showWeeklyChallenges(ctx) {
-  const telegramId = ctx.from.id;
-  const profile = getFullProfile(telegramId);
-  generateWeeklyChallenges(telegramId, profile.courierType);
-  const challenges = getChallenges(telegramId);
-
-  let text = '🔥 <b>Челленджи недели</b>\n\n';
-  if (challenges.length === 0) {
-    text += 'Пока нет активных челленджей. Приходите в понедельник!\n';
-  } else {
-    for (const ch of challenges) {
-      const status = ch.completed ? '✅ Выполнено' : `⏳ ${ch.current} / ${ch.target}`;
-      let progressLine = '';
-      if (!ch.completed) {
-        const bar = formatProgressBar(ch.current, ch.target);
-        progressLine = `\n  ${bar}`;
-      }
-      text += `• <b>${ch.name}</b>\n  ${ch.desc}${progressLine}\n  Награда: <b>${ch.reward} XP</b> — ${status}\n\n`;
-    }
-  }
-  text += '<i>Челленджи обновляются каждый понедельник.</i>';
-
-  await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([
-    [Markup.button.callback('⬅️ Назад', 'lb_back_menu')]
-  ]) });
-}
-
-async function showLeaderboardResult(ctx, periodDays = 7, mode = 'sum') {
-  const telegramId = ctx.from.id;
-  setState(telegramId, { ...getState(telegramId), lb_period: periodDays, lb_mode: mode });
-
-  const profile = getFullProfile(telegramId);
-  const courierType = profile?.courierType || 'auto';
-  const workplace = profile?.workplace || 'ИМ Восток';
-
-  const entries = calculateLeaderboard(mode, periodDays, workplace, courierType);
-
-  const typeLabel = courierType === 'pedestrian' ? 'Пеших курьеров' : 'Авто-курьеров';
-  const periodLabel = periodDays === 0 ? 'Всё время' : periodDays === 1 ? 'День' : 'Неделя';
-  const modeLabel = mode === 'max' ? '🔥 Лучший день' : '';
-
-  const lines = [`🏆 <b>Рейтинг ${typeLabel}</b>\n🏬 ${esc(workplace)} | 📅 ${periodLabel}${modeLabel ? ' | ' + modeLabel : ''}\n`];
-  lines.push(formatLeaderboard(entries, telegramId, false));
-  if (entries.length === 0) {
-    lines.push('\n<i>Пока нет данных за выбранный период.</i>');
-  }
-
-  const buttons = [];
-  const dayBtn = Markup.button.callback(periodDays === 1 ? '✅ День' : '📅 День', 'lb_p_day');
-  const weekBtn = Markup.button.callback(periodDays === 7 ? '✅ Неделя' : '📅 Неделя', 'lb_p_week');
-  const allBtn = Markup.button.callback(periodDays === 0 ? '✅ Всё время' : '📅 Всё время', 'lb_p_alltime');
-  buttons.push([dayBtn, weekBtn, allBtn]);
-
-  if (periodDays === 0) {
-    const maxBtn = Markup.button.callback(mode === 'max' ? '✅ Лучший день' : '🔥 Лучший день', 'lb_alltime_max');
-    const sumBtn = Markup.button.callback(mode === 'sum' ? '✅ По сумме' : '📊 По сумме', 'lb_p_alltime');
-    buttons.push([sumBtn, maxBtn]);
-  }
-
-  buttons.push([
-    Markup.button.callback('🔥 Челленджи', 'lb_challenges'),
-    Markup.button.callback('🏆 Достижения', 'lb_achievements')
-  ]);
-  buttons.push([
-    Markup.button.callback('📈 Мой прогресс', 'lb_progress'),
-    Markup.button.callback('🔔 Уведомления', 'lb_notifications')
-  ]);
-  buttons.push([
-    Markup.button.callback('❌ Закрыть', 'close_message')
-  ]);
-
-  if (ctx.callbackQuery) {
-    await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
-  } else {
-    await ctx.replyWithHTML(lines.join('\n'), Markup.inlineKeyboard(buttons));
-  }
-}
-
-async function handleLeaderboardNotifications(ctx, telegramId, fio, workplace, ordersCount, oldOrders = 0) {
-  try {
-    // Защита от спама: уведомления только при увеличении счёта
-    if (ordersCount <= oldOrders) return;
-
-    const settings = getNotificationSettings(telegramId);
-    const dayKey = getLbTodayKey();
-
-    // Сохраняем предыдущий топ-3 до обновления
-    const previousTop3 = workplace ? getDailyTop3(workplace, dayKey) : [];
-
-    // 1. Личный рекорд
-    if (settings.personalRecord) {
-      const notifications = checkLeaderboardNotifications(telegramId, fio, workplace, ordersCount);
-      for (const notif of notifications) {
-        if (notif.type === 'personal_record') {
-          await ctx.replyWithHTML(
-            `🎉 <b>Новый личный рекорд!</b>\n\nВы доставили <b>${notif.value}</b> заказов за день!` +
-            (notif.previous > 0 ? `\nПредыдущий рекорд: ${notif.previous} заказов.` : '')
-          );
-        }
-      }
-    }
-
-    // 2. Обгоны в рейтинге
-    if (settings.overtake && workplace) {
-      const overtaken = findOvertakenCouriers(telegramId, workplace, oldOrders, ordersCount, dayKey)
-        .filter(v => getUserRole(v.telegramId) !== 'logist');
-
-      for (const victim of overtaken) {
-        const victimSettings = getNotificationSettings(victim.telegramId);
-        if (!victimSettings.overtake) continue;
-        try {
-          await bot.telegram.sendMessage(victim.telegramId,
-            `⚠️ <b>Вас обогнали в рейтинге!</b>\n\n` +
-            `${esc(fio)} доставил <b>${ordersCount}</b> заказов и обогнал вас.\n` +
-            `У вас сейчас <b>${victim.orders}</b> заказов.\n` +
-            `🏬 ${esc(workplace)}`,
-            { parse_mode: 'HTML' }
-          );
-        } catch (e) {
-          console.error('overtaken notify error', victim.telegramId, e.message || e);
-        }
-      }
-
-      if (overtaken.length > 0) {
-        const names = overtaken.map(v => `${esc(v.fio)} (${v.orders})`).join(', ');
-        try {
-          await ctx.replyWithHTML(
-            `🎉 <b>Вы обогнали в рейтинге!</b>\n\n${names}\n\nТеперь у вас <b>${ordersCount}</b> заказов.`
-          );
-        } catch (e) {
-          console.error('overtaken self notify error', e.message || e);
-        }
-      }
-    }
-
-    // 3. Рекорд точки + лидер дня + топ-3
-    if (workplace) {
-      const currentTop3 = getDailyTop3(workplace, dayKey);
-
-      // Получаем предыдущий рекорд точки для проверки
-      const previousRecord = getWorkplaceRecord(workplace, dayKey);
-      const wasRecord = !previousRecord || ordersCount > previousRecord.orders;
-
-      if (wasRecord && settings.workplaceRecord) {
-        setWorkplaceRecord(workplace, dayKey, ordersCount, fio);
-        await sendWorkplaceRecordNotifications(workplace, dayKey, { fio, orders: ordersCount }, telegramId);
-      }
-
-      // Лидер дня
-      if (currentTop3[0] && currentTop3[0].telegramId === String(telegramId)) {
-        await sendDailyLeaderNotification(workplace, dayKey, currentTop3[0]);
-        // Обновляем счётчик топ-1 если ещё не был сегодня
-        const today = new Date().toISOString().slice(0, 10);
-        const lastTop1Date = getUserField(telegramId, 'top1Date');
-        if (lastTop1Date !== today) {
-          setUserField(telegramId, 'top1Date', today);
-          if (!getUserField(telegramId, 'top1Day')) {
-            setUserField(telegramId, 'top1Day', true);
-          }
-          const curTop1 = Number(getUserField(telegramId, 'top1Count') || 0);
-          setUserField(telegramId, 'top1Count', curTop1 + 1);
-          try {
-            const stats = getAchievementStats(telegramId);
-            const unlocked = checkMilestoneAchievements(telegramId, stats);
-            if (unlocked.length > 0) await notifyAchievements(ctx, telegramId, unlocked);
-          } catch (_) {}
-        }
-      }
-
-      // Проверка сброса с 1-го места
-      if (previousRecord && previousRecord.fio !== fio && currentTop3[0] && currentTop3[0].telegramId === String(telegramId)) {
-        // Найти бывшего лидера по workplace records
-        const allIds = getAllUserIds();
-        for (const id of allIds) {
-          if (id === String(telegramId)) continue;
-          const userFio = getUserField(id, 'fio');
-          if (userFio === previousRecord.fio) {
-            const victimSettings = getNotificationSettings(id);
-            if (victimSettings.dailyLeader) {
-              try {
-                await bot.telegram.sendMessage(id,
-                  `📉 <b>Вас сбросили с 1-го места!</b>\n\n` +
-                  `${esc(fio)} обогнал вас с <b>${ordersCount}</b> заказами.\n` +
-                  `У вас сейчас — посмотрите свою сверку.`,
-                  { parse_mode: 'HTML' }
-                );
-              } catch (e) {
-                console.error('leader dethroned notify error', id, e.message || e);
-              }
-            }
-            break;
-          }
-        }
-      }
-
-      // Топ-3 изменился
-      if (settings.top3Change) {
-        await sendTop3ChangeNotifications(workplace, dayKey, previousTop3, currentTop3, telegramId);
-      }
-    }
-  } catch (err) {
-    console.error('leaderboard notification error', err.message || err);
-  }
-}
-
-function getNotificationSettings(telegramId) {
-  const defaults = {
-    personalRecord: true,
-    overtake: true,
-    workplaceRecord: true,
-    dailyLeader: true,
-    top3Change: true,
-    challengeCompleted: true
-  };
-  const record = getUserField(telegramId, 'notificationSettings');
-  if (!record) return defaults;
-  try {
-    const parsed = typeof record === 'string' ? JSON.parse(record) : record;
-    return { ...defaults, ...parsed };
-  } catch (e) {
-    return defaults;
-  }
-}
-
-async function sendWorkplaceRecordNotifications(workplace, dayKey, recordInfo, senderId) {
-  const settings = getNotificationSettings(senderId);
-  if (!settings.workplaceRecord) return;
-
-  const records = getDailyTop3(workplace, dayKey);
-  if (records.length === 0) return;
-
-  const record = getWorkplaceRecord(workplace, dayKey);
-  if (!record) return;
-
-  let text = `🏆 <b>Новый рекорд точки ${esc(workplace)}!</b>\n\n`;
-  text += `🥇 <b>${esc(record.fio)}</b> — <b>${record.orders}</b> заказов (новый рекорд!)\n`;
-  if (records[1]) text += `🥈 ${esc(records[1].fio)} — ${records[1].orders} заказов\n`;
-  if (records[2]) text += `🥉 ${esc(records[2].fio)} — ${records[2].orders} заказов\n`;
-  text += `\n🔥 Рекорд растёт! Продолжайте в том же духе!`;
-
-  const all = getAllUserIds();
-  for (const id of all) {
-    if (id === String(senderId)) continue;
-    const role = getUserRole(id);
-    if (role === 'logist') continue;
-    const wp = getUserField(id, 'workplace');
-    if (wp !== workplace) continue;
-    const userSettings = getNotificationSettings(id);
-    if (!userSettings.workplaceRecord) continue;
-    try {
-      await bot.telegram.sendMessage(id, text, { parse_mode: 'HTML' });
-    } catch (e) {
-      console.error('workplace record notify error', id, e.message || e);
-    }
-  }
-}
-
-async function sendDailyLeaderNotification(workplace, dayKey, leader) {
-  const settings = getNotificationSettings(leader.telegramId);
-  if (!settings.dailyLeader) return;
-
-  try {
-    await bot.telegram.sendMessage(leader.telegramId,
-      `🥇 <b>Вы лидер дня в ${esc(workplace)}!</b>\n\n` +
-      `<b>${leader.orders}</b> заказов. Так держать!`,
-      { parse_mode: 'HTML' }
-    );
-  } catch (e) {
-    console.error('daily leader notify error', leader.telegramId, e.message || e);
-  }
-}
-
-async function sendTop3ChangeNotifications(workplace, dayKey, previousTop3, currentTop3, senderId) {
-  const changed = JSON.stringify(previousTop3.map(x => x.telegramId).sort()) !== JSON.stringify(currentTop3.map(x => x.telegramId).sort());
-  if (!changed) return;
-
-  let text = `🔔 <b>Топ-3 ${esc(workplace)} изменился!</b>\n\n`;
-  if (currentTop3[0]) text += `🥇 ${esc(currentTop3[0].fio)} — ${currentTop3[0].orders}\n`;
-  if (currentTop3[1]) text += `🥈 ${esc(currentTop3[1].fio)} — ${currentTop3[1].orders}\n`;
-  if (currentTop3[2]) text += `🥉 ${esc(currentTop3[2].fio)} — ${currentTop3[2].orders}\n`;
-
-  const all = getAllUserIds();
-  for (const id of all) {
-    if (id === String(senderId)) continue;
-    const role = getUserRole(id);
-    if (role === 'logist') continue;
-    const wp = getUserField(id, 'workplace');
-    if (wp !== workplace) continue;
-    const settings = getNotificationSettings(id);
-    if (!settings.top3Change) continue;
-
-    // Найти позицию получателя
-    const recipientEntry = currentTop3.find(x => x.telegramId === id);
-    if (recipientEntry) {
-      text += `\n🏅 Вы на ${recipientEntry.rank || '?'} месте!`;
-    } else {
-      const allRecords = [];
-      for (const [tid, r] of Object.entries(_getAllRecords())) {
-        if (r.workplace === workplace && r.dailyOrders && r.dailyOrders[dayKey]) {
-          allRecords.push({ telegramId: tid, orders: r.dailyOrders[dayKey] });
-        }
-      }
-      allRecords.sort((a, b) => b.orders - a.orders);
-      const idx = allRecords.findIndex(x => x.telegramId === id);
-      if (idx >= 0) text += `\n📊 Вы на ${idx + 1} месте (${allRecords[idx].orders} заказов).`;
-    }
-
-    try {
-      await bot.telegram.sendMessage(id, text, { parse_mode: 'HTML' });
-    } catch (e) {
-      console.error('top3 change notify error', id, e.message || e);
-    }
-  }
-}
-
 async function showIssuesMenu(ctx) {
   if (isLogist(ctx.from.id)) {
     return { status: 'access_denied' };
@@ -3169,138 +2594,12 @@ function parseMileageNumber(value) {
   return number;
 }
 
-function getMaxShiftMileageDelta() {
-  const value = Number(process.env.OCR_MAX_SHIFT_DELTA || 800);
-  if (!Number.isFinite(value) || value < 0) return 800;
-  return value;
-}
-
-function tryRestoreMissingDigit(ocrValue, prevEndMileage) {
-  const ocrStr = String(ocrValue);
-  const prevStr = String(prevEndMileage);
-  const expectedLen = prevStr.length;
-  if (ocrStr.length >= expectedLen) return null;
-
-  const missingCount = expectedLen - ocrStr.length;
-  let bestMatch = null;
-  let bestDiff = Infinity;
-
-  function generateCandidates(str, remaining) {
-    if (remaining === 0) {
-      if (str.length === expectedLen) {
-        const val = parseInt(str, 10);
-        const diff = val - prevEndMileage;
-        if (diff >= 0 && diff < bestDiff) {
-          bestDiff = diff;
-          bestMatch = val;
-        }
-      }
-      return;
-    }
-    for (let pos = 0; pos <= str.length; pos++) {
-      for (let d = 0; d <= 9; d++) {
-        const next = str.slice(0, pos) + d + str.slice(pos);
-        if (next.length > expectedLen + remaining - 1) continue;
-        generateCandidates(next, remaining - 1);
-      }
-    }
-  }
-
-  generateCandidates(ocrStr, missingCount);
-
-  // If nothing >= prevEnd, allow within 500km below
-  if (!bestMatch) {
-    const minThreshold = Math.max(prevEndMileage - 500, 100);
-    bestDiff = Infinity;
-    function generateRelaxed(str, remaining) {
-      if (remaining === 0) {
-        if (str.length === expectedLen) {
-          const val = parseInt(str, 10);
-          if (val < minThreshold) return;
-          const diff = Math.abs(val - prevEndMileage);
-          if (diff < bestDiff) { bestDiff = diff; bestMatch = val; }
-        }
-        return;
-      }
-      for (let pos = 0; pos <= str.length; pos++) {
-        for (let d = 0; d <= 9; d++) {
-          const next = str.slice(0, pos) + d + str.slice(pos);
-          if (next.length > expectedLen + remaining - 1) continue;
-          generateRelaxed(next, remaining - 1);
-        }
-      }
-    }
-    generateRelaxed(ocrStr, missingCount);
-  }
-
-  return bestMatch;
-}
-
-async function findPreviousEndMileage(state) {
-  console.log('findPreviousEndMileage: starting', { day: state.day, fio: state.fio, row: state.mileageRow });
-  for (let d = state.day - 1; d >= 1; d--) {
-    const prevState = { ...state, day: d };
-    const endCell = getMileageStageCell(prevState, 'end');
-    if (!endCell) {
-      console.log('findPreviousEndMileage: no cell for day', d);
-      continue;
-    }
-    const sheetContext = resolveSheetInfo(endCell.workplace);
-    if (!sheetContext.sheetId) {
-      console.log('findPreviousEndMileage: no sheetId for day', d);
-      continue;
-    }
-    const raw = await readCell(endCell.sheetName, endCell.cell, sheetContext.sheetId);
-    console.log('findPreviousEndMileage: day', d, 'cell', endCell.cell, 'raw', raw);
-    if (!raw) continue;
-    const val = parseMileageNumber(raw);
-    if (val) {
-      console.log('findPreviousEndMileage: found', val, 'at day', d);
-      return val;
-    }
-  }
-  console.log('findPreviousEndMileage: no previous end found');
-  return null;
-}
-
 async function buildMileageRecognitionOptions(state) {
-  const options = {
+  return {
     minMileage: getMinMileageThreshold(),
     maxMileage: null,
     stage: state?.stage || null
   };
-
-  if (state?.stage === 'end') {
-    try {
-      const startCell = getMileageStageCell(state, 'start');
-      if (startCell) {
-        const sheetContext = resolveSheetInfo(startCell.workplace);
-        if (sheetContext.sheetId) {
-          const startRaw = await readCell(startCell.sheetName, startCell.cell, sheetContext.sheetId);
-          const startMileage = parseMileageNumber(startRaw);
-          if (startMileage) {
-            options.maxMileage = startMileage + getMaxShiftMileageDelta();
-            options.startMileage = startMileage;
-            options.minMileage = Math.max(options.minMileage, startMileage);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('mileage recognition options error (stage=end)', error.message || error);
-    }
-  } else if (state?.stage === 'start') {
-    try {
-      const prevEndMileage = await findPreviousEndMileage(state);
-      if (prevEndMileage) {
-        options.minMileage = prevEndMileage;
-        options.prevEndMileage = prevEndMileage;
-      }
-    } catch (error) {
-      console.error('mileage recognition options error (stage=start)', error.message || error);
-    }
-  }
-
-  return options;
 }
 
 function getMileageColumnsForState(workplace, day) {
@@ -3334,150 +2633,6 @@ function getMileageStageCell(state, stage = state?.stage) {
 registerSheetCommand(bot, { esc, workplaces: WORKPLACES, isAdminUser });
 
 const _workplaceKeys = Object.values(WORKPLACE_KEY_MAP).concat(['all']).join('|');
-
-bot.action('lb_table', async (ctx) => {
-  await ctx.answerCbQuery();
-  await showLeaderboardResult(ctx, 7, 'sum');
-});
-
-bot.action('lb_challenges', async (ctx) => {
-  await ctx.answerCbQuery();
-  await showWeeklyChallenges(ctx);
-});
-
-bot.action('lb_achievements', async (ctx) => {
-  await ctx.answerCbQuery();
-  await showTrophyRoom(ctx);
-});
-
-// Достижения: категории
-for (const catKey of Object.keys(CATEGORY_MAP)) {
-  bot.action(`ach_cat_${catKey}`, async (ctx) => {
-    await ctx.answerCbQuery();
-    await showAchievementsCategory(ctx, catKey);
-  });
-}
-
-// Достижения: редкость
-for (const tierKey of RARITY_ORDER) {
-  bot.action(`ach_rarity_${tierKey}`, async (ctx) => {
-    await ctx.answerCbQuery();
-    await showRarityGallery(ctx, tierKey);
-  });
-}
-
-// Достижения: карточки
-for (const ach of getAllAchievements()) {
-  bot.action(`ach_trophy_${ach.id}`, async (ctx) => {
-    await ctx.answerCbQuery();
-    await showTrophyCard(ctx, ach.id, 'ach_back_showcase');
-  });
-}
-
-// Назад в витрину
-bot.action('ach_back_showcase', async (ctx) => {
-  await ctx.answerCbQuery();
-  await showTrophyRoom(ctx);
-});
-
-bot.action('lb_progress', async (ctx) => {
-  await ctx.answerCbQuery();
-  await showMyProgress(ctx);
-});
-
-bot.action('lb_xp_info', async (ctx) => {
-  await ctx.answerCbQuery();
-  await showXpInfo(ctx);
-});
-
-bot.action('lb_back_menu', async (ctx) => {
-  await ctx.answerCbQuery();
-  await showLeaderboardMenu(ctx);
-});
-
-bot.action('lb_notifications', async (ctx) => {
-  await ctx.answerCbQuery();
-  await showNotificationSettings(ctx);
-});
-
-// Групповые уведомления
-bot.action('notif_personal', async (ctx) => {
-  await ctx.answerCbQuery();
-  const telegramId = ctx.from.id;
-  const current = getNotificationSettings(telegramId);
-  const newValue = !(current.personalRecord && current.workplaceRecord && current.challengeCompleted);
-  current.personalRecord = newValue;
-  current.workplaceRecord = newValue;
-  current.challengeCompleted = newValue;
-  setUserField(telegramId, 'notificationSettings', JSON.stringify(current));
-  await showNotificationSettings(ctx);
-});
-
-bot.action('notif_ranking', async (ctx) => {
-  await ctx.answerCbQuery();
-  const telegramId = ctx.from.id;
-  const current = getNotificationSettings(telegramId);
-  const newValue = !(current.overtake && current.dailyLeader);
-  current.overtake = newValue;
-  current.dailyLeader = newValue;
-  setUserField(telegramId, 'notificationSettings', JSON.stringify(current));
-  await showNotificationSettings(ctx);
-});
-
-bot.action('notif_all_on', async (ctx) => {
-  await ctx.answerCbQuery();
-  const telegramId = ctx.from.id;
-  const current = getNotificationSettings(telegramId);
-  current.personalRecord = true;
-  current.workplaceRecord = true;
-  current.dailyLeader = true;
-  current.overtake = true;
-  current.challengeCompleted = true;
-  setUserField(telegramId, 'notificationSettings', JSON.stringify(current));
-  await showNotificationSettings(ctx);
-});
-
-bot.action('notif_all_off', async (ctx) => {
-  await ctx.answerCbQuery();
-  const telegramId = ctx.from.id;
-  const current = getNotificationSettings(telegramId);
-  current.personalRecord = false;
-  current.workplaceRecord = false;
-  current.dailyLeader = false;
-  current.overtake = false;
-  current.challengeCompleted = false;
-  setUserField(telegramId, 'notificationSettings', JSON.stringify(current));
-  await showNotificationSettings(ctx);
-});
-
-bot.action('lb_p_day', async (ctx) => {
-  await ctx.answerCbQuery();
-  const state = getState(ctx.from.id);
-  if (state?.lb_period === 1 && state?.lb_mode === 'sum') return;
-  await showLeaderboardResult(ctx, 1, 'sum');
-});
-
-bot.action('lb_p_week', async (ctx) => {
-  await ctx.answerCbQuery();
-  const state = getState(ctx.from.id);
-  if (state?.lb_period === 7 && state?.lb_mode === 'sum') return;
-  await showLeaderboardResult(ctx, 7, 'sum');
-});
-
-bot.action('lb_p_alltime', async (ctx) => {
-  await ctx.answerCbQuery();
-  const state = getState(ctx.from.id);
-  if (state?.lb_period === 0 && state?.lb_mode === 'sum') return;
-  await showLeaderboardResult(ctx, 0, 'sum');
-});
-
-bot.action('lb_alltime_max', async (ctx) => {
-  await ctx.answerCbQuery();
-  const state = getState(ctx.from.id);
-  if (state?.lb_period === 0 && state?.lb_mode === 'max') return;
-  await showLeaderboardResult(ctx, 0, 'max');
-});
-
 
 async function replaceMileageFlow(ctx, stage) {
   const profile = await ensureProfile(ctx);
@@ -3549,22 +2704,6 @@ async function handleRouteSheetPhoto(ctx, state, fileId) {
 async function finalizeReconciliationPostSend(ctx, state, telegramId, totalOrders) {
   const errors = [];
 
-  // Всегда начисляем XP и прогресс челленджа за отправку сверки
-  try {
-    addXp(telegramId, getXpForAction('reconciliation'), 'Сверка');
-    const curRec = Number(getUserField(telegramId, 'reconciliationsSubmitted') || 0);
-    setUserField(telegramId, 'reconciliationsSubmitted', curRec + 1);
-    const recChallengeCompleted = updateChallengeProgress(telegramId, 'reconciliations');
-    for (const ch of recChallengeCompleted) {
-      addXp(telegramId, ch.reward, `Челлендж: ${ch.name}`);
-      if (getNotificationSettings(telegramId).challengeCompleted) {
-        notifyChallengeCompleted(ctx, telegramId, ch);
-      }
-    }
-  } catch (lbErr) {
-    console.error('reconciliation xp/challenge error', lbErr.message || lbErr);
-  }
-
   if (totalOrders && totalOrders > 0 && state.fio && state.workplace) {
     const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
     const { day } = getCurrentDateInfo(timezone);
@@ -3581,27 +2720,6 @@ async function finalizeReconciliationPostSend(ctx, state, telegramId, totalOrder
       console.error('эффективность: ошибка записи', effError.message || effError);
       errors.push('заказы в таблицу эффективности');
     }
-
-    try {
-      const dayKey = getLbTodayKey();
-      const oldOrders = getLbDayOrders(String(telegramId), dayKey);
-      const profileLb = getFullProfile(telegramId);
-      recordLeaderboardOrders(String(telegramId), state.fio, state.workplace, totalOrders, profileLb.courierType);
-      await handleLeaderboardNotifications(ctx, String(telegramId), state.fio, state.workplace, totalOrders, oldOrders);
-    } catch (lbErr) {
-      console.error('leaderboard record error', lbErr.message || lbErr);
-      errors.push('рейтинг');
-    }
-  }
-
-  try {
-    const stats = getAchievementStats(telegramId);
-    const unlocked = checkMilestoneAchievements(telegramId, stats);
-    if (unlocked.length > 0) {
-      notifyAchievements(ctx, telegramId, unlocked);
-    }
-  } catch (achErr) {
-    console.error('achievement check error', achErr.message || achErr);
   }
 
   if (errors.length > 0) {
@@ -4009,7 +3127,7 @@ async function handleManualTime(ctx, state, text) {
     console.log('время изменено', state.stage);
     const icon = state.stage === 'start' ? '🟢' : '🔴';
     const label = state.stage === 'start' ? 'Старт' : 'Конец';
-    await ctx.replyWithHTML(`${icon} <b>${label} смены</b> изменён: <code>${esc(timeValue)}</code>`, getMenuForRole(telegramId));
+    await ctx.replyWithHTML(`${icon} <b>${label} смены</b> изменён: <code>${esc(timeValue)}</code>`);
     return 'done';
   } catch (error) {
     console.error('ошибка Google Sheets', error);
@@ -4030,7 +3148,8 @@ async function requireFio(ctx) {
 // ─── Хендлеры, вынесенные из bot.on('text') для читабельности ───
 
 async function handleSwitchUser(ctx, state, text, telegramId) {
-  setState(telegramId, { awaitingSwitchUser: true });
+  const id = telegramId || ctx.from.id;
+  setState(id, { awaitingSwitchUser: true });
   await ctx.replyWithHTML(
     '⚠️ <b>Смена сотрудника</b>\n\nВсе данные (ФИО, номер машины, магазин, устройство) будут удалены.\n\nВы уверены?',
     switchUserKeyboard()
@@ -4182,7 +3301,7 @@ async function shutdown(signal) {
 
   setTimeout(() => {
     console.log('forced exit after shutdown timeout');
-    process.exit(1);
+    process.exit(0);
   }, 5000);
 }
 
@@ -4257,7 +3376,6 @@ const services = {
   saveCarNumber, saveWorkplace, saveDevice, authorizeFio,
   handleManualTime, handleUpdateEditText, handleManualMileageInput,
   requireFio, roleChoiceKeyboard, getSettingsMenuForRole, getProfileMenuForRole,
-  getMenuForRole,
   // courier helpers
   formatNoSheetMessage, makeMileageState, applyProfile,
   replaceMileageFlow, replaceTimeAction,
@@ -4271,22 +3389,14 @@ const services = {
   // logist helpers
   pokeCourier, showCashHistoryForDate,
   // common business
-  getPendingCash, setCashConfirmationStatus, clearPendingCashAndReminders,
+  getPendingCash, setUserField, setCashConfirmationStatus, clearPendingCashAndReminders,
   logCashAction, deleteUser,
-  addXp, getXpForAction, updateChallengeProgress, getNotificationSettings,
   saveOcrDebugImage, updateOcrDebugStatus,
-  recordLeaderboardOrders, getLbDayOrders, getLbTodayKey,
   getFullProfile,
   getReminder, updateReminder, deleteReminder, getSelfClearanceRequest,
   findLogistsForWorkplace, getDebtors, cleanupStaleReminders, getCashHistory,
   WORKPLACE_FEATURES,
   Markup, BUTTONS, getCurrentDateInfo,
-  // leaderboard & achievements
-  calculateLeaderboard, formatLeaderboard, getDailyTop3, findOvertakenCouriers,
-  checkNotifications: checkLeaderboardNotifications, getWorkplaceRecord, setWorkplaceRecord,
-  getUnlockedAchievements, getAllAchievements, checkMilestoneAchievements, getAchievementStats, notifyAchievements, formatAchievementsCard, formatShowcase, formatRarityGallery, formatTrophyCard, formatUnlockNotification, CATEGORY_MAP,
-  updateStreak, getStreak, getStreakBonusesDescription, formatStreakInfo,
-  getChallenges, generateWeeklyChallenges, cleanupOldChallenges, notifyChallengeCompleted,
   // sheets & ocr
   readCell, updateCell, flushSheetUpdates,
   db, checkpoint, saveThread, findThreadByGroupMessage, findThreadById, saveForwardedMessage, findForwardedMessage, cleanupOldThreads,
@@ -4301,140 +3411,8 @@ const services = {
   updateCourierTime, updateMileage,
   // misc
   openShopNotify,
-  showLeaderboardMenu, showWeeklyChallenges, showTrophyRoom,
-  showMyProgress, showXpInfo, showNotificationSettings, sendCommandsList
+  sendCommandsList
 };
-
-function sendMenuAfterAction(ctx, text) {
-  return ctx.replyWithHTML(text, getMenuForRole(ctx.from.id));
-}
-
-bot.action(/^menu_/, async (ctx) => {
-  await ctx.answerCbQuery();
-  const action = ctx.match[0];
-  const id = ctx.from.id;
-
-  switch (action) {
-    case 'menu_time': {
-      const res = await punchTimeFlow(ctx);
-      break;
-    }
-    case 'menu_mileage': {
-      const res = await mileageFlow(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(id));
-      else if (res.status === 'pedestrian_no_mileage') await ctx.replyWithHTML('🚶 Пешим курьерам пробег не требуется.', getMenuForRole(id));
-      else if (res.status === 'not_found') await ctx.replyWithHTML(formatNoSheetMessage(res.result, res.workplace));
-      else if (res.status === 'error') await ctx.replyWithHTML('⚠️ Не удалось подготовить запись пробега.\nПопробуйте ещё раз или обратитесь к администратору.', getMenuForRole(id));
-      break;
-    }
-    case 'menu_route': {
-      const res = await routeSheetFlow(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(id));
-      break;
-    }
-    case 'menu_reconciliation': {
-      const res = await reconciliationFlow(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(id));
-      break;
-    }
-    case 'menu_cash': {
-      const res = await showPendingCashStatus(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(id));
-      else if (res.status === 'no_debt') await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы.', getMenuForRole(id));
-      else if (res.status === 'already_submitted') await ctx.replyWithHTML('⏳ Вы уже отметили сдачу. Ожидайте подтверждения логиста.', getMenuForRole(id));
-      break;
-    }
-    case 'menu_issues': {
-      const res = await showIssuesMenu(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(id));
-      else if (res.status === 'unavailable') await ctx.replyWithHTML('⚠️ Раздел «Проблема с заказом» временно недоступен.', getMenuForRole(id));
-      break;
-    }
-    case 'menu_leaderboard': {
-      const res = await showLeaderboardMenu(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(id));
-      break;
-    }
-    case 'menu_settings': {
-      await ctx.replyWithHTML('⚙️ <b>Настройки</b>', getSettingsMenuForRole(id));
-      break;
-    }
-    case 'menu_profile': {
-      await ctx.replyWithHTML('✏️ <b>Профиль</b>', getProfileMenuForRole(id));
-      break;
-    }
-    case 'menu_back': {
-      const res = await backToMainMenu(ctx);
-      if (res.status === 'mileage_processing') await ctx.replyWithHTML('📸 Обработка фото пробега продолжается... результат придёт в новый чат.', getMenuForRole(id));
-      else if (res.status === 'back_to_menu') await ctx.replyWithHTML(res.message, getMenuForRole(id));
-      break;
-    }
-    case 'menu_back_settings': {
-      await ctx.replyWithHTML('⚙️ <b>Настройки</b>', getSettingsMenuForRole(id));
-      break;
-    }
-    case 'menu_change_car': {
-      if (isLogist(id)) {
-        await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(id));
-        return;
-      }
-      const fio = await requireFio(ctx);
-      if (fio) await askForCarNumber(ctx, fio);
-      break;
-    }
-    case 'menu_change_workplace': {
-      const fio = await requireFio(ctx);
-      if (fio) await askForWorkplace(ctx, fio);
-      break;
-    }
-    case 'menu_change_device': {
-      if (isLogist(id)) {
-        await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(id));
-        return;
-      }
-      const fio = await requireFio(ctx);
-      if (fio) await askForDevice(ctx, fio);
-      break;
-    }
-    case 'menu_switch_user': {
-      await handleSwitchUser(ctx);
-      break;
-    }
-    case 'menu_help': {
-      await sendHelp(ctx);
-      break;
-    }
-    case 'menu_my_id': {
-      await handleMyId(ctx);
-      break;
-    }
-    case 'menu_sheets': {
-      await handleSheetsInfo(ctx);
-      break;
-    }
-    case 'menu_cash_collect': {
-      const res = await showDebtorsList(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(id));
-      else if (res.status === 'no_workplace') await ctx.replyWithHTML('⚠️ Сначала выберите магазин в настройках.', getMenuForRole(id));
-      else if (res.status === 'no_cash_collection') await ctx.replyWithHTML('❌ В этом магазине приём наличных не предусмотрен.', getMenuForRole(id));
-      else if (res.status === 'no_debt') await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы.', getMenuForRole(id));
-      break;
-    }
-    case 'menu_cash_history': {
-      const res = await showHistoryDatePicker(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(id));
-      else if (res.status === 'no_cash_collection') await ctx.replyWithHTML('❌ В этом магазине приём наличных не предусмотрен.', getMenuForRole(id));
-      break;
-    }
-    case 'menu_open_shop': {
-      const res = await openShopNotify(ctx);
-      if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(id));
-      else if (res.status === 'no_workplace') await ctx.replyWithHTML('⚠️ Сначала выберите магазин в настройках.', getMenuForRole(id));
-      else if (res.status === 'ok') await ctx.replyWithHTML(`✅ Уведомление отправлено: <b>${esc(res.workplace)} — ОТКРЫТ</b> ✅`, getMenuForRole(id));
-      break;
-    }
-  }
-});
 
 setupCommands(bot, services);
 setupAdmin(bot, services);
@@ -4456,27 +3434,6 @@ async function startBot(retry = 0) {
     const removedMonths = cleanupOldMonths();
     if (removedMonths) {
       console.log('cleaned up old month(s) from storage');
-    }
-    cleanupOldChallenges();
-    cleanupInvalidChallenges();
-
-    // Автоматическая генерация челленджей для всех курьеров
-    try {
-      const allIds = getAllUserIds();
-      let generated = 0;
-      for (const id of allIds) {
-        const role = getUserRole(id);
-        if (role !== 'courier') continue;
-        const profile = getFullProfile(id);
-        if (!profile.courierType) continue;
-        generateWeeklyChallenges(id, profile.courierType);
-        generated++;
-      }
-      if (generated > 0) {
-        console.log(`weekly challenges generated for ${generated} couriers`);
-      }
-    } catch (e) {
-      console.error('weekly challenges generation error', e.message);
     }
 
     // ВАЖНО: в Telegraf 4 у bot.launch() нет коллбэка после старта — он
