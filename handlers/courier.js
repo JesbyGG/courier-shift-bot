@@ -256,8 +256,8 @@ module.exports = function setupCourier(bot, services) {
     await ctx.replyWithHTML(
       '⚠️ Пропустить пробег?\n──────────────────────\n\nПробег не будет записан в таблицу.',
       Markup.inlineKeyboard([
-        [Markup.button.callback('✅ Да, пропустить', 'confirm_skip_mileage')],
-        [Markup.button.callback('❌ Отмена', 'cancel_skip_mileage')]
+        [styledButton('✅ Да, пропустить', 'confirm_skip_mileage', 'success')],
+        [styledButton('❌ Отмена', 'cancel_skip_mileage', 'danger')]
       ])
     );
   });

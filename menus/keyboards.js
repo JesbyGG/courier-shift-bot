@@ -9,37 +9,44 @@ const {
   getShiftStatus
 } = require('../services/storage');
 const { isAdminUser } = require('../services/auth');
+const { styledButton, styledReplyButton } = require('../utils');
 
 function getTimeButtonLabel(telegramId) {
   const status = getShiftStatus(telegramId, 'time');
-  if (status === 'none') return BUTTONS.punchTimeStart;
-  if (status === 'start') return BUTTONS.punchTimeEnd;
-  return BUTTONS.punchTimeReplace;
+  if (status === 'none') return styledReplyButton(BUTTONS.punchTimeStart, 'success');
+  if (status === 'start') return styledReplyButton(BUTTONS.punchTimeEnd, 'danger');
+  return styledReplyButton(BUTTONS.punchTimeReplace, 'primary');
 }
 
 function getMileageButtonLabel(telegramId) {
   const status = getShiftStatus(telegramId, 'mileage');
-  if (status === 'none') return BUTTONS.mileageStart;
-  if (status === 'start') return BUTTONS.mileageEnd;
-  return BUTTONS.mileageReplace;
+  if (status === 'none') return styledReplyButton(BUTTONS.mileageStart, 'success');
+  if (status === 'start') return styledReplyButton(BUTTONS.mileageEnd, 'danger');
+  return styledReplyButton(BUTTONS.mileageReplace, 'primary');
+}
+
+function getButtonText(btn) {
+  return typeof btn === 'object' ? btn.text : btn;
 }
 
 function isTimeButton(text) {
+  const t = getButtonText(text);
   return [
     BUTTONS.punchTime,
     BUTTONS.punchTimeStart,
     BUTTONS.punchTimeEnd,
     BUTTONS.punchTimeReplace
-  ].includes(text);
+  ].includes(t);
 }
 
 function isMileageButton(text) {
+  const t = getButtonText(text);
   return [
     BUTTONS.mileage,
     BUTTONS.mileageStart,
     BUTTONS.mileageEnd,
     BUTTONS.mileageReplace
-  ].includes(text);
+  ].includes(t);
 }
 
 function courierMainMenu(telegramId) {
@@ -154,93 +161,93 @@ function getProfileMenuForRole(telegramId) {
 
 function roleChoiceKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('👤 Курьер', 'role_courier')],
-    [Markup.button.callback('📦 Логист', 'role_logist')]
+    [styledButton('👤 Курьер', 'role_courier', 'primary')],
+    [styledButton('📦 Логист', 'role_logist', 'primary')]
   ]);
 }
 
 function skipMileageKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('✏️ Ввести вручную', 'edit_mileage')],
+    [styledButton('✏️ Ввести вручную', 'edit_mileage', 'primary')],
     [
-      Markup.button.callback('⏭️ Пропустить', 'skip_mileage'),
-      Markup.button.callback('❌ Закрыть', 'close_message')
+      styledButton('⏭️ Пропустить', 'skip_mileage'),
+      styledButton('❌ Закрыть', 'close_message', 'danger')
     ]
   ]);
 }
 
 function mileageConfirmKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('📷 Загрузить фото повторно', 'retry_mileage_photo')],
-    [Markup.button.callback('✏️ Ввести вручную', 'edit_mileage')],
+    [styledButton('📷 Загрузить фото повторно', 'retry_mileage_photo', 'primary')],
+    [styledButton('✏️ Ввести вручную', 'edit_mileage', 'primary')],
     [
-      Markup.button.callback('⏭️ Пропустить', 'skip_mileage'),
-      Markup.button.callback('❌ Закрыть', 'close_message')
+      styledButton('⏭️ Пропустить', 'skip_mileage'),
+      styledButton('❌ Закрыть', 'close_message', 'danger')
     ]
   ]);
 }
 
 function mileageSavedKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('✏️ Изменить пробег', 'edit_mileage')],
-    [Markup.button.callback('❌ Закрыть', 'close_message')]
+    [styledButton('✏️ Изменить пробег', 'edit_mileage', 'primary')],
+    [styledButton('❌ Закрыть', 'close_message', 'danger')]
   ]);
 }
 
 function routeSheetKeyboard() {
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback('✅ Завершить', 'route_sheet_done'),
-      Markup.button.callback('❌ Закрыть', 'close_message')
+      styledButton('✅ Завершить', 'route_sheet_done', 'success'),
+      styledButton('❌ Закрыть', 'close_message', 'danger')
     ]
   ]);
 }
 
 function manualMileageKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('📷 Загрузить фото повторно', 'retry_mileage_photo')],
+    [styledButton('📷 Загрузить фото повторно', 'retry_mileage_photo', 'primary')],
     [
-      Markup.button.callback('⏭️ Пропустить', 'skip_mileage'),
-      Markup.button.callback('❌ Закрыть', 'close_message')
+      styledButton('⏭️ Пропустить', 'skip_mileage'),
+      styledButton('❌ Закрыть', 'close_message', 'danger')
     ]
   ]);
 }
 
 function replaceKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('🟢 Изменить начало', 'replace_start')],
-    [Markup.button.callback('🔴 Изменить конец', 'replace_end')],
-    [Markup.button.callback('❌ Отмена', 'close_message')]
+    [styledButton('🟢 Изменить начало', 'replace_start', 'success')],
+    [styledButton('🔴 Изменить конец', 'replace_end', 'danger')],
+    [styledButton('❌ Отмена', 'close_message', 'danger')]
   ]);
 }
 
 function timeChangeKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('✏️ Изменить время', 'edit_time')],
-    [Markup.button.callback('❌ Закрыть', 'close_message')]
+    [styledButton('✏️ Изменить время', 'edit_time', 'primary')],
+    [styledButton('❌ Закрыть', 'close_message', 'danger')]
   ]);
 }
 
 function mileageReplaceKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('🟢 Изменить пробег начала', 'replace_mileage_start')],
-    [Markup.button.callback('🔴 Изменить пробег конца', 'replace_mileage_end')],
-    [Markup.button.callback('❌ Отмена', 'close_message')]
+    [styledButton('🟢 Изменить пробег начала', 'replace_mileage_start', 'success')],
+    [styledButton('🔴 Изменить пробег конца', 'replace_mileage_end', 'danger')],
+    [styledButton('❌ Отмена', 'close_message', 'danger')]
   ]);
 }
 
 function switchUserKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('✅ Да, сменить', 'confirm_switch_user')],
-    [Markup.button.callback('❌ Отмена', 'close_message')]
+    [styledButton('✅ Да, сменить', 'confirm_switch_user', 'success')],
+    [styledButton('❌ Отмена', 'close_message', 'danger')]
   ]);
 }
 
 function cashSubmitConfirmKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('✅ Да, сдал', 'cash_submit_yes')],
-    [Markup.button.callback('❌ Нет, не сдал', 'cash_submit_no')],
-    [Markup.button.callback('❌ Закрыть', 'close_message')]
+    [styledButton('✅ Да, сдал', 'cash_submit_yes', 'success')],
+    [styledButton('❌ Нет, не сдал', 'cash_submit_no', 'danger')],
+    [styledButton('❌ Закрыть', 'close_message', 'danger')]
   ]);
 }
 
@@ -257,12 +264,12 @@ function debtorListKeyboard(debtors, logistWorkplace) {
     if (selfClearance) {
       label = `👤 ${debtor.fio} — ${selfClearance.formatted || selfClearance.amount} ₽ ⏳`;
     }
-    buttons.push([Markup.button.callback(label, `d_${debtor.telegramId}`)]);
+    buttons.push([styledButton(label, `d_${debtor.telegramId}`)]);
   }
   if (buttons.length === 0) {
     return null;
   }
-  buttons.push([Markup.button.callback('❌ Закрыть', 'close_message')]);
+  buttons.push([styledButton('❌ Закрыть', 'close_message', 'danger')]);
   return Markup.inlineKeyboard(buttons);
 }
 
@@ -279,6 +286,7 @@ module.exports = {
   getProfileMenuForRole,
   getTimeButtonLabel,
   getMileageButtonLabel,
+  getButtonText,
   isTimeButton,
   isMileageButton,
   roleChoiceKeyboard,

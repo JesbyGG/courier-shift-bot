@@ -51,7 +51,7 @@ module.exports = function setupLogist(bot, services) {
           parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [
-              [Markup.button.callback('✅ Сдал', `c_${shortId}`)]
+              [styledButton('✅ Сдал', `c_${shortId}`, 'success')]
             ]
           }
         }
@@ -103,10 +103,10 @@ module.exports = function setupLogist(bot, services) {
         {
           parse_mode: 'HTML',
           reply_markup: {
-            inline_keyboard: [
-              [Markup.button.callback('✅ Подтвердить', `appr_${shortId}`)],
-              [Markup.button.callback('❌ Отклонить', `decl_${shortId}`)]
-            ]
+              inline_keyboard: [
+                [{ text: '✅ Подтвердить', callback_data: `appr_${shortId}`, style: 'success' }],
+                [{ text: '❌ Отклонить', callback_data: `decl_${shortId}`, style: 'danger' }]
+              ]
           }
         }
       );
@@ -198,7 +198,7 @@ module.exports = function setupLogist(bot, services) {
           parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [
-              [Markup.button.callback('✅ Сдал', `c_${shortId}`)]
+              [{ text: '✅ Сдал', callback_data: `c_${shortId}`, style: 'success' }]
             ]
           }
         }

@@ -71,7 +71,7 @@ const {
   recognizeReconciliationCashSafe,
   shouldWarnAboutReconciliationOcr
 } = require('./services/reconciliationOcr');
-const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, getCourierColumnsByDay, roundMinutesToHalfHour, roundTimeToHalfHour, isEmptyCell, isScheduleMarker, withTimeout } = require('./utils');
+const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, getCourierColumnsByDay, roundMinutesToHalfHour, roundTimeToHalfHour, isEmptyCell, isScheduleMarker, withTimeout, styledButton } = require('./utils');
 const { registerSheetCommand } = require('./sheetCommand');
 const { WORKPLACES, DEVICES, ROLES, LIMITS, WORKPLACE_FEATURES, WORKPLACE_KEY_MAP, BUTTONS } = require('./config');
 const { isAdminUser, getAdminIds } = require('./services/auth');
@@ -419,8 +419,8 @@ async function pokeCourier(ctx, courierId) {
       `⏳ ${esc(courierRecord.fio)} уже отметил сдачу\n\n` +
       `Ожидает подтверждения: <code>${esc(selfClearance.formatted || String(selfClearance.amount))}</code> ₽`,
       Markup.inlineKeyboard([
-        [Markup.button.callback('✅ Подтвердить', `sc_appr_${courierId}`)],
-        [Markup.button.callback('❌ Отклонить', `sc_decl_${courierId}`)]
+        [styledButton('✅ Подтвердить', `sc_appr_${courierId}`, 'success')],
+        [styledButton('❌ Отклонить', `sc_decl_${courierId}`, 'danger')]
       ])
     );
     return;
@@ -478,8 +478,8 @@ async function pokeCourier(ctx, courierId) {
       parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
-          [Markup.button.callback('🏃 Уже бегу', `ack_${shortId}`)],
-          [Markup.button.callback('✅ Сдал', `c_${shortId}`)]
+          [{ text: '🏃 Уже бегу', callback_data: `ack_${shortId}`, style: 'primary' }],
+          [{ text: '✅ Сдал', callback_data: `c_${shortId}`, style: 'success' }]
         ]
       }
     });
@@ -527,9 +527,9 @@ async function showHistoryDatePicker(ctx) {
     const dateStr = d.toLocaleDateString('sv-SE', { timeZone: timezone });
     const dayLabel = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: timezone });
     const prefix = i === 0 ? '📅 ' : '';
-    buttons.push([Markup.button.callback(`${prefix}${dayLabel}`, `ch_${dateStr}`)]);
+    buttons.push([styledButton(`${prefix}${dayLabel}`, `ch_${dateStr}`, 'primary')]);
   }
-  buttons.push([Markup.button.callback('❌ Закрыть', 'close_message')]);
+  buttons.push([styledButton('❌ Закрыть', 'close_message', 'danger')]);
 
   await ctx.replyWithHTML('📋 История сборов\n──────────────────────\n\nВыберите дату:', Markup.inlineKeyboard(buttons));
   return { status: 'showing_history' };
@@ -606,8 +606,8 @@ async function notifyLogistsAboutSelfClearance(courierId, courierFio, amount, fo
   }
 
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('✅ Подтвердить', `sc_appr_${courierId}`)],
-    [Markup.button.callback('❌ Отклонить', `sc_decl_${courierId}`)]
+    [styledButton('✅ Подтвердить', `sc_appr_${courierId}`, 'success')],
+    [styledButton('❌ Отклонить', `sc_decl_${courierId}`, 'danger')]
   ]);
 
   for (const recipientId of allRecipientIds) {
@@ -1948,8 +1948,8 @@ async function sendHelp(ctx) {
     await ctx.replyWithHTML(
       logistHelp,
       Markup.inlineKeyboard([
-        [Markup.button.callback('📋 Команды', 'help_commands')],
-        [Markup.button.callback('❌ Закрыть', 'close_message')]
+        [styledButton('📋 Команды', 'help_commands', 'primary')],
+        [styledButton('❌ Закрыть', 'close_message', 'danger')]
       ])
     );
     return;
@@ -1969,8 +1969,8 @@ async function sendHelp(ctx) {
     `8️⃣ <b>Настройки</b> — «${BUTTONS.settings}» номер машины, магазин, устройство, сотрудник.\n\n` +
     '📋 Команды:',
     Markup.inlineKeyboard([
-      [Markup.button.callback('📋 Команды', 'help_commands')],
-      [Markup.button.callback('❌ Закрыть', 'close_message')]
+      [styledButton('📋 Команды', 'help_commands', 'primary')],
+      [styledButton('❌ Закрыть', 'close_message', 'danger')]
     ])
   );
 }
@@ -2212,10 +2212,10 @@ async function askAdminsAboutUpdate(version, changedFiles = [], updates = []) {
 
   const keyboard = Markup.inlineKeyboard([
     [
-      Markup.button.callback('✅ Отправить', `upd_send:${version}`),
-      Markup.button.callback('✏️ Изменить текст', `upd_edit:${version}`)
+      styledButton('✅ Отправить', `upd_send:${version}`, 'success'),
+      styledButton('✏️ Изменить текст', `upd_edit:${version}`, 'primary')
     ],
-    [Markup.button.callback('⏭️ Пропустить', `upd_skip:${version}`)]
+    [styledButton('⏭️ Пропустить', `upd_skip:${version}`)]
   ]);
 
   _pendingUpdates[version] = { changedFiles, updates, message };
@@ -2510,7 +2510,7 @@ async function showIssuesMenu(ctx) {
     return { status: 'unavailable' };
   }
 
-  buttons.push([Markup.button.callback('⬅️ Назад', 'issues_back')]);
+  buttons.push([styledButton('⬅️ Назад', 'issues_back')]);
 
   await ctx.replyWithHTML(
     '⚠️ <b>Проблема с заказом</b>\n\nВыберите чат для обращения:',
@@ -3183,7 +3183,7 @@ async function handleSheetsInfo(ctx, state, text, telegramId) {
       '⛔ У вас нет доступа к этому разделу.\n\n' +
       'Получите ваш Telegram ID и отправьте его администратору.',
       Markup.inlineKeyboard([
-        [Markup.button.callback('🆔 Получить мой ID', 'show_my_id')]
+        [styledButton('🆔 Получить мой ID', 'show_my_id', 'primary')]
       ])
     );
     return;
@@ -3252,10 +3252,10 @@ async function handleUpdateEditText(ctx, state, text) {
   savePendingUpdates();
   const keyboard = Markup.inlineKeyboard([
     [
-      Markup.button.callback('✅ Отправить', `upd_send:${editVersion}`),
-      Markup.button.callback('✏️ Изменить текст', `upd_edit:${editVersion}`)
+      styledButton('✅ Отправить', `upd_send:${editVersion}`, 'success'),
+      styledButton('✏️ Изменить текст', `upd_edit:${editVersion}`, 'primary')
     ],
-    [Markup.button.callback('⏭️ Пропустить', `upd_skip:${editVersion}`)]
+    [styledButton('⏭️ Пропустить', `upd_skip:${editVersion}`)]
   ]);
   await ctx.replyWithHTML('<b>Предпросмотр:</b>\n\n' + fullMessage, keyboard);
 }
@@ -3413,7 +3413,7 @@ const services = {
   getReminder, updateReminder, deleteReminder, getSelfClearanceRequest,
   findLogistsForWorkplace, getDebtors, cleanupStaleReminders, getCashHistory,
   WORKPLACE_FEATURES,
-  Markup, BUTTONS, getCurrentDateInfo,
+  Markup, BUTTONS, getCurrentDateInfo, styledButton,
   // sheets & ocr
   readCell, updateCell, flushSheetUpdates,
   db, checkpoint, saveThread, findThreadByGroupMessage, findThreadById, saveForwardedMessage, findForwardedMessage, cleanupOldThreads,

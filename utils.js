@@ -145,6 +145,18 @@ function withTimeout(promise, timeoutMs, label) {
   });
 }
 
+function styledButton(text, callbackData, style) {
+  const btn = { text, callback_data: callbackData };
+  if (style) btn.style = style;
+  return btn;
+}
+
+function styledReplyButton(text, style) {
+  const btn = { text };
+  if (style) btn.style = style;
+  return btn;
+}
+
 module.exports = {
   normalizeFio,
   normalizeFioWords,
@@ -156,5 +168,7 @@ module.exports = {
   getCurrentDateInfo,
   isEmptyCell,
   isScheduleMarker,
-  withTimeout
+  withTimeout,
+  styledButton,
+  styledReplyButton
 };
