@@ -1231,6 +1231,39 @@ bot.use(async (ctx, next) => {
   await next();
 });
 
+// ===== Delete previous bot message on navigation button press =====
+const userLastBotMessage = new Map();
+const CRITICAL_BUTTON_TEXTS = [
+  BUTTONS.punchTimeStart, BUTTONS.punchTimeEnd, BUTTONS.punchTimeReplace,
+  BUTTONS.mileageStart, BUTTONS.mileageEnd, BUTTONS.mileageReplace,
+  BUTTONS.cashCheck, BUTTONS.cashCollect
+];
+
+bot.use(async (ctx, next) => {
+  if (ctx.chat?.type !== 'private') return next();
+
+  const id = ctx.from.id;
+  const text = ctx.message?.text?.trim();
+  if (!text) return next();
+
+  const isCritical = CRITICAL_BUTTON_TEXTS.some(b => text === b || text.startsWith(b));
+  if (isCritical) return next();
+
+  const lastMsgId = userLastBotMessage.get(id);
+  if (lastMsgId) {
+    try { await ctx.telegram.deleteMessage(ctx.chat.id, lastMsgId); } catch {}
+  }
+
+  const originalReply = ctx.replyWithHTML.bind(ctx);
+  ctx.replyWithHTML = async (htmlText, extra) => {
+    const msg = await originalReply(htmlText, extra);
+    userLastBotMessage.set(id, msg.message_id);
+    return msg;
+  };
+
+  await next();
+});
+
 bot.on('sticker', async (ctx) => {
   const sticker = ctx.message?.sticker;
   if (!sticker?.file_id) return;
