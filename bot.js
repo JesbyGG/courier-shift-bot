@@ -1231,14 +1231,23 @@ bot.use(async (ctx, next) => {
   await next();
 });
 
-// ===== Combo delete: user message + previous bot message =====
+// ===== Combo delete: user message + previous bot message (navigation only) =====
 const userLastBotMessage = new Map();
+const CRITICAL_BUTTON_TEXTS = [
+  BUTTONS.punchTimeStart, BUTTONS.punchTimeEnd, BUTTONS.punchTimeReplace,
+  BUTTONS.mileageStart, BUTTONS.mileageEnd, BUTTONS.mileageReplace,
+  BUTTONS.cashCheck, BUTTONS.cashCollect
+];
 
 bot.use(async (ctx, next) => {
   if (ctx.chat?.type !== 'private') return next();
   if (!ctx.message?.text) return next();
 
   const id = ctx.from.id;
+  const text = ctx.message.text.trim();
+
+  const isCritical = CRITICAL_BUTTON_TEXTS.some(b => text === b || text.startsWith(b));
+  if (isCritical) return next();
 
   try { await ctx.deleteMessage(); } catch {}
 
@@ -1249,7 +1258,19 @@ bot.use(async (ctx, next) => {
 
   const originalReply = ctx.replyWithHTML.bind(ctx);
   ctx.replyWithHTML = async (htmlText, extra) => {
-    const msg = await originalReply(htmlText, extra);
+    let finalExtra = extra;
+    const hasRemove = extra?.reply_markup?.remove_keyboard;
+    if (!hasRemove) {
+      const menuMarkup = getMenuForRole(id);
+      if (menuMarkup?.reply_markup) {
+        const extraRM = extra?.reply_markup || {};
+        finalExtra = {
+          ...(extra || {}),
+          reply_markup: { ...extraRM, ...menuMarkup.reply_markup }
+        };
+      }
+    }
+    const msg = await originalReply(htmlText, finalExtra);
     userLastBotMessage.set(id, msg.message_id);
     return msg;
   };
