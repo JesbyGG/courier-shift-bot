@@ -58,7 +58,8 @@ function courierMainMenu(telegramId) {
   const rows = [];
 
   if (courierType !== 'pedestrian') {
-    rows.push([timeBtn, mileageBtn]);
+    rows.push([timeBtn]);
+    rows.push([mileageBtn]);
   } else {
     rows.push([timeBtn]);
   }
