@@ -88,7 +88,7 @@ module.exports = function setupTextRouter(bot, services) {
       const res = await reconciliationFlow(ctx);
       if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
     }},
-    { button: BUTTONS.cashCheck, legacy: ['Сдать наличные', 'Деньги к сдаче', '💵 Наличные'], handler: async (ctx) => {
+    { button: BUTTONS.cashCheck, match: (text) => typeof text === 'string' && text.startsWith(BUTTONS.cashCheck), legacy: ['Сдать наличные', 'Деньги к сдаче', '💵 Наличные'], handler: async (ctx) => {
       const res = await showPendingCashStatus(ctx);
       if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
       else if (res.status === 'no_debt') await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы', getMenuForRole(ctx.from.id));
