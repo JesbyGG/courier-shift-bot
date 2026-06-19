@@ -91,6 +91,7 @@ async function recognizeReconciliationCash(ctx, fileId) {
     if (isGeminiOcrEnabled()) {
       const geminiText = await recognizeTextWithGemini(imageBuffer);
       if (geminiText) {
+        console.log('сверка OCR raw text:', geminiText);
         const parsed = extractCashFromGemini(geminiText);
         console.log('сверка OCR:', JSON.stringify({ cashValid: parsed.valid, cashReason: parsed.reason, cashAmount: parsed.amount, totalOrders: parsed.totalOrders, source: 'gemini' }));
         return { ...parsed, source: 'gemini' };
