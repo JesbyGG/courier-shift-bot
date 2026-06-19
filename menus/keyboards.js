@@ -68,7 +68,10 @@ function courierMainMenu(telegramId) {
   const pendingCash = getPendingCash(telegramId);
   const hasCash = pendingCash && pendingCash.amount > 0 && pendingCash.confirmationStatus !== 'awaiting';
   if (hasCash) {
-    rows.push([styledReplyButton(BUTTONS.cashCheck, 'danger')]);
+    const cashText = pendingCash.formatted
+      ? `${BUTTONS.cashCheck} ${pendingCash.formatted}`
+      : BUTTONS.cashCheck;
+    rows.push([styledReplyButton(cashText, 'danger')]);
   }
 
   rows.push([BUTTONS.issues, BUTTONS.settings]);
