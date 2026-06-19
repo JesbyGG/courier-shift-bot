@@ -25,27 +25,64 @@ function extractCashFromGemini(text) {
     return { amount: 0, totalOrders: 0, valid: false, reason: 'empty_text' };
   }
 
+  const normalized = raw
+    .replace(/\u00A0/g, ' ')
+    .replace(/₽/g, ' ₽')
+    .replace(/\s+/g, ' ')
+    .trim();
+
   let amount = 0;
   let totalOrders = 0;
 
-  const cashMatch = raw.match(/CASH:\s*(\d+(?:[.,]\d+)?)/i);
-  if (cashMatch) {
-    amount = parseMoneyRu(cashMatch[1]) || 0;
+  const cashPatterns = [
+    /(?:CASH)\s*[:=]?\s*(\d[\d\s.,]*)/i,
+    /(?:налич[а-яa-z]*)\s+(\d{1,3})\s*\/\s*\d{1,3}\s+([\d\s.,]+)\s*₽/i,
+    /(?:налич[а-яa-z]*)\s+(\d{1,3})\s*\/\s*\d{1,3}\s+([\d\s.,]+)/i,
+    /(?:налич[а-яa-z]*)\s+([\d\s.,]+)\s*₽/i,
+    /(?:налич[а-яa-z]*)\s+([\d\s.,]+(?:\d))/i,
+  ];
+
+  for (const pattern of cashPatterns) {
+    const match = normalized.match(pattern);
+    if (match) {
+      const groups = match.length > 2 ? match : match;
+      if (groups.length >= 3) {
+        totalOrders = Number(String(groups[1]).replace(/\D/g, '')) || 0;
+        amount = parseMoneyRu(groups[2]) || 0;
+      } else {
+        amount = parseMoneyRu(groups[1]) || 0;
+      }
+      if (amount >= 1) break;
+    }
   }
 
-  const ordersMatch = raw.match(/ORDERS:\s*(\d+)/i);
-  if (ordersMatch) {
-    totalOrders = Number(ordersMatch[1]) || 0;
+  const ordersPatterns = [
+    /(?:ORDERS)\s*[:=]?\s*(\d+)/i,
+    /заказ[а-я]*\s+за\s+(?:сегодня|сутки)\s+(\d+)/i,
+  ];
+
+  for (const pattern of ordersPatterns) {
+    const match = normalized.match(pattern);
+    if (match) {
+      totalOrders = Number(match[1]) || 0;
+      break;
+    }
+  }
+
+  if (!totalOrders) {
+    const totalMatch = normalized.match(/за\s+(?:сегодня|сутки)\s+(?:на\s+сумму\s+[\d\s.,]+\s*₽\s*)?(\d+)/i);
+    if (totalMatch) {
+      totalOrders = Number(totalMatch[1]) || 0;
+    }
   }
 
   const hasAmount = amount >= 1;
-  const hasOrders = totalOrders > 0;
 
   return {
     amount: hasAmount ? amount : 0,
     totalOrders,
     valid: hasAmount,
-    reason: hasAmount ? 'ok' : (cashMatch ? 'amount_too_small' : 'no_cash_line')
+    reason: hasAmount ? 'ok' : 'no_cash_line'
   };
 }
 
