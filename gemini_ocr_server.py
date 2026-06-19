@@ -174,11 +174,12 @@ def recognize_with_gemini(image_bytes):
 
 def recognize_text_with_gemini(image_bytes):
     """Reconciliation OCR: returns (lines, error)."""
-    return _call_gemini(image_bytes, "Analyze this courier terminal or pin-panel screenshot. "
-                         "Find two values: 1) cash amount near the word 'наличные', "
-                         "2) order count near the word 'заказов'. "
-                         "Reply ONLY in this exact format: CASH:<number> ORDERS:<number>. "
-                         "If a value is not found, use 0.")
+    return _call_gemini(image_bytes, "You are reading a delivery app order statistics page. "
+                         "Find the 'Наличные' (cash) payment method line. "
+                         "It shows format 'Наличные X / Y ₽' where Y is cash amount in rubles. "
+                         "If there is no amount shown or amount is 0,00, reply: CASH: 0 "
+                         "Otherwise reply ONLY the cash amount with comma as decimal separator. "
+                         "Example: CASH: 17 777,18")
 
 
 # ===== Response formatting =====

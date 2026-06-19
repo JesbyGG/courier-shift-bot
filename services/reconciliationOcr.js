@@ -22,7 +22,7 @@ function parseMoneyRu(value) {
 function extractCashFromGemini(text) {
   const raw = String(text || '').trim();
   if (!raw) {
-    return { amount: 0, totalOrders: 0, valid: false, reason: 'empty_text' };
+    return { amount: 0, valid: false, reason: 'empty_text' };
   }
 
   const normalized = raw
@@ -31,59 +31,28 @@ function extractCashFromGemini(text) {
     .replace(/\s+/g, ' ')
     .trim();
 
-  let amount = 0;
-  let totalOrders = 0;
-
-  const cashPatterns = [
-    /(?:CASH)\s*[:=]?\s*(\d[\d\s.,]*)/i,
-    /(?:налич[а-яa-z]*)\s+(\d{1,3})\s*\/\s*\d{1,3}\s+([\d\s.,]+)\s*₽/i,
-    /(?:налич[а-яa-z]*)\s+(\d{1,3})\s*\/\s*\d{1,3}\s+([\d\s.,]+)/i,
-    /(?:налич[а-яa-z]*)\s+([\d\s.,]+)\s*₽/i,
-    /(?:налич[а-яa-z]*)\s+([\d\s.,]+(?:\d))/i,
-  ];
-
-  for (const pattern of cashPatterns) {
-    const match = normalized.match(pattern);
-    if (match) {
-      const groups = match.length > 2 ? match : match;
-      if (groups.length >= 3) {
-        totalOrders = Number(String(groups[1]).replace(/\D/g, '')) || 0;
-        amount = parseMoneyRu(groups[2]) || 0;
-      } else {
-        amount = parseMoneyRu(groups[1]) || 0;
-      }
-      if (amount >= 1) break;
-    }
+  // 1) Structured: "CASH: 17 777,18"
+  const cashMatch = normalized.match(/CASH:\s*([\d.,\s]+)/i);
+  if (cashMatch) {
+    const amount = parseMoneyRu(cashMatch[1]);
+    if (amount !== null && amount === 0) return { amount: 0, valid: false, reason: 'cash_zero' };
+    if (amount !== null && amount >= 1) return { amount, valid: true, reason: 'ok' };
   }
 
-  const ordersPatterns = [
-    /(?:ORDERS)\s*[:=]?\s*(\d+)/i,
-    /заказ[а-я]*\s+за\s+(?:сегодня|сутки)\s+(\d+)/i,
-  ];
-
-  for (const pattern of ordersPatterns) {
-    const match = normalized.match(pattern);
-    if (match) {
-      totalOrders = Number(match[1]) || 0;
-      break;
-    }
+  // 2) Legacy: "Наличные 5 / 17 777,18" or "Наличные 2/16 451,96"
+  const legacyMatch = normalized.match(/(?:налич[а-яa-z]*)\s+\d{1,3}\s*\/\s*([\d\s.,]+)/i);
+  if (legacyMatch) {
+    const amount = parseMoneyRu(legacyMatch[1]);
+    if (amount !== null && amount === 0) return { amount: 0, valid: false, reason: 'cash_zero' };
+    if (amount !== null && amount >= 1) return { amount, valid: true, reason: 'ok' };
   }
 
-  if (!totalOrders) {
-    const totalMatch = normalized.match(/за\s+(?:сегодня|сутки)\s+(?:на\s+сумму\s+[\d\s.,]+\s*₽\s*)?(\d+)/i);
-    if (totalMatch) {
-      totalOrders = Number(totalMatch[1]) || 0;
-    }
-  }
+  // 3) Fallback: plain number
+  const plainAmount = parseMoneyRu(normalized);
+  if (plainAmount !== null && plainAmount === 0) return { amount: 0, valid: false, reason: 'cash_zero' };
+  if (plainAmount !== null && plainAmount >= 1) return { amount: plainAmount, valid: true, reason: 'ok' };
 
-  const hasAmount = amount >= 1;
-
-  return {
-    amount: hasAmount ? amount : 0,
-    totalOrders,
-    valid: hasAmount,
-    reason: hasAmount ? 'ok' : 'no_cash_line'
-  };
+  return { amount: 0, valid: false, reason: 'no_cash_line' };
 }
 
 function getReconciliationOcrTimeoutMs() {
@@ -115,7 +84,7 @@ async function recognizeReconciliationCashSafe(ctx, fileId, label) {
 function shouldWarnAboutReconciliationOcr(cashInfo) {
   if (!cashInfo) return true;
   if (cashInfo.valid) return false;
-  if (cashInfo.totalOrders && cashInfo.totalOrders > 0) return false;
+  if (cashInfo.reason === 'cash_zero') return false;
   return ['ocr_timeout', 'error', 'no_ocr_result'].includes(cashInfo.reason);
 }
 
@@ -130,8 +99,8 @@ async function recognizeReconciliationCash(ctx, fileId) {
       if (geminiText) {
         console.log('сверка OCR raw text:', geminiText);
         const parsed = extractCashFromGemini(geminiText);
-        console.log('сверка OCR:', JSON.stringify({ cashValid: parsed.valid, cashReason: parsed.reason, cashAmount: parsed.amount, totalOrders: parsed.totalOrders, source: 'gemini' }));
-        return { ...parsed, source: 'gemini' };
+        console.log('сверка OCR:', JSON.stringify({ cashValid: parsed.valid, cashReason: parsed.reason, cashAmount: parsed.amount, source: 'gemini' }));
+        return { ...parsed, totalOrders: null, source: 'gemini' };
       } else {
         console.log('сверка OCR: Gemini OCR вернул пустой текст');
       }
