@@ -40,7 +40,6 @@ GEMINI_MAX_DIM = int(os.getenv('GEMINI_MAX_DIM', '1200') or 1200)
 GEMINI_JPEG_QUALITY = int(os.getenv('GEMINI_JPEG_QUALITY', '85') or 85)
 
 NOISE_PATTERNS = [r'x1000', r'r/min', r'rpm', r'km/h', r'mph', r'trip', r'avg', r'speedo', r'tacho']
-SPEED_NUBS = {'40', '60', '80', '100', '120', '140', '160', '180', '200', '220', '240', '260', '280'}
 KM_MARKERS = re.compile(r'km|км|ml|мл', re.IGNORECASE)
 
 
@@ -57,20 +56,19 @@ def is_noise_line(text):
     compact = raw.lower().replace(' ', '')
     if any(re.search(p, compact) for p in NOISE_PATTERNS):
         return True
-    if raw in SPEED_NUBS:
-        return True
     return False
 
 
 def extract_numbers(text):
     candidates = []
-    for m in re.finditer(r'\d{4,6}', text):
-        val = int(m.group())
+    # Combine digits separated by spaces first (e.g. "8935 7" -> "89357")
+    for m in re.finditer(r'\d{1,3}(?:\s+\d{1,3})+', text):
+        val = int(re.sub(r'\s+', '', m.group()))
         if MIN_MILEAGE <= val <= MAX_MILEAGE:
             candidates.append(val)
-    cleaned = re.sub(r'[^0-9]', '', text)
-    if 4 <= len(cleaned) <= 6:
-        val = int(cleaned)
+    # Then contiguous digit groups
+    for m in re.finditer(r'\d{4,6}', text):
+        val = int(m.group())
         if MIN_MILEAGE <= val <= MAX_MILEAGE and val not in candidates:
             candidates.append(val)
     return candidates
@@ -82,8 +80,7 @@ def smart_select_mileage(lines):
         if is_noise_line(line):
             continue
         has_km = bool(KM_MARKERS.search(line))
-        nubs = extract_numbers(line)
-        for val in nubs:
+        for val in extract_numbers(line):
             groups.append({
                 'mileage': val,
                 'count': 1,
@@ -94,6 +91,7 @@ def smart_select_mileage(lines):
             })
     if not groups:
         return None, groups
+    # Prefer: line with km marker, longer number, larger number
     groups.sort(key=lambda g: (not g['has_km'], -(len(str(g['mileage']))), -g['mileage']))
     return groups[0], groups
 
@@ -167,9 +165,11 @@ def _call_gemini(image_bytes, system_prompt):
 def recognize_with_gemini(image_bytes):
     """Mileage OCR: returns (lines, error)."""
     return _call_gemini(image_bytes, "You are analyzing a car dashboard photo. "
-                         "Find the total mileage (odometer) number. "
-                         "Ignore: time, temperature, fuel, speed, RPM, trip. "
-                         "Reply ONLY with the number, no text.")
+                         "Find the total odometer mileage (the largest number shown, usually with 'km' or 'км' nearby). "
+                         "Important: some digital displays group digits with a small gap, e.g. '8935 7 km' means 89357 km. "
+                         "Read the full odometer value including the last digit(s) even if there is a gap. "
+                         "Ignore: time, temperature, fuel consumption, speed, RPM, trip meters. "
+                         "Reply ONLY with the full number and the unit, e.g. '89357 km'. No extra text.")
 
 
 def recognize_text_with_gemini(image_bytes):

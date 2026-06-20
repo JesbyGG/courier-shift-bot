@@ -93,19 +93,19 @@ function extractMileage(text, options = {}) {
 
   const normalized = String(text || '').replace(/[Oo]/g, '0');
   const candidates = new Set();
-  const strictRegex = new RegExp(`\\d{${minDigits},${maxDigits}}`, 'g');
-  const flexibleRegex = new RegExp(`(?:\\d[\\s.,:;\\-]*){${minDigits},${maxDigits}}`, 'g');
 
-  for (const match of normalized.matchAll(strictRegex)) {
-    candidates.add(match[0]);
-  }
-
-  for (const match of normalized.matchAll(flexibleRegex)) {
+  // Try to combine digits separated by spaces first (e.g. "8935 7" -> "89357")
+  const spacedRegex = /(?:\d[\s.,:;\-]*){2,6}/g;
+  for (const match of normalized.matchAll(spacedRegex)) {
     const value = match[0].replace(/\D/g, '');
-
     if (value.length >= minDigits && value.length <= maxDigits) {
       candidates.add(value);
     }
+  }
+
+  const strictRegex = new RegExp(`\\d{${minDigits},${maxDigits}}`, 'g');
+  for (const match of normalized.matchAll(strictRegex)) {
+    candidates.add(match[0]);
   }
 
   const values = Array.from(candidates);
@@ -133,41 +133,7 @@ function isMileageInBounds(mileage, options = {}) {
   return true;
 }
 
-function smartPickFromGroups(groups, options = {}) {
-  if (!groups || groups.length === 0) return { mileage: null, candidates: [] };
 
-  const valid = groups.filter((g) => Number.isFinite(g.mileage) && g.mileage > 0);
-  if (valid.length === 0) return { mileage: null, candidates: [] };
-
-  // Combine all non-noise groups and calculate score
-  const nonNoise = valid.filter((g) => !g.is_noise && g.mileage >= 100);
-  if (nonNoise.length === 0) return { mileage: null, candidates: [] };
-
-  const maxCount = Math.max(...nonNoise.map((g) => g.count));
-
-  const scored = nonNoise.map((g) => {
-    const len = String(g.mileage).length;
-    const lenScore = len >= 5 && len <= 6 ? 0.2 : (len >= 4 ? 0.1 : 0);
-    const countScore = maxCount > 0 ? (g.count / maxCount) * 0.3 : 0;
-    const confScore = g.avgConfidence * 0.5;
-    const kmBonus = g.has_km ? 0.05 : 0;
-    const score = confScore + countScore + lenScore + kmBonus;
-    return { ...g, _score: score };
-  });
-
-  scored.sort((a, b) => b._score - a._score);
-  const selected = scored[0];
-
-  const candidates = scored.slice(0, 5).map((g) => ({
-    mileage: g.mileage,
-    source: 'ocr',
-    confidence: g.avgConfidence,
-    has_km: g.has_km,
-    score: Math.round(g._score * 1000) / 1000
-  }));
-
-  return { mileage: selected.mileage, candidates };
-}
 
 // OCR-only mode
 
@@ -208,16 +174,23 @@ function mapGeminiOcrResult(parsed, options) {
     : [];
 
   const best = groups[0] || null;
-  const pick = smartPickFromGroups(groups, options);
+  const mileage = best && isMileageInBounds(best.mileage, options) ? best.mileage : null;
+
+  const candidates = groups.slice(0, 5).map((g) => ({
+    mileage: g.mileage,
+    source: 'ocr',
+    confidence: g.avgConfidence,
+    has_km: g.has_km
+  }));
 
   return {
     engine: 'gemini',
-    mileage: pick.mileage,
+    mileage,
     groups,
     best,
-    candidates: pick.candidates,
+    candidates,
     raw: parsed,
-    reason: pick.mileage ? 'accepted' : (best ? 'weak_confidence' : 'no_candidate')
+    reason: mileage ? 'accepted' : (best ? 'out_of_bounds' : 'no_candidate')
   };
 }
 
