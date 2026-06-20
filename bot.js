@@ -1252,7 +1252,7 @@ bot.use(async (ctx, next) => {
   ctx.replyWithHTML = async (htmlText, extra) => {
     let finalExtra = extra;
     const hasRemove = extra?.reply_markup?.remove_keyboard;
-    const hasOwnKeyboard = extra?.reply_markup?.keyboard || extra?.reply_markup?.inline_keyboard;
+    const hasOwnKeyboard = extra?.reply_markup?.keyboard;
     if (!hasRemove && !hasOwnKeyboard) {
       const menuMarkup = getMenuForRole(id);
       if (menuMarkup?.reply_markup) {
