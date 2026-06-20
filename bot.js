@@ -1239,13 +1239,12 @@ bot.use(async (ctx, next) => {
   if (!ctx.message?.text) return next();
 
   const id = ctx.from.id;
-  const text = ctx.message.text.trim();
 
   try { await ctx.deleteMessage(); } catch {}
 
-  const lastMsgId = userLastBotMessage.get(id);
-  if (lastMsgId) {
-    try { await ctx.telegram.deleteMessage(ctx.chat.id, lastMsgId); } catch {}
+  const last = userLastBotMessage.get(id);
+  if (last && !last.hasKeyboard) {
+    try { await ctx.telegram.deleteMessage(ctx.chat.id, last.msgId); } catch {}
   }
 
   const originalReply = ctx.replyWithHTML.bind(ctx);
@@ -1264,7 +1263,8 @@ bot.use(async (ctx, next) => {
       }
     }
     const msg = await originalReply(htmlText, finalExtra);
-    userLastBotMessage.set(id, msg.message_id);
+    const hasKeyboard = !!(finalExtra?.reply_markup?.keyboard);
+    userLastBotMessage.set(id, { msgId: msg.message_id, hasKeyboard });
     return msg;
   };
 
