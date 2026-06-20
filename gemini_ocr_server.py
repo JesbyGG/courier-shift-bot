@@ -62,13 +62,20 @@ def is_noise_line(text):
 
 def extract_numbers(text):
     candidates = []
+    covered = set()
+
     # Combine digits separated by spaces first (e.g. "8935 7" -> "89357")
     for m in re.finditer(r'\d{1,3}(?:\s+\d{1,3})+', text):
         val = int(re.sub(r'\s+', '', m.group()))
         if MIN_MILEAGE <= val <= MAX_MILEAGE:
             candidates.append(val)
+            for i in range(m.start(), m.end()):
+                covered.add(i)
+
     # Then contiguous digit groups (3-6 digits to match MIN_MILEAGE default of 100)
     for m in re.finditer(r'\d{3,6}', text):
+        if any(i in covered for i in range(m.start(), m.end())):
+            continue
         val = int(m.group())
         if MIN_MILEAGE <= val <= MAX_MILEAGE and val not in candidates:
             candidates.append(val)
