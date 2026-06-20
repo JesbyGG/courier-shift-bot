@@ -1231,13 +1231,8 @@ bot.use(async (ctx, next) => {
   await next();
 });
 
-// ===== Combo delete: user message + previous bot message (navigation only) =====
+// ===== Combo delete: user message + previous bot message =====
 const userLastBotMessage = new Map();
-const CRITICAL_BUTTON_TEXTS = [
-  BUTTONS.punchTimeStart, BUTTONS.punchTimeEnd, BUTTONS.punchTimeReplace,
-  BUTTONS.mileageStart, BUTTONS.mileageEnd, BUTTONS.mileageReplace,
-  BUTTONS.cashCheck, BUTTONS.cashCollect
-];
 
 bot.use(async (ctx, next) => {
   if (ctx.chat?.type !== 'private') return next();
@@ -1245,9 +1240,6 @@ bot.use(async (ctx, next) => {
 
   const id = ctx.from.id;
   const text = ctx.message.text.trim();
-
-  const isCritical = CRITICAL_BUTTON_TEXTS.some(b => text === b || text.startsWith(b));
-  if (isCritical) return next();
 
   try { await ctx.deleteMessage(); } catch {}
 
