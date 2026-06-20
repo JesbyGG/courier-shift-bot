@@ -1808,7 +1808,6 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       `📝 Неверно? → «Изменить время»`,
       timeChangeKeyboard()
     );
-    await ctx.replyWithHTML('✅', getMenuForRole(telegramId));
 
     if (result.stage === 'start') {
       const pendingCash = getPendingCash(telegramId);
@@ -2399,7 +2398,6 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
       `📝 Неверно? → «Изменить пробег»`,
       mileageSavedKeyboard()
     );
-    await replyFn('✅', getMenuForRole(telegramId));
   } catch (error) {
     console.error('ошибка Google Sheets', error);
     await replyFn('⚠️ Не удалось записать пробег\n\nПопробуйте ещё раз.');
