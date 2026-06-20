@@ -2210,6 +2210,29 @@ async function notifyUsersAboutUpdate(version, changedFiles = [], updates = []) 
   console.log(`update v${currentVersion} notify summary: total=${userIds.length}, sent=${notified}, skipped=${skipped}, failed=${failed}`);
 }
 
+async function refreshAllKeyboards() {
+  const userIds = getAllUserIds();
+  let sent = 0;
+  let failed = 0;
+
+  for (const telegramId of userIds) {
+    try {
+      const menuMarkup = getMenuForRole(Number(telegramId));
+      if (!menuMarkup?.reply_markup) continue;
+      await bot.telegram.sendMessage(Number(telegramId), ' ', {
+        disable_notification: true,
+        reply_markup: menuMarkup.reply_markup
+      });
+      sent++;
+    } catch (error) {
+      failed++;
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+
+  console.log(`keyboard refresh summary: total=${userIds.length}, sent=${sent}, failed=${failed}`);
+}
+
 const _pendingUpdates = {};
 const PENDING_UPDATES_FILE = path.join(__dirname, 'pending_updates.json');
 
@@ -3533,6 +3556,14 @@ async function startBot(retry = 0) {
     // НЕ ставим await — иначе всё, что после, не выполнится.
     bot.launch();
     console.log(`bot started v${version}${changed ? ' (updated)' : ''}`);
+
+    if (changed && retry === 0) {
+      setTimeout(() => {
+        refreshAllKeyboards().catch((error) => {
+          console.error('keyboard refresh error', error.message || error);
+        });
+      }, 5000);
+    }
   } catch (error) {
     const delay = Math.min(LAUNCH_BASE_DELAY * Math.pow(2, retry), LAUNCH_MAX_DELAY);
     console.error(`bot launch error (attempt ${retry + 1}/${LAUNCH_RETRIES}):`, error?.message || error);
