@@ -28,6 +28,8 @@ module.exports = function setupCommands(bot, services) {
     if (ctx.chat?.type !== 'private') return;
     console.log('/start');
 
+    clearState(ctx.from.id);
+
     if (!getUserField(ctx.from.id, 'fio')) {
       setUserField(ctx.from.id, 'version', getVersion());
       clearShiftStatus(ctx.from.id);

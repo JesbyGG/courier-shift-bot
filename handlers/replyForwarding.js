@@ -5,7 +5,9 @@ module.exports = function setupReplyForwarding(bot, services) {
     findThreadById,
     saveForwardedMessage,
     findForwardedMessage,
-    cleanupOldThreads
+    cleanupOldThreads,
+    getUserRole,
+    isAdminUser
   } = services;
 
   const esc = services.esc || ((s) => String(s || '').replace(/[<>&"]/g, (c) => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])));
@@ -24,6 +26,12 @@ module.exports = function setupReplyForwarding(bot, services) {
 
     const thread = findThreadByGroupMessage(ctx.chat.id, ctx.message.reply_to_message.message_id);
     if (!thread) return next();
+
+    const senderId = String(ctx.from?.id);
+    const senderRole = getUserRole(senderId);
+    if (senderRole !== 'logist' && !isAdminUser(senderId)) {
+      return next();
+    }
 
     const courierId = Number(thread.courier_telegram_id);
     if (!courierId) return next();

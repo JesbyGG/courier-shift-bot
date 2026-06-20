@@ -77,8 +77,12 @@ function migratePendingSheetUpdatesSchema() {
 function loadPendingUpdatesFromDb() {
   try {
     migratePendingSheetUpdatesSchema();
-    const rows = db.prepare('SELECT id, spreadsheetId, range, value, createdAt, attempts, lastAttemptAt FROM pending_sheet_updates').all();
+    const rows = db.prepare('SELECT id, spreadsheetId, range, value, createdAt, attempts, lastAttemptAt FROM pending_sheet_updates ORDER BY id DESC').all();
+    const seen = new Set();
     for (const row of rows) {
+      const key = `${row.spreadsheetId}:${row.range}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       pendingUpdates.push({
         _dbId: row.id,
         spreadsheetId: row.spreadsheetId,
@@ -88,8 +92,8 @@ function loadPendingUpdatesFromDb() {
         attempts: row.attempts || 0
       });
     }
-    if (rows.length > 0) {
-      console.log(`restored ${rows.length} pending sheet update(s) from db`);
+    if (pendingUpdates.length > 0) {
+      console.log(`restored ${pendingUpdates.length} pending sheet update(s) from db`);
     }
   } catch (e) {
     console.error('failed to load pending sheet updates from db', e.message);
@@ -98,6 +102,8 @@ function loadPendingUpdatesFromDb() {
 
 function savePendingUpdateToDb(spreadsheetId, range, value) {
   try {
+    db.prepare('DELETE FROM pending_sheet_updates WHERE spreadsheetId = ? AND range = ?')
+      .run(spreadsheetId, range);
     const stmt = db.prepare('INSERT INTO pending_sheet_updates (spreadsheetId, range, value) VALUES (?, ?, ?)');
     const result = stmt.run(spreadsheetId, range, String(value));
     return result.lastInsertRowid;
@@ -114,6 +120,21 @@ function deletePendingUpdatesFromDb(ids) {
     db.prepare(`DELETE FROM pending_sheet_updates WHERE id IN (${placeholders})`).run(...ids);
   } catch (e) {
     console.error('failed to delete pending sheet updates from db', e.message);
+  }
+}
+
+function deletePendingUpdatesByRange(ranges) {
+  if (!ranges || ranges.length === 0) return;
+  try {
+    const stmt = db.prepare('DELETE FROM pending_sheet_updates WHERE spreadsheetId = ? AND range = ?');
+    const tx = db.transaction((items) => {
+      for (const item of items) {
+        stmt.run(item.spreadsheetId, item.range);
+      }
+    });
+    tx(ranges);
+  } catch (e) {
+    console.error('failed to delete pending sheet updates by range', e.message);
   }
 }
 
@@ -311,15 +332,19 @@ async function updateCell(sheetName, cell, value, spreadsheetId) {
   const dbId = savePendingUpdateToDb(spreadsheetId, range, value);
 
   const existing = pendingUpdates.findIndex(u => u.spreadsheetId === spreadsheetId && u.range === range);
+  const now = new Date().toISOString();
   if (existing >= 0) {
     pendingUpdates[existing].values = [[value]];
     pendingUpdates[existing]._dbId = dbId;
+    pendingUpdates[existing].createdAt = now;
   } else {
     pendingUpdates.push({
       _dbId: dbId,
       spreadsheetId,
       range,
-      values: [[value]]
+      values: [[value]],
+      createdAt: now,
+      attempts: 0
     });
   }
 
@@ -377,7 +402,8 @@ async function flushSheetUpdates() {
   }
 
   if (!hadError) {
-    deletePendingUpdatesFromDb(dbIds);
+    const rangesToDelete = dataToUpdate.map(item => ({ spreadsheetId: item.spreadsheetId, range: item.range }));
+    deletePendingUpdatesByRange(rangesToDelete);
     return;
   }
 

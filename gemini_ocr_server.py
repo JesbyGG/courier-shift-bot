@@ -47,14 +47,15 @@ def is_noise_line(text):
     raw = text.strip()
     if not raw:
         return True
-    if KM_MARKERS.search(raw):
-        return False
     if re.search(r'\b\d{1,2}:\d{2}\b', raw):
         return True
     if re.search(r'\d{1,3}\s*[°º][cCfF]', raw):
         return True
     compact = raw.lower().replace(' ', '')
     if any(re.search(p, compact) for p in NOISE_PATTERNS):
+        return True
+    # Lines without any digits are also noise
+    if not re.search(r'\d', compact):
         return True
     return False
 
@@ -66,8 +67,8 @@ def extract_numbers(text):
         val = int(re.sub(r'\s+', '', m.group()))
         if MIN_MILEAGE <= val <= MAX_MILEAGE:
             candidates.append(val)
-    # Then contiguous digit groups
-    for m in re.finditer(r'\d{4,6}', text):
+    # Then contiguous digit groups (3-6 digits to match MIN_MILEAGE default of 100)
+    for m in re.finditer(r'\d{3,6}', text):
         val = int(m.group())
         if MIN_MILEAGE <= val <= MAX_MILEAGE and val not in candidates:
             candidates.append(val)

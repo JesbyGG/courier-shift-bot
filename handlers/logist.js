@@ -156,6 +156,13 @@ module.exports = function setupLogist(bot, services) {
       return;
     }
 
+    if (reminder.status !== 'confirmed') {
+      await ctx.answerCbQuery('⛔ Курьер ещё не подтвердил сдачу.', { show_alert: true });
+      return;
+    }
+
+    await ctx.answerCbQuery();
+
     clearPendingCashAndReminders(reminder.courierId);
 
     logCashAction({
@@ -202,6 +209,13 @@ module.exports = function setupLogist(bot, services) {
       try { await ctx.editMessageText('⚠️ Напоминание устарело.'); } catch (e) { /* ignore */ }
       return;
     }
+
+    if (reminder.status !== 'confirmed') {
+      await ctx.answerCbQuery('⛔ Курьер ещё не подтвердил сдачу.', { show_alert: true });
+      return;
+    }
+
+    await ctx.answerCbQuery();
 
     logCashAction({
       logistId: reminder.logistId, logistFio: reminder.logistFio,

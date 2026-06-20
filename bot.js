@@ -131,6 +131,47 @@ function clearState(telegramId) {
   db.prepare('DELETE FROM states WHERE telegramId = ?').run(String(telegramId));
 }
 
+// Per-user state lock to prevent read-modify-write races
+const stateLocks = new Map();
+
+async function withState(telegramId, fn) {
+  const id = String(telegramId);
+
+  // Wait for any existing lock
+  while (stateLocks.has(id)) {
+    try { await stateLocks.get(id); } catch { /* ignore */ }
+  }
+
+  let release;
+  const lockPromise = new Promise((resolve) => { release = resolve; });
+  stateLocks.set(id, lockPromise);
+
+  try {
+    const state = getState(id);
+    const result = await fn(state);
+    if (result !== undefined) {
+      setState(id, result);
+    }
+    return result;
+  } finally {
+    stateLocks.delete(id);
+    release();
+  }
+}
+
+function withStateSync(telegramId, fn) {
+  const id = String(telegramId);
+  if (stateLocks.has(id)) {
+    throw new Error(`State lock held for ${id}; use withState for async operations`);
+  }
+  const state = getState(id);
+  const result = fn(state);
+  if (result !== undefined) {
+    setState(id, result);
+  }
+  return result;
+}
+
 const versionPath = path.join(__dirname, 'version.json');
 const changelogPath = path.join(__dirname, 'changelog.json');
 const _sourceDir = __dirname;
@@ -3434,7 +3475,12 @@ process.on('uncaughtException', (error) => {
 
 process.on('unhandledRejection', (reason) => {
   console.error('unhandled rejection:', reason);
-  shutdown('unhandledRejection');
+  // Do not shutdown on unhandledRejection; log and notify admins instead
+  try {
+    notifyAdmins(`⚠️ <b>Необработанная ошибка (unhandledRejection)</b>\n\n<pre>${esc(String(reason).substring(0, 500))}</pre>\n\nПроцесс продолжает работать.`);
+  } catch (e) {
+    console.error('failed to notify admins about unhandled rejection', e.message);
+  }
 });
 
 const LAUNCH_RETRIES = LIMITS.LAUNCH_RETRIES;
@@ -3481,6 +3527,7 @@ const services = {
   isAdminUser, getSheetAccessUsers, addSheetAccessUser, removeSheetAccessUser,
   _pendingUpdates, savePendingUpdates, notifyUsersAboutUpdate,
   setState, getState, clearState,
+  withState, withStateSync,
   clearShiftStatus,
   // text router flows
   punchTimeFlow, mileageFlow, routeSheetFlow, reconciliationFlow,
@@ -3495,7 +3542,7 @@ const services = {
   handleRouteSheetPhoto, handleReconciliationPhoto, handleMileagePhoto,
   finalizeReconciliationPostSend, saveMileageFromState,
   getTodayText, getNextRouteSheetNumber, logRouteSheetPhoto,
-  buildRouteSheetCaption, sendPhotoToRouteSheetChat, savePhotoThread,
+  buildRouteSheetCaption, sendPhotoToRouteSheetChat, sendPhotoToReconciliationChat, sendMediaGroupToReconciliationChat, savePhotoThread,
   normalizeTimeValue, formatStage, formatMoneyRu,
   notifyLogistsAboutSelfClearance, sendFunReaction,
   courierMainMenu,
@@ -3586,7 +3633,9 @@ async function startBot(retry = 0) {
     // Очистка клавиатур во всех топиках и группах при старте
     // bot.launch() возвращает Promise, который резолвится только при stop().
     // НЕ ставим await — иначе всё, что после, не выполнится.
-    bot.launch();
+    bot.launch().catch((error) => {
+      console.error('bot.launch() error:', error?.message || error);
+    });
     console.log(`bot started v${version}${changed ? ' (updated)' : ''}`);
 
     if (changed && retry === 0) {
