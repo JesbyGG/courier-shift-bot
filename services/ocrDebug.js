@@ -40,7 +40,9 @@ function saveOcrDebugImage(imageBuffer, meta) {
 
   const dateStr = new Date().toISOString().slice(0, 10);
   const shortFileId = (meta.fileId || 'unknown').slice(-12);
-  const fileName = `${dateStr}_${meta.telegramId}_${meta.stage}_${meta.status}_${shortFileId}.jpg`;
+  const safeStage = String(meta.stage || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30);
+  const safeStatus = String(meta.status || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30);
+  const fileName = `${dateStr}_${meta.telegramId}_${safeStage}_${safeStatus}_${shortFileId}.jpg`;
   const filePath = path.join(OCR_DEBUG_DIR, fileName);
 
   try {
@@ -95,12 +97,12 @@ function cleanupOldFiles() {
     ensureDir();
     const now = Date.now();
     const maxAgeMs = MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
-
-    // 1. Удалить по возрасту (>30 дней)
-    const rows = db.prepare('SELECT * FROM ocr_debug').all();
     const deleteStmt = db.prepare('DELETE FROM ocr_debug WHERE fileName = ?');
 
-    for (const row of rows) {
+    const allRows = db.prepare('SELECT * FROM ocr_debug ORDER BY timestamp DESC').all();
+
+    // 1. Удалить по возрасту (>30 дней)
+    for (const row of allRows) {
       const ts = new Date(row.timestamp).getTime();
       if (now - ts > maxAgeMs) {
         try { if (fs.existsSync(row.filePath)) fs.unlinkSync(row.filePath); } catch (_) {}
@@ -109,18 +111,18 @@ function cleanupOldFiles() {
     }
 
     // 2. Удалить по количеству (>300), сначала confirmed_ok, потом ocr_fail, потом ocr_mismatch
-    const allRows = db.prepare('SELECT * FROM ocr_debug').all();
-    if (allRows.length > MAX_FILES) {
+    const remaining = db.prepare('SELECT * FROM ocr_debug').all();
+    if (remaining.length > MAX_FILES) {
       const statusOrder = { confirmed_ok: 0, ocr_fail: 1, ocr_mismatch: 2 };
-      allRows.sort((a, b) => {
+      remaining.sort((a, b) => {
         const sa = statusOrder[a.status] || 1;
         const sb = statusOrder[b.status] || 1;
         if (sa !== sb) return sa - sb;
         return new Date(a.timestamp) - new Date(b.timestamp);
       });
 
-      while (allRows.length > MAX_FILES) {
-        const row = allRows.shift();
+      while (remaining.length > MAX_FILES) {
+        const row = remaining.shift();
         if (!row) break;
         try { if (fs.existsSync(row.filePath)) fs.unlinkSync(row.filePath); } catch (_) {}
         deleteStmt.run(row.fileName);
@@ -129,11 +131,10 @@ function cleanupOldFiles() {
 
     // 3. Удалить по размеру (>2000 MB)
     while (getTotalSizeMb() > MAX_DISK_MB) {
-      const remaining = db.prepare('SELECT * FROM ocr_debug ORDER BY timestamp ASC').all();
-      if (remaining.length === 0) break;
-      const row = remaining[0];
-      try { if (fs.existsSync(row.filePath)) fs.unlinkSync(row.filePath); } catch (_) {}
-      deleteStmt.run(row.fileName);
+      const oldest = db.prepare('SELECT * FROM ocr_debug ORDER BY timestamp ASC LIMIT 1').get();
+      if (!oldest) break;
+      try { if (fs.existsSync(oldest.filePath)) fs.unlinkSync(oldest.filePath); } catch (_) {}
+      deleteStmt.run(oldest.fileName);
     }
   } catch (error) {
     console.error('ocrDebug: cleanup error', error.message);

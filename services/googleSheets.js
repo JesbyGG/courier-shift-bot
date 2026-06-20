@@ -310,12 +310,18 @@ async function updateCell(sheetName, cell, value, spreadsheetId) {
   const range = `${quoteSheetName(sheetName)}!${cell}`;
   const dbId = savePendingUpdateToDb(spreadsheetId, range, value);
 
-  pendingUpdates.push({
-    _dbId: dbId,
-    spreadsheetId,
-    range,
-    values: [[value]]
-  });
+  const existing = pendingUpdates.findIndex(u => u.spreadsheetId === spreadsheetId && u.range === range);
+  if (existing >= 0) {
+    pendingUpdates[existing].values = [[value]];
+    pendingUpdates[existing]._dbId = dbId;
+  } else {
+    pendingUpdates.push({
+      _dbId: dbId,
+      spreadsheetId,
+      range,
+      values: [[value]]
+    });
+  }
 
   if (!updateTimer) {
     updateTimer = setTimeout(flushSheetUpdates, 3000);

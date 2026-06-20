@@ -20,9 +20,19 @@ module.exports = function setupLogist(bot, services) {
 
   bot.action(/^ack_([0-9a-f]+)$/, async (ctx) => {
     const shortId = ctx.match[1];
-    await ctx.answerCbQuery();
 
     const reminder = getReminder(shortId);
+    if (!reminder) {
+      await ctx.answerCbQuery('⚠️ Напоминание устарело.', { show_alert: true });
+      try { await ctx.editMessageText('⚠️ Напоминание устарело или уже обработано.'); } catch (e) { /* ignore */ }
+      return;
+    }
+
+    if (String(ctx.from.id) !== String(reminder.courierId)) {
+      await ctx.answerCbQuery('⛔ Это не ваше напоминание.', { show_alert: true });
+      return;
+    }
+    await ctx.answerCbQuery();
     if (!reminder) {
       try { await ctx.editMessageText('⚠️ Напоминание устарело или уже обработано.'); } catch (e) { /* ignore */ }
       return;
@@ -74,9 +84,19 @@ module.exports = function setupLogist(bot, services) {
 
   bot.action(/^c_([0-9a-f]+)$/, async (ctx) => {
     const shortId = ctx.match[1];
-    await ctx.answerCbQuery();
 
     const reminder = getReminder(shortId);
+    if (!reminder) {
+      await ctx.answerCbQuery('⚠️ Напоминание устарело.', { show_alert: true });
+      try { await ctx.editMessageText('⚠️ Напоминание устарело или уже обработано.'); } catch (e) { /* ignore */ }
+      return;
+    }
+
+    if (String(ctx.from.id) !== String(reminder.courierId)) {
+      await ctx.answerCbQuery('⛔ Это не ваше напоминание.', { show_alert: true });
+      return;
+    }
+    await ctx.answerCbQuery();
     if (!reminder) {
       try { await ctx.editMessageText('⚠️ Напоминание устарело или уже обработано.'); } catch (e) { /* ignore */ }
       return;

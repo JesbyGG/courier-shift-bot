@@ -177,10 +177,16 @@ module.exports = function setupTextRouter(bot, services) {
     if (!text) return;
     const state = getState(telegramId);
 
-    for (const route of TEXT_ROUTES) {
-      if (matchTextRoute(route, text, state)) {
-        return route.handler(ctx, state, text, telegramId);
+    try {
+      for (const route of TEXT_ROUTES) {
+        if (matchTextRoute(route, text, state)) {
+          return route.handler(ctx, state, text, telegramId);
+        }
       }
+    } catch (e) {
+      console.error('textRouter route error:', e.message);
+      try { await ctx.replyWithHTML('⚠️ Произошла ошибка. Попробуйте ещё раз.', getMenuForRole(telegramId)); } catch (_) {}
+      return;
     }
 
     // Fallback: если reply на сообщение бота — не отправлять меню

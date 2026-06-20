@@ -1236,6 +1236,7 @@ bot.use(async (ctx, next) => {
 
 // ===== Combo delete: user message + previous bot message =====
 const userLastBotMessage = new Map();
+const MAX_USER_LAST_MSG_CACHE = 1000;
 
 bot.use(async (ctx, next) => {
   if (ctx.chat?.type !== 'private') return next();
@@ -1268,6 +1269,10 @@ bot.use(async (ctx, next) => {
     }
     const msg = await originalReply(htmlText, finalExtra);
     const hasKeyboard = !!(finalExtra?.reply_markup?.keyboard);
+    if (userLastBotMessage.size >= MAX_USER_LAST_MSG_CACHE) {
+      const firstKey = userLastBotMessage.keys().next().value;
+      userLastBotMessage.delete(firstKey);
+    }
     userLastBotMessage.set(id, { msgId: msg.message_id, hasKeyboard });
     return msg;
   };
@@ -2951,12 +2956,12 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       }
       savePhotoThread(forwarded[0], ctx.from.id, 'reconciliation');
 
-      clearState(telegramId);
       const ocrWarning = !state.reconciliationPhoto1TotalOrders && state.reconciliationPhoto1OcrReason
         ? `\n\n⚠️ OCR не распознал заказы/наличные. Фото отправлены, но данные не записаны автоматически.`
         : '';
       const totalOrders = state.reconciliationPhoto1TotalOrders;
       const postRes = await finalizeReconciliationPostSend(ctx, state, telegramId, totalOrders);
+      clearState(telegramId);
       return { status: 'photos_sent_terminal', ocrWarning, postRes };
     } catch (error) {
       console.error('telegram send reconciliation album error', error);
@@ -3027,11 +3032,11 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     }
     savePhotoThread(forwarded, telegramId, 'reconciliation');
 
-    clearState(telegramId);
     const ocrWarning = !shouldAttachCash && !cashInfo.totalOrders
       ? `\n\n⚠️ OCR не распознал сумму наличных. Фото отправлено, но данные не записаны автоматически.`
       : '';
     const postRes = await finalizeReconciliationPostSend(ctx, state, telegramId, cashInfo.totalOrders);
+    clearState(telegramId);
     return { status: 'photos_sent', total, ocrWarning, postRes };
   } catch (error) {
     console.error('telegram send reconciliation photo error', error);
