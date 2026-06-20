@@ -2219,10 +2219,13 @@ async function refreshAllKeyboards() {
     try {
       const menuMarkup = getMenuForRole(Number(telegramId));
       if (!menuMarkup?.reply_markup) continue;
-      await bot.telegram.sendMessage(Number(telegramId), '.', {
+      const msg = await bot.telegram.sendMessage(Number(telegramId), '.', {
         disable_notification: true,
         reply_markup: menuMarkup.reply_markup
       });
+      setTimeout(() => {
+        bot.telegram.deleteMessage(Number(telegramId), msg.message_id).catch(() => {});
+      }, 1000);
       sent++;
     } catch (error) {
       console.error('keyboard refresh error for', telegramId, error.message);
