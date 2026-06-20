@@ -2219,7 +2219,7 @@ async function refreshAllKeyboards() {
     try {
       const menuMarkup = getMenuForRole(Number(telegramId));
       if (!menuMarkup?.reply_markup) continue;
-      await bot.telegram.sendMessage(Number(telegramId), '\u00A0', {
+      await bot.telegram.sendMessage(Number(telegramId), '.', {
         disable_notification: true,
         reply_markup: menuMarkup.reply_markup
       });
