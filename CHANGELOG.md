@@ -94,7 +94,22 @@
 - `README.md` — секция «Архитектура» с описанием файлов проекта.
 - Этот `CHANGELOG.md`.
 
-### Phase B — аудит: безопасность и инфраструктура
+### Phase C — аудит: рефакторинг и тесты
+
+- **Извлечены модули из `bot.js`:**
+  - `services/photoForwarder.js` — пересылка фото и медиагрупп.
+  - `services/backup.js` — бэкапы SQLite через `VACUUM INTO`.
+  - `services/version.js` — версионирование, git-лог, changelog bump.
+- **Централизованное логирование:** почти все `console.log/error/warn` в
+  `bot.js` переведены на `utils/safeLog.js` (маскирование PII).
+- **Удалены неиспользуемые импорты** (`axios`, `execSync`) из `bot.js`.
+- **Восстановлены тесты:** `tests/run.js` с собственным раннером.
+  16 кейсов для `utils`, `safeLog`, `version`. `npm test` проходит.
+
+### Phase D — безопасность (следующая итерация)
+
+- Ротация секретов (`BOT_TOKEN`, `GOOGLE_PRIVATE_KEY`, `GEMINI_API_KEY`).
+- Перевод оставшихся `console.*` в `db.js` и сервисах на `safeLog`.
 
 - **Sticker / animation ограничены приватным чатом.** Реакции больше не
   срабатывают в группах/топиках, где бот видит чужие медиа.
