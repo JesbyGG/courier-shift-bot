@@ -1252,6 +1252,7 @@ bot.use(async (ctx, next) => {
   ctx.replyWithHTML = async (htmlText, extra) => {
     let finalExtra = extra;
     const hasRemove = extra?.reply_markup?.remove_keyboard;
+    const hasInlineOnly = extra?.reply_markup?.inline_keyboard && !extra?.reply_markup?.keyboard;
     const hasOwnKeyboard = extra?.reply_markup?.keyboard || extra?.reply_markup?.inline_keyboard;
     if (!hasRemove && !hasOwnKeyboard) {
       const menuMarkup = getMenuForRole(id);
@@ -1265,6 +1266,15 @@ bot.use(async (ctx, next) => {
     }
     const msg = await originalReply(htmlText, finalExtra);
     userLastBotMessage.set(id, msg.message_id);
+
+    if (hasInlineOnly) {
+      const menuMarkup = getMenuForRole(id);
+      if (menuMarkup?.reply_markup) {
+        const kbMsg = await originalReply('‎', menuMarkup);
+        userLastBotMessage.set(id, kbMsg.message_id);
+      }
+    }
+
     return msg;
   };
 
