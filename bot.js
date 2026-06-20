@@ -2442,7 +2442,7 @@ async function sendMediaGroupToChat(ctx, items, { envChatId, envThreadId, parseM
 
     // Clear any stale reply keyboard in group chats
     try {
-      const cleanupMsg = await ctx.telegram.sendMessage(chatId, '.', {
+      const cleanupMsg = await ctx.telegram.sendMessage(chatId, '', {
         reply_markup: { remove_keyboard: true },
         message_thread_id: threadId ? Number(threadId) : undefined
       });
@@ -3374,6 +3374,7 @@ async function shutdown(signal) {
 }
 
 bot.catch(async (error, ctx) => {
+  if (error.message?.includes('text must be non-empty')) return;
   console.error('bot error', error.message);
   try {
     await ctx.replyWithHTML('⚠️ Произошла ошибка. Попробуйте ещё раз или используйте /start.');
