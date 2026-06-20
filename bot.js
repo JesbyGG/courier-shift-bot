@@ -2223,11 +2223,9 @@ async function refreshAllKeyboards() {
         disable_notification: true,
         reply_markup: menuMarkup.reply_markup
       });
-      setTimeout(() => {
-        bot.telegram.deleteMessage(Number(telegramId), msg.message_id).catch((e) => {
-          console.error('keyboard refresh delete failed for', telegramId, e.message);
-        });
-      }, 1000);
+      bot.telegram.deleteMessage(Number(telegramId), msg.message_id).catch((e) => {
+        console.error('keyboard refresh delete failed for', telegramId, e.message);
+      });
       sent++;
     } catch (error) {
       console.error('keyboard refresh error for', telegramId, error.message);
