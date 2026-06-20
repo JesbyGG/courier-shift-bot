@@ -2225,6 +2225,7 @@ async function refreshAllKeyboards() {
       });
       sent++;
     } catch (error) {
+      console.error('keyboard refresh error for', telegramId, error.message);
       failed++;
     }
     await new Promise((r) => setTimeout(r, 50));
