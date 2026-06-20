@@ -1234,39 +1234,42 @@ bot.use(async (ctx, next) => {
 // ===== Combo delete: user message + previous bot message =====
 const userLastBotMessage = new Map();
 
+function attachReplyKeyboard(id, extra) {
+  const hasRemove = extra?.reply_markup?.remove_keyboard;
+  const hasReplyKeyboard = extra?.reply_markup?.keyboard;
+  if (hasRemove || hasReplyKeyboard) return extra;
+  const menuMarkup = getMenuForRole(id);
+  if (!menuMarkup?.reply_markup) return extra;
+  const extraRM = extra?.reply_markup || {};
+  return {
+    ...(extra || {}),
+    reply_markup: { ...extraRM, ...menuMarkup.reply_markup }
+  };
+}
+
 bot.use(async (ctx, next) => {
   if (ctx.chat?.type !== 'private') return next();
-  if (!ctx.message?.text) return next();
 
   const id = ctx.from.id;
-  const text = ctx.message.text.trim();
 
-  try { await ctx.deleteMessage(); } catch {}
+  if (ctx.message?.text) {
+    try { await ctx.deleteMessage(); } catch {}
 
-  const lastMsgId = userLastBotMessage.get(id);
-  if (lastMsgId) {
-    try { await ctx.telegram.deleteMessage(ctx.chat.id, lastMsgId); } catch {}
+    const lastMsgId = userLastBotMessage.get(id);
+    if (lastMsgId) {
+      try { await ctx.telegram.deleteMessage(ctx.chat.id, lastMsgId); } catch {}
+    }
   }
 
-  const originalReply = ctx.replyWithHTML.bind(ctx);
-  ctx.replyWithHTML = async (htmlText, extra) => {
-    let finalExtra = extra;
-    const hasRemove = extra?.reply_markup?.remove_keyboard;
-    const hasOwnKeyboard = extra?.reply_markup?.keyboard || extra?.reply_markup?.inline_keyboard;
-    if (!hasRemove && !hasOwnKeyboard) {
-      const menuMarkup = getMenuForRole(id);
-      if (menuMarkup?.reply_markup) {
-        const extraRM = extra?.reply_markup || {};
-        finalExtra = {
-          ...(extra || {}),
-          reply_markup: { ...extraRM, ...menuMarkup.reply_markup }
-        };
-      }
-    }
-    const msg = await originalReply(htmlText, finalExtra);
-    userLastBotMessage.set(id, msg.message_id);
-    return msg;
-  };
+  for (const method of ['replyWithHTML', 'reply']) {
+    const original = ctx[method].bind(ctx);
+    ctx[method] = async (text, extra) => {
+      const finalExtra = attachReplyKeyboard(id, extra);
+      const msg = await original(text, finalExtra);
+      userLastBotMessage.set(id, msg.message_id);
+      return msg;
+    };
+  }
 
   await next();
 });
