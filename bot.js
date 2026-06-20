@@ -60,7 +60,9 @@ const {
   cleanupStaleReminders,
   getShiftStatus,
   setShiftStatus,
-  clearShiftStatus
+  clearShiftStatus,
+  getShiftDate,
+  setShiftDate
 } = require('./services/storage');
 const { recognizeMileage, downloadTelegramFile, isGeminiOcrEnabled, recognizeTextWithGemini, getMinMileageThreshold, checkGeminiOcrHealth } = require('./services/mileageOcr');
 const { saveOcrDebugImage, updateOcrDebugStatus } = require('./services/ocrDebug');
@@ -1238,6 +1240,7 @@ const userLastBotMessage = new Map();
 bot.use(async (ctx, next) => {
   if (ctx.chat?.type !== 'private') return next();
   if (!ctx.message?.text) return next();
+  if (ctx.message?.forward_from || ctx.message?.forward_from_chat) return next();
 
   const id = ctx.from.id;
 
@@ -1725,9 +1728,20 @@ async function punchTimeFlow(ctx, explicitStage = null) {
 
   try {
     const isPedestrian = profile.courierType === 'pedestrian';
-    const result = explicitStage
-      ? await replaceTime(profile.fio, profile.workplace, explicitStage, isPedestrian)
-      : await punchTime(profile.fio, profile.workplace, isPedestrian);
+    let result;
+    if (explicitStage) {
+      result = await replaceTime(profile.fio, profile.workplace, explicitStage, isPedestrian);
+    } else {
+      const storedDate = getShiftDate(telegramId);
+      const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
+      const today = getCurrentDateInfo(timezone);
+      const todayStr = `${today.date.getFullYear()}-${String(today.date.getMonth()+1).padStart(2,'0')}-${String(today.date.getDate()).padStart(2,'0')}`;
+      if (storedDate && storedDate !== todayStr) {
+        result = await punchTime(profile.fio, profile.workplace, isPedestrian, storedDate + 'T12:00:00');
+      } else {
+        result = await punchTime(profile.fio, profile.workplace, isPedestrian);
+      }
+    }
 
     if (result.notFound) {
       const msg = formatNoSheetMessage(result, profile.workplace);
@@ -1753,11 +1767,17 @@ async function punchTimeFlow(ctx, explicitStage = null) {
     const currentTimeStatus = getShiftStatus(telegramId, 'time');
     if (result.stage === 'start') {
       setShiftStatus(telegramId, 'time', currentTimeStatus === 'end' || currentTimeStatus === 'both' ? 'both' : 'start');
+      if (currentTimeStatus === 'none') {
+        const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
+        const now = getCurrentDateInfo(timezone);
+        const todayKey = `${now.date.getFullYear()}-${String(now.date.getMonth()+1).padStart(2,'0')}-${String(now.date.getDate()).padStart(2,'0')}`;
+        setShiftDate(telegramId, todayKey);
+      }
     } else {
       setShiftStatus(telegramId, 'time', currentTimeStatus === 'start' || currentTimeStatus === 'both' ? 'both' : 'end');
     }
 
-    if (result.stage === 'start') {
+    if (result.stage === 'start' && currentTimeStatus === 'none') {
       const cur = Number(getUserField(telegramId, 'shiftCount') || 0);
       setUserField(telegramId, 'shiftCount', cur + 1);
     }
@@ -3267,7 +3287,10 @@ async function handleSheetsInfo(ctx, state, text, telegramId) {
     msg += `🏬 <b>${esc(wp)}</b>\n`;
     msg += `   Текущий: ${activeId ? '✅ привязана' : '❌ нет'}\n`;
     msg += `   Следующий: ${nextId ? '✅ привязана' : '❌ нет'}\n`;
-    msg += `   Источник: ${esc(info.source)}\n\n`;
+    const sourceText = info.sheetId
+      ? (info.isMonthly ? `monthly (${info.monthKey})` : 'global fallback')
+      : 'not configured';
+    msg += `   Источник: ${esc(sourceText)}\n\n`;
   }
   msg += `<b>Команды:</b>\n`;
   msg += `<code>/sheet east URL</code> — привязать для ИМ Восток\n`;

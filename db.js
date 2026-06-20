@@ -62,20 +62,30 @@ function tryRestoreFromBackup() {
 function checkpointAndClose(db) {
   try {
     db.pragma('wal_checkpoint(TRUNCATE)');
-  } catch (_) {}
+  } catch (e) {
+    console.error('wal_checkpoint failed:', e.message);
+  }
   try {
     db.close();
-  } catch (_) {}
+  } catch (e) {
+    console.error('db.close() failed:', e.message);
+  }
   const shmPath = dbPath + '-shm';
   const walPath = dbPath + '-wal';
-  if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
-  if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
+  try {
+    if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
+    if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
+  } catch (e) {
+    console.error('cleanup shm/wal failed:', e.message);
+  }
 }
 
 let db;
 try {
   db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
+  db.pragma('busy_timeout = 5000');
+  db.pragma('wal_autocheckpoint = 200');
   const integrity = db.pragma('integrity_check', { simple: true });
   if (integrity !== 'ok') {
     console.error(`Database integrity check failed: ${integrity}. Attempting recovery...`);

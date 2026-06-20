@@ -1,11 +1,15 @@
 const axios = require('axios');
 
 const OCR_CONCURRENCY = 15;
+const MAX_OCR_QUEUE_SIZE = 50;
 let activeOcrRequests = 0;
 const ocrQueue = [];
 
 function enqueueOcrRequest(fn) {
   return new Promise((resolve, reject) => {
+    if (ocrQueue.length >= MAX_OCR_QUEUE_SIZE) {
+      return reject(new Error('OCR queue limit exceeded'));
+    }
     ocrQueue.push({ fn, resolve, reject });
     processNextOcrRequest();
   });

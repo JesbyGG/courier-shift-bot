@@ -47,6 +47,7 @@ function getSheetsAuth() {
 let rowCache = {};
 let cacheTimestamp = 0;
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const MAX_ROW_CACHE_SIZE = 200;
 
 // --- Batch update queue ---
 let pendingUpdates = [];
@@ -321,11 +322,18 @@ async function updateCell(sheetName, cell, value, spreadsheetId) {
   }
 }
 
+let isFlushing = false;
+let pendingFlush = false;
+
 async function flushSheetUpdates() {
   if (pendingUpdates.length === 0) return;
-  const dataToUpdate = [...pendingUpdates];
-  pendingUpdates = [];
-  updateTimer = null;
+  if (isFlushing) { pendingFlush = true; return; }
+  isFlushing = true;
+
+  try {
+    const dataToUpdate = [...pendingUpdates];
+    pendingUpdates = [];
+    updateTimer = null;
 
   // Group by spreadsheetId because batchUpdate is per-sheet
   const bySheet = {};
@@ -435,6 +443,14 @@ async function flushSheetUpdates() {
       console.error('failed to notify admins about sheets error', e.message);
     }
   }
+
+  } finally {
+    isFlushing = false;
+    if (pendingFlush) {
+      pendingFlush = false;
+      flushSheetUpdates();
+    }
+  }
 }
 
 async function findCourierByFio(fio, workplace, sheetContext = null) {
@@ -462,6 +478,13 @@ async function findCourierByFio(fio, workplace, sheetContext = null) {
     }
   }
   cacheTimestamp = Date.now();
+
+  const keys = Object.keys(rowCache);
+  if (keys.length > MAX_ROW_CACHE_SIZE) {
+    for (let i = 0; i < keys.length - MAX_ROW_CACHE_SIZE; i++) {
+      delete rowCache[keys[i]];
+    }
+  }
 
   return rowCache[cacheKey] || null;
 }
@@ -492,6 +515,13 @@ async function findMileageByFio(fio, workplace, sheetContext = null) {
     }
   }
   cacheTimestamp = Date.now();
+
+  const keys = Object.keys(rowCache);
+  if (keys.length > MAX_ROW_CACHE_SIZE) {
+    for (let i = 0; i < keys.length - MAX_ROW_CACHE_SIZE; i++) {
+      delete rowCache[keys[i]];
+    }
+  }
 
   return rowCache[cacheKey] || null;
 }
@@ -653,7 +683,7 @@ async function prepareMileage(fio, workplace, stage = null) {
   };
 }
 
-async function punchTime(fio, workplace, isPedestrian = false) {
+async function punchTime(fio, workplace, isPedestrian = false, overrideDate = null) {
   const ctx = await resolveCourierContext(fio, workplace, { requireMileage: !isPedestrian });
   if (ctx.notFound) {
     if (ctx.noSheet) {
@@ -665,7 +695,8 @@ async function punchTime(fio, workplace, isPedestrian = false) {
   const { spreadsheetId, config, courier, mileage } = ctx;
 
   const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
-  const { dateText, day, date } = getCurrentDateInfo(timezone);
+  const dateInfo = overrideDate ? getCurrentDateInfo(timezone, overrideDate) : getCurrentDateInfo(timezone);
+  const { dateText, day, date } = dateInfo;
   const timeValue = roundTimeToHalfHour(date);
   const columns = getCourierColumnsByDay(day);
   const startCell = `${getColumnLetter(columns.startColumn)}${courier.row}`;

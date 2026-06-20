@@ -106,8 +106,8 @@ function getDateInTimezone(timezone = 'Europe/Moscow') {
   return new Date(year, month - 1, day, hour, minute, second);
 }
 
-function getCurrentDateInfo(timezone = 'Europe/Moscow') {
-  const date = getDateInTimezone(timezone);
+function getCurrentDateInfo(timezone = 'Europe/Moscow', overrideDate = null) {
+  const date = overrideDate ? new Date(overrideDate) : getDateInTimezone(timezone);
   const day = date.getDate();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const dateText = `${String(day).padStart(2, '0')}.${month}.${date.getFullYear()}`;

@@ -92,7 +92,7 @@ module.exports = function setupReplyForwarding(bot, services) {
       } catch (_) {}
     }
 
-    return next();
+    return;
   });
 
   // ─── Courier replies in private → forward to group ───
@@ -204,6 +204,6 @@ module.exports = function setupReplyForwarding(bot, services) {
       } catch (_) {}
     }
 
-    return next();
+    return;
   });
 };

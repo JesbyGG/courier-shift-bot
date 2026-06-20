@@ -10,6 +10,10 @@ module.exports = function setupLogist(bot, services) {
   } = services;
 
   bot.action(/^d_(\d+)$/, async (ctx) => {
+    if (getUserRole(String(ctx.from.id)) !== 'logist') {
+      await ctx.answerCbQuery('⛔ Только логист.', { show_alert: true });
+      return;
+    }
     const courierId = ctx.match[1];
     await pokeCourier(ctx, courierId);
   });
@@ -118,12 +122,13 @@ module.exports = function setupLogist(bot, services) {
 
   bot.action(/^appr_([0-9a-f]+)$/, async (ctx) => {
     const shortId = ctx.match[1];
-    await ctx.answerCbQuery();
 
     if (getUserRole(String(ctx.from.id)) !== 'logist') {
       await ctx.answerCbQuery('⛔ Только логист может подтверждать сдачу.', { show_alert: true });
       return;
     }
+
+    await ctx.answerCbQuery();
 
     const reminder = getReminder(shortId);
     if (!reminder) {
@@ -164,12 +169,13 @@ module.exports = function setupLogist(bot, services) {
 
   bot.action(/^decl_([0-9a-f]+)$/, async (ctx) => {
     const shortId = ctx.match[1];
-    await ctx.answerCbQuery();
 
     if (getUserRole(String(ctx.from.id)) !== 'logist') {
       await ctx.answerCbQuery('⛔ Только логист может отклонять сдачу.', { show_alert: true });
       return;
     }
+
+    await ctx.answerCbQuery();
 
     const reminder = getReminder(shortId);
     if (!reminder) {
@@ -328,6 +334,10 @@ module.exports = function setupLogist(bot, services) {
   });
 
   bot.action(/^ch_(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
+    if (getUserRole(String(ctx.from.id)) !== 'logist') {
+      await ctx.answerCbQuery('⛔ Нет доступа.', { show_alert: true });
+      return;
+    }
     const dateStr = ctx.match[1];
     await ctx.answerCbQuery();
     await showCashHistoryForDate(ctx, dateStr);
