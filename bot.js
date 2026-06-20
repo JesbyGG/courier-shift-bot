@@ -2442,7 +2442,7 @@ async function sendMediaGroupToChat(ctx, items, { envChatId, envThreadId, parseM
 
     // Clear any stale reply keyboard in group chats
     try {
-      const cleanupMsg = await ctx.telegram.sendMessage(chatId, '', {
+      const cleanupMsg = await ctx.telegram.sendMessage(chatId, '.', {
         reply_markup: { remove_keyboard: true },
         message_thread_id: threadId ? Number(threadId) : undefined
       });
