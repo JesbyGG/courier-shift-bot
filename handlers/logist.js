@@ -6,7 +6,7 @@ module.exports = function setupLogist(bot, services) {
     logCashAction, clearPendingCashAndReminders,
     setCashConfirmationStatus,
     esc, formatMoneyRu, getMenuForRole,
-    Markup, sendFunReaction
+    Markup, sendFunReaction, styledButton
   } = services;
 
   bot.action(/^d_(\d+)$/, async (ctx) => {

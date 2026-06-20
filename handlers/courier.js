@@ -14,7 +14,7 @@ module.exports = function setupCourier(bot, services) {
     replaceTimeAction,
     WORKPLACE_FEATURES, sendCommandsList,
     manualMileageKeyboard, skipMileageKeyboard, courierMainMenu,
-    Markup, BUTTONS, esc
+    Markup, BUTTONS, esc, styledButton
   } = services;
 
   bot.on('photo', async (ctx) => {
@@ -81,6 +81,11 @@ module.exports = function setupCourier(bot, services) {
   });
 
   bot.action('confirm_switch_user', async (ctx) => {
+    const swState = getState(ctx.from.id);
+    if (!swState?.awaitingSwitchUser) {
+      await ctx.answerCbQuery('⚠️ Сначала нажмите «Поменять сотрудника» в настройках.', { show_alert: true });
+      return;
+    }
     await ctx.answerCbQuery();
     deleteUser(ctx.from.id);
     setState(ctx.from.id, { awaitingFio: true });

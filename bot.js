@@ -253,6 +253,7 @@ function _translateToRussian(text) {
 
 function _getGitLogSince(fromHash) {
   if (!fromHash) return null;
+  if (!/^[0-9a-f]{4,40}$/i.test(fromHash)) return null;
   try {
     const log = execSync(`git log --oneline --no-merges ${fromHash}..HEAD`, { encoding: 'utf8', cwd: __dirname });
     return log.split('\n')
@@ -1361,7 +1362,7 @@ function logReconciliationPhoto(telegramId, fileId, state, label) {
 
 function formatMoneyRu(value) {
   const number = Number(value || 0);
-  if (!Number.isFinite(number) || number < 0) return null;
+  if (!Number.isFinite(number) || number < 0) return '0,00 ₽';
   const formatted = new Intl.NumberFormat('ru-RU', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
