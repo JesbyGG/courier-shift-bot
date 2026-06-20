@@ -1270,7 +1270,7 @@ bot.use(async (ctx, next) => {
     if (hasInlineOnly) {
       const menuMarkup = getMenuForRole(id);
       if (menuMarkup?.reply_markup) {
-        const kbMsg = await originalReply('‎', menuMarkup);
+        const kbMsg = await originalReply(' ', menuMarkup);
         userLastBotMessage.set(id, kbMsg.message_id);
       }
     }
