@@ -74,6 +74,7 @@ const {
   shouldWarnAboutReconciliationOcr
 } = require('./services/reconciliationOcr');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, getCourierColumnsByDay, roundMinutesToHalfHour, roundTimeToHalfHour, isEmptyCell, isScheduleMarker, withTimeout, styledButton } = require('./utils');
+const safeLog = require('./utils/safeLog');
 const { registerSheetCommand } = require('./sheetCommand');
 const { WORKPLACES, DEVICES, ROLES, LIMITS, WORKPLACE_FEATURES, WORKPLACE_KEY_MAP, BUTTONS } = require('./config');
 const { isAdminUser, getAdminIds } = require('./services/auth');
@@ -170,6 +171,25 @@ function withStateSync(telegramId, fn) {
     setState(id, result);
   }
   return result;
+}
+
+// Per-user rate limiting for photo/OCR processing
+const MAX_MILEAGE_PHOTOS_PER_MINUTE = 5;
+const MILEAGE_PHOTO_WINDOW_MS = 60 * 1000;
+const userMileagePhotoTimestamps = new Map();
+
+function isMileagePhotoRateLimited(telegramId) {
+  const id = String(telegramId);
+  const now = Date.now();
+  let timestamps = userMileagePhotoTimestamps.get(id) || [];
+  timestamps = timestamps.filter(ts => now - ts < MILEAGE_PHOTO_WINDOW_MS);
+  userMileagePhotoTimestamps.set(id, timestamps);
+
+  if (timestamps.length >= MAX_MILEAGE_PHOTOS_PER_MINUTE) {
+    return true;
+  }
+  timestamps.push(now);
+  return false;
 }
 
 const versionPath = path.join(__dirname, 'version.json');
@@ -723,7 +743,7 @@ bot.use(async (ctx, next) => {
   if (ms > 500) {
     const updateType = ctx.updateType || 'unknown';
     const text = ctx.message?.text || ctx.callbackQuery?.data || '';
-    console.log(`⚠️ Медленный запрос: ${ms}мс, тип: ${updateType}, от: ${ctx.from?.id}, текст/данные: ${text}`);
+    safeLog.log(`⚠️ Медленный запрос: ${ms}мс, тип: ${updateType}, от: ${ctx.from?.id}, текст/данные: ${text}`);
   }
 });
 
@@ -871,10 +891,22 @@ async function makeBackup(reason = 'auto') {
   await ensureBackupDir();
   const now = new Date();
   const ts = now.toISOString().replace(/[.:]/g, '-');
+
+  // Consistent SQLite backup via VACUUM INTO (atomic, includes WAL state)
   try {
     checkpoint();
-  } catch (_) {}
+    const sqliteDst = path.join(BACKUP_DIR, `database.sqlite-${reason}-${ts}.sqlite`);
+    db.prepare(`VACUUM INTO ?`).run(sqliteDst);
+  } catch (e) {
+    safeLog.error('SQLite VACUUM INTO backup failed, falling back to copyFile:', e.message);
+    const fallbackDst = path.join(BACKUP_DIR, `database.sqlite-${reason}-${ts}.sqlite`);
+    try {
+      await fs.promises.copyFile(path.join(__dirname, 'database.sqlite'), fallbackDst);
+    } catch (_) {}
+  }
+
   for (const filename of BACKUP_FILES) {
+    if (filename === 'database.sqlite') continue; // handled above
     const src = path.join(__dirname, filename);
     try {
       await fs.promises.access(src);
@@ -1322,6 +1354,7 @@ bot.use(async (ctx, next) => {
 });
 
 bot.on('sticker', async (ctx) => {
+  if (ctx.chat?.type !== 'private') return;
   const sticker = ctx.message?.sticker;
   if (!sticker?.file_id) return;
 
@@ -1338,6 +1371,7 @@ bot.on('sticker', async (ctx) => {
 });
 
 bot.on('animation', async (ctx) => {
+  if (ctx.chat?.type !== 'private') return;
   const animation = ctx.message?.animation;
   if (!animation?.file_id) return;
 
@@ -2266,7 +2300,7 @@ async function notifyUsersAboutUpdate(version, changedFiles = [], updates = []) 
       setUserField(telegramId, 'version', currentVersion);
       notified++;
     } catch (error) {
-      console.error('update notify error', error.message);
+      safeLog.error('update notify error', error.message);
       failed++;
     }
 
@@ -2291,11 +2325,11 @@ async function refreshAllKeyboards() {
       });
       await new Promise((r) => setTimeout(r, 200));
       await bot.telegram.deleteMessage(Number(telegramId), msg.message_id).catch((e) => {
-        console.error('keyboard refresh delete failed for', telegramId, e.message);
+        safeLog.error('keyboard refresh delete failed for', telegramId, e.message);
       });
       sent++;
     } catch (error) {
-      console.error('keyboard refresh error for', telegramId, error.message);
+      safeLog.error('keyboard refresh error for', telegramId, error.message);
       failed++;
     }
     await new Promise((r) => setTimeout(r, 50));
@@ -2595,7 +2629,7 @@ function forwardMediaGroup(ctx, items, destinationKey) {
 
 function savePhotoThread(result, telegramId, type) {
   if (!result || !result.chat || !result.message_id || !telegramId) return;
-  saveThread(result.chat.id, result.message_id, telegramId, type);
+  saveThread(result.chat.id, result.message_id, telegramId, type, result.message_thread_id);
   cleanupOldThreads(7);
 }
 
@@ -2663,7 +2697,7 @@ async function notifyAdmins(html, options = {}) {
     try {
       await bot.telegram.sendMessage(adminId, html, { parse_mode: 'HTML', ...options });
     } catch (e) {
-      console.error('admin notify failed', adminId, e.message);
+      safeLog.error('admin notify failed', adminId, e.message);
     }
   }
 }
@@ -3085,6 +3119,17 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
 
 async function handleMileagePhoto(ctx, state, fileId) {
   const telegramId = ctx.from.id;
+
+  if (isMileagePhotoRateLimited(telegramId)) {
+    await ctx.replyWithHTML('⚠️ Слишком много фото пробега. Попробуйте через минуту.', getMenuForRole(telegramId));
+    return;
+  }
+
+  if (state?.mileageProcessing) {
+    await ctx.replyWithHTML('⏳ Дождитесь завершения обработки предыдущего фото.', getMenuForRole(telegramId));
+    return;
+  }
+
   console.log('фото получено');
   logMileagePhoto(telegramId, fileId, state);
 
@@ -3159,17 +3204,17 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
     try {
       await telegram.sendMessage(chatId, html, { parse_mode: 'HTML', ...(extra || {}) });
     } catch (e) {
-      console.error('background sendMsg error', e.message);
+      safeLog.error('background sendMsg error', e.message);
     }
   };
 
   try {
-    console.log('mileage bg: start processing', { telegramId, fileId });
+    safeLog.log('mileage bg: start processing', { telegramId, fileId });
 
     const [recognitionOptions, forwardedResult] = await Promise.all([
       buildMileageRecognitionOptions(originalState),
       forwardPhoto({ telegram }, fileId, buildPhotoCaption(originalState, telegramId), 'work').catch((error) => {
-        console.error('telegram send photo error', error);
+      safeLog.error('telegram send photo error', error);
         return null;
       })
     ]);

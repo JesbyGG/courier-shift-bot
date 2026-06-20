@@ -204,6 +204,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     group_chat_id TEXT NOT NULL,
     group_message_id INTEGER NOT NULL,
+    message_thread_id INTEGER,
     courier_telegram_id TEXT NOT NULL,
     type TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -227,6 +228,18 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_cash_audit_timestamp ON cash_audit(timestamp);
 `);
 
+// Schema migrations
+try {
+  const threadCols = db.prepare("PRAGMA table_info(message_threads)").all();
+  const hasMessageThreadId = threadCols.some(c => c.name === 'message_thread_id');
+  if (!hasMessageThreadId) {
+    db.prepare('ALTER TABLE message_threads ADD COLUMN message_thread_id INTEGER').run();
+    console.log('migrated message_threads: added message_thread_id column');
+  }
+} catch (e) {
+  console.error('message_threads migration error:', e.message);
+}
+
 function checkpoint() {
   try {
     db.pragma('wal_checkpoint(TRUNCATE)');
@@ -237,12 +250,12 @@ function checkpoint() {
 
 // ─── Message threads (reply forwarding) ───
 
-function saveThread(groupChatId, groupMessageId, courierTelegramId, type) {
+function saveThread(groupChatId, groupMessageId, courierTelegramId, type, messageThreadId = null) {
   try {
     db.prepare(`
-      INSERT INTO message_threads (group_chat_id, group_message_id, courier_telegram_id, type)
-      VALUES (?, ?, ?, ?)
-    `).run(String(groupChatId), Number(groupMessageId), String(courierTelegramId), type || null);
+      INSERT INTO message_threads (group_chat_id, group_message_id, message_thread_id, courier_telegram_id, type)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(String(groupChatId), Number(groupMessageId), messageThreadId ? Number(messageThreadId) : null, String(courierTelegramId), type || null);
   } catch (e) {
     console.error('saveThread error:', e.message);
   }
