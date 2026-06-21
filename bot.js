@@ -592,9 +592,10 @@ async function openShopNotify(ctx) {
     } catch (e) {
       console.error('shop open notify error', e.message || e);
     }
+    return { status: 'ok', workplace };
   }
 
-  return { status: 'ok', workplace };
+  return { status: 'no_chat' };
 }
 
 async function notifyLogistsAboutSelfClearance(courierId, courierFio, amount, formatted, workplace) {
@@ -1708,7 +1709,6 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       return;
     }
 
-    console.log('время записано', result.stage);
     const currentTimeStatus = getShiftStatus(telegramId, 'time');
     if (result.stage === 'start') {
       setShiftStatus(telegramId, 'time', currentTimeStatus === 'end' || currentTimeStatus === 'both' ? 'both' : 'start');
@@ -1742,8 +1742,6 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       `📝 Неверно? → «Изменить время»`,
       timeChangeKeyboard()
     );
-    await ctx.replyWithHTML('✅', getMenuForRole(telegramId));
-
     if (result.stage === 'start') {
       const pendingCash = getPendingCash(telegramId);
       const pendingAmount = Number(pendingCash?.amount || 0);
@@ -1803,7 +1801,6 @@ async function mileageFlow(ctx, explicitStage = null) {
     }
 
     setState(telegramId, makeMileageState(telegramId, applyProfile(result, profile), { source: 'mileage' }));
-    console.log('ожидание пробега', result.stage);
     await ctx.replyWithHTML(
       `📸 Пробег — <b>${esc(formatStage(result.stage))}</b>\n` +
       `──────────────\n\n` +
@@ -2305,7 +2302,6 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
       `📝 Неверно? → «Изменить пробег»`,
       mileageSavedKeyboard()
     );
-    await replyFn('✅', getMenuForRole(telegramId));
   } catch (error) {
     console.error('ошибка Google Sheets', error);
     await replyFn('⚠️ Не удалось записать пробег\n\nПопробуйте ещё раз.');
@@ -2689,7 +2685,6 @@ async function replaceTimeAction(ctx, stage) {
       return { status: 'not_found', result, workplace: profile.workplace };
     }
 
-    console.log('время записано', `replace_${stage}`);
     clearState(ctx.from.id);
     return { status: 'replaced', stage, timeValue: result.timeValue };
   } catch (error) {
@@ -3141,7 +3136,11 @@ async function handleManualTime(ctx, state, text) {
   try {
     await updateCourierTime(state.courierRow, state.day, state.stage, timeValue, state.workplace);
     clearState(telegramId);
-    console.log('время изменено', state.stage);
+    const currentStatus = getShiftStatus(telegramId, 'time');
+    const newStatus = state.stage === 'start'
+      ? (currentStatus === 'end' || currentStatus === 'both' ? 'both' : 'start')
+      : (currentStatus === 'start' || currentStatus === 'both' ? 'both' : 'end');
+    setShiftStatus(telegramId, 'time', newStatus);
     const icon = state.stage === 'start' ? '🟢' : '🔴';
     const label = state.stage === 'start' ? 'Старт' : 'Конец';
     await ctx.replyWithHTML(`${icon} <b>${label} смены</b> изменён\n\n⏰ <code>${esc(timeValue)}</code>`);
@@ -3211,21 +3210,10 @@ async function handleSheetsInfo(ctx, state, text, telegramId) {
 
 async function handleMyId(ctx) {
   const userId = ctx.from.id;
-  const firstName = ctx.from.first_name || '';
-  const lastName = ctx.from.last_name || '';
-  const username = ctx.from.username ? `@${ctx.from.username}` : '';
-  const displayName = [firstName, lastName].filter(Boolean).join(' ') || 'Без имени';
 
   await ctx.replyWithHTML(
     `🆔 <b>Ваш Telegram ID:</b> <code>${userId}</code>\n\n` +
     'Сообщите этот ID администратору для получения доступа к разделу «📋 Таблицы».'
-  );
-
-  await notifyAdmins(
-    `🆔 <b>Запрос доступа к Таблицам</b>\n\n` +
-    `👤 ${esc(displayName)} ${esc(username)}\n` +
-    `🆔 <code>${userId}</code>\n\n` +
-    `Дать доступ: <code>/sheet_access ${userId}</code>`
   );
 }
 

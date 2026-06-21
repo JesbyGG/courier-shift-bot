@@ -82,8 +82,14 @@ module.exports = function setupCourier(bot, services) {
 
   bot.action('confirm_switch_user', async (ctx) => {
     await ctx.answerCbQuery();
-    deleteUser(ctx.from.id);
-    setState(ctx.from.id, { awaitingFio: true });
+    const telegramId = ctx.from.id;
+    const state = getState(telegramId);
+    if (!state?.awaitingSwitchUser) {
+      await ctx.replyWithHTML('⚠️ Запрос устарел. Нажмите /start.', getMenuForRole(telegramId));
+      return;
+    }
+    deleteUser(telegramId);
+    setState(telegramId, { awaitingFio: true });
     await ctx.replyWithHTML('👤 Смена сотрудника\n──────────────\n\nДанные удалены. Введите имя и фамилию как в таблице.');
   });
 
