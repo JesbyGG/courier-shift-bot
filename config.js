@@ -94,7 +94,7 @@ const BUTTONS = {
   cashCollect: '💳 Наличные',
   cashHistory: '📋 История',
   openShop: '🔓 Магазин',
-  backToSettings: '◀️ К настройкам',
+  backToSettings: '◀️ Назад',
   back: '◀️ Назад'
 };
 

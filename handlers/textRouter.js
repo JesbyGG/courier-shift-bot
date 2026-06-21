@@ -39,9 +39,6 @@ module.exports = function setupTextRouter(bot, services) {
   } = services;
 
   const TEXT_ROUTES = [
-    // 0) «Назад в настройки» — ДО общего «Назад» (кнопка уникальна: '◀️ К настройкам')
-    { button: BUTTONS.backToSettings, legacy: ['↩️ К настройкам'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ Настройки\n──────────────', getSettingsMenuForRole(id)) },
-
     // 1) «Назад в меню» — общая кнопка
     { match: (text) => ['🏠 В меню', '◀️ Назад', '⬅️ Назад', 'Назад'].includes(text) || text === BUTTONS.back, handler: async (ctx) => {
       const res = await backToMainMenu(ctx);
@@ -126,13 +123,13 @@ module.exports = function setupTextRouter(bot, services) {
       const res = await openShopNotify(ctx);
       if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(ctx.from.id));
       else if (res.status === 'no_workplace') await ctx.replyWithHTML('⚠️ Сначала выберите магазин в настройках.', getMenuForRole(ctx.from.id));
-      else if (res.status === 'no_chat') await ctx.replyWithHTML('⚠️ Чат для уведомлений не настроен.\nСообщите администратору о необходимости настроить <code>SHOP_STATUS_CHAT_ID</code>.', getMenuForRole(ctx.from.id));
       else if (res.status === 'ok') await ctx.replyWithHTML(`✅ Магазин открыт\n──────────────\n\n🏬 ${esc(res.workplace)} — ОТКРЫТ`, getMenuForRole(ctx.from.id));
     }},
 
     // 4) Меню настроек
     { button: BUTTONS.settings, legacy: ['Настройки'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ Настройки\n──────────────', getSettingsMenuForRole(id)) },
     { button: BUTTONS.profile, legacy: ['✏️ Профиль', 'Профиль'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('👤 Профиль\n──────────────', getProfileMenuForRole(ctx.from.id)) },
+    { button: BUTTONS.backToSettings, legacy: ['↩️ К настройкам'], handler: async (ctx, s, text, id) => ctx.replyWithHTML('⚙️ Настройки\n──────────────', getSettingsMenuForRole(id)) },
     { button: BUTTONS.help, legacy: ['Помощь'], handler: (ctx) => sendHelp(ctx) },
 
     // 5) Профиль (требуют ФИО)

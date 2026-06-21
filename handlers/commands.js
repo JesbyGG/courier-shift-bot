@@ -62,6 +62,7 @@ module.exports = function setupCommands(bot, services) {
     const profile = await ensureProfile(ctx);
 
     if (!profile) {
+      await ctx.replyWithHTML('⚠️ Не удалось загрузить профиль. Попробуйте /start позже или обратитесь к администратору.');
       return;
     }
 
@@ -144,11 +145,27 @@ module.exports = function setupCommands(bot, services) {
   bot.action('show_my_id', async (ctx) => {
     await ctx.answerCbQuery();
     const userId = ctx.from.id;
+    const firstName = ctx.from.first_name || '';
+    const lastName = ctx.from.last_name || '';
+    const username = ctx.from.username ? `@${ctx.from.username}` : '';
+    const displayName = [firstName, lastName].filter(Boolean).join(' ') || 'Без имени';
 
     await ctx.replyWithHTML(
       `🆔 <b>Ваш Telegram ID:</b> <code>${userId}</code>\n\n` +
       'Отправьте этот ID администратору для получения доступа.'
     );
+
+    for (const adminId of getAdminIds()) {
+      try {
+        await ctx.telegram.sendMessage(adminId,
+          `🆔 <b>Запрос доступа к Таблицам</b>\n\n` +
+          `👤 ${esc(displayName)} ${esc(username)}\n` +
+          `🆔 <code>${userId}</code>\n\n` +
+          `Дать доступ: <code>/sheet_access ${userId}</code>`,
+          { parse_mode: 'HTML' }
+        );
+      } catch (e) { /* админ заблокирован — пропускаем */ }
+    }
   });
 
   bot.action('role_courier', async (ctx) => {

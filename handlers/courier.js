@@ -89,14 +89,8 @@ module.exports = function setupCourier(bot, services) {
       return;
     }
     await ctx.answerCbQuery();
-    const telegramId = ctx.from.id;
-    const state = getState(telegramId);
-    if (!state?.awaitingSwitchUser) {
-      await ctx.replyWithHTML('⚠️ Запрос устарел. Нажмите /start.', getMenuForRole(telegramId));
-      return;
-    }
-    deleteUser(telegramId);
-    setState(telegramId, { awaitingFio: true });
+    deleteUser(ctx.from.id);
+    setState(ctx.from.id, { awaitingFio: true });
     await ctx.replyWithHTML('👤 Смена сотрудника\n──────────────\n\nДанные удалены. Введите имя и фамилию как в таблице.');
   });
 
