@@ -6,19 +6,33 @@ module.exports = function setupLogist(bot, services) {
     logCashAction, clearPendingCashAndReminders,
     setCashConfirmationStatus,
     esc, formatMoneyRu, getMenuForRole,
-    Markup, sendFunReaction
+    Markup, sendFunReaction, styledButton
   } = services;
 
   bot.action(/^d_(\d+)$/, async (ctx) => {
+    if (getUserRole(String(ctx.from.id)) !== 'logist') {
+      await ctx.answerCbQuery('⛔ Только логист.', { show_alert: true });
+      return;
+    }
     const courierId = ctx.match[1];
     await pokeCourier(ctx, courierId);
   });
 
   bot.action(/^ack_([0-9a-f]+)$/, async (ctx) => {
     const shortId = ctx.match[1];
-    await ctx.answerCbQuery();
 
     const reminder = getReminder(shortId);
+    if (!reminder) {
+      await ctx.answerCbQuery('⚠️ Напоминание устарело.', { show_alert: true });
+      try { await ctx.editMessageText('⚠️ Напоминание устарело или уже обработано.'); } catch (e) { /* ignore */ }
+      return;
+    }
+
+    if (String(ctx.from.id) !== String(reminder.courierId)) {
+      await ctx.answerCbQuery('⛔ Это не ваше напоминание.', { show_alert: true });
+      return;
+    }
+    await ctx.answerCbQuery();
     if (!reminder) {
       try { await ctx.editMessageText('⚠️ Напоминание устарело или уже обработано.'); } catch (e) { /* ignore */ }
       return;
@@ -70,9 +84,19 @@ module.exports = function setupLogist(bot, services) {
 
   bot.action(/^c_([0-9a-f]+)$/, async (ctx) => {
     const shortId = ctx.match[1];
-    await ctx.answerCbQuery();
 
     const reminder = getReminder(shortId);
+    if (!reminder) {
+      await ctx.answerCbQuery('⚠️ Напоминание устарело.', { show_alert: true });
+      try { await ctx.editMessageText('⚠️ Напоминание устарело или уже обработано.'); } catch (e) { /* ignore */ }
+      return;
+    }
+
+    if (String(ctx.from.id) !== String(reminder.courierId)) {
+      await ctx.answerCbQuery('⛔ Это не ваше напоминание.', { show_alert: true });
+      return;
+    }
+    await ctx.answerCbQuery();
     if (!reminder) {
       try { await ctx.editMessageText('⚠️ Напоминание устарело или уже обработано.'); } catch (e) { /* ignore */ }
       return;
@@ -118,18 +142,26 @@ module.exports = function setupLogist(bot, services) {
 
   bot.action(/^appr_([0-9a-f]+)$/, async (ctx) => {
     const shortId = ctx.match[1];
-    await ctx.answerCbQuery();
 
     if (getUserRole(String(ctx.from.id)) !== 'logist') {
       await ctx.answerCbQuery('⛔ Только логист может подтверждать сдачу.', { show_alert: true });
       return;
     }
 
+    await ctx.answerCbQuery();
+
     const reminder = getReminder(shortId);
     if (!reminder) {
       try { await ctx.editMessageText('⚠️ Напоминание устарело.'); } catch (e) { /* ignore */ }
       return;
     }
+
+    if (reminder.status !== 'confirmed') {
+      await ctx.answerCbQuery('⛔ Курьер ещё не подтвердил сдачу.', { show_alert: true });
+      return;
+    }
+
+    await ctx.answerCbQuery();
 
     clearPendingCashAndReminders(reminder.courierId);
 
@@ -164,18 +196,26 @@ module.exports = function setupLogist(bot, services) {
 
   bot.action(/^decl_([0-9a-f]+)$/, async (ctx) => {
     const shortId = ctx.match[1];
-    await ctx.answerCbQuery();
 
     if (getUserRole(String(ctx.from.id)) !== 'logist') {
       await ctx.answerCbQuery('⛔ Только логист может отклонять сдачу.', { show_alert: true });
       return;
     }
 
+    await ctx.answerCbQuery();
+
     const reminder = getReminder(shortId);
     if (!reminder) {
       try { await ctx.editMessageText('⚠️ Напоминание устарело.'); } catch (e) { /* ignore */ }
       return;
     }
+
+    if (reminder.status !== 'confirmed') {
+      await ctx.answerCbQuery('⛔ Курьер ещё не подтвердил сдачу.', { show_alert: true });
+      return;
+    }
+
+    await ctx.answerCbQuery();
 
     logCashAction({
       logistId: reminder.logistId, logistFio: reminder.logistFio,
@@ -328,6 +368,10 @@ module.exports = function setupLogist(bot, services) {
   });
 
   bot.action(/^ch_(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
+    if (getUserRole(String(ctx.from.id)) !== 'logist') {
+      await ctx.answerCbQuery('⛔ Нет доступа.', { show_alert: true });
+      return;
+    }
     const dateStr = ctx.match[1];
     await ctx.answerCbQuery();
     await showCashHistoryForDate(ctx, dateStr);

@@ -1,4 +1,3 @@
-const fs = require('fs');
 const path = require('path');
 const { WORKPLACE_KEY_MAP } = require('../config');
 const db = require('../db');
@@ -162,16 +161,16 @@ function getDebtors(workplace) {
 }
 
 function findLogistsForWorkplace(workplace) {
-  const ids = getAllUserIds();
+  const rows = db.prepare('SELECT telegramId, data FROM users').all();
   const logists = [];
-  for (const id of ids) {
-    const record = _getRecord(id);
-    if (!record || record.role !== 'logist') continue;
-    if (record.workplace !== workplace) continue;
+  for (const row of rows) {
+    let record;
+    try { record = JSON.parse(row.data); } catch { continue; }
+    if (record.role !== 'logist' || record.workplace !== workplace) continue;
     logists.push({
-      telegramId: id,
+      telegramId: row.telegramId,
       fio: record.fio || 'Неизвестный',
-      chatId: id
+      chatId: row.telegramId
     });
   }
   return logists;
@@ -478,6 +477,19 @@ function clearShiftStatus(telegramId) {
   }
 }
 
+function setShiftDate(telegramId, dateKey) {
+  const record = _getRecord(telegramId) || {};
+  if (!record.shiftStatus) record.shiftStatus = {};
+  record.shiftStatus.date = dateKey;
+  _setRecord(telegramId, record);
+}
+
+function getShiftDate(telegramId) {
+  const record = _getRecord(telegramId) || {};
+  const statusObj = record.shiftStatus || {};
+  return statusObj.date || null;
+}
+
 module.exports = {
   getUserField,
   setUserField,
@@ -512,6 +524,8 @@ module.exports = {
   getShiftStatus,
   setShiftStatus,
   clearShiftStatus,
+  getShiftDate,
+  setShiftDate,
 
   logCashAction,
   getCashHistory,

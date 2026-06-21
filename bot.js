@@ -3,8 +3,6 @@ require('./logger').initLogger();
 
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
-const { execSync } = require('child_process');
 
 const crypto = require('crypto');
 
@@ -60,7 +58,9 @@ const {
   cleanupStaleReminders,
   getShiftStatus,
   setShiftStatus,
-  clearShiftStatus
+  clearShiftStatus,
+  getShiftDate,
+  setShiftDate
 } = require('./services/storage');
 const { recognizeMileage, downloadTelegramFile, isGeminiOcrEnabled, recognizeTextWithGemini, getMinMileageThreshold, checkGeminiOcrHealth } = require('./services/mileageOcr');
 const { saveOcrDebugImage, updateOcrDebugStatus } = require('./services/ocrDebug');
@@ -72,6 +72,23 @@ const {
   shouldWarnAboutReconciliationOcr
 } = require('./services/reconciliationOcr');
 const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, getCourierColumnsByDay, roundMinutesToHalfHour, roundTimeToHalfHour, isEmptyCell, isScheduleMarker, withTimeout, styledButton } = require('./utils');
+const safeLog = require('./utils/safeLog');
+const {
+  forwardPhoto,
+  forwardMediaGroup,
+  sendPhotoToWorkChat,
+  sendPhotoToRouteSheetChat,
+  sendPhotoToReconciliationChat,
+  sendMediaGroupToReconciliationChat,
+  savePhotoThread
+} = require('./services/photoForwarder');
+const { runBackupCycle, makeBackup, BACKUP_INTERVAL_MS } = require('./services/backup');
+const {
+  checkVersion,
+  getVersion,
+  getLatestChangelogNotes,
+  getChangelogBump
+} = require('./services/version');
 const { registerSheetCommand } = require('./sheetCommand');
 const { WORKPLACES, DEVICES, ROLES, LIMITS, WORKPLACE_FEATURES, WORKPLACE_KEY_MAP, BUTTONS } = require('./config');
 const { isAdminUser, getAdminIds } = require('./services/auth');
@@ -129,226 +146,64 @@ function clearState(telegramId) {
   db.prepare('DELETE FROM states WHERE telegramId = ?').run(String(telegramId));
 }
 
-const versionPath = path.join(__dirname, 'version.json');
-const changelogPath = path.join(__dirname, 'changelog.json');
-const _sourceDir = __dirname;
+// Per-user state lock to prevent read-modify-write races
+const stateLocks = new Map();
 
-function _getCurrentVersion() {
+async function withState(telegramId, fn) {
+  const id = String(telegramId);
+
+  // Wait for any existing lock
+  while (stateLocks.has(id)) {
+    try { await stateLocks.get(id); } catch { /* ignore */ }
+  }
+
+  let release;
+  const lockPromise = new Promise((resolve) => { release = resolve; });
+  stateLocks.set(id, lockPromise);
+
   try {
-    if (!fs.existsSync(versionPath)) {
-      return null;
+    const state = getState(id);
+    const result = await fn(state);
+    if (result !== undefined) {
+      setState(id, result);
     }
-    return JSON.parse(fs.readFileSync(versionPath, 'utf8'));
-  } catch {
-    return null;
+    return result;
+  } finally {
+    stateLocks.delete(id);
+    release();
   }
 }
 
-function _getSourceFiles() {
-  const dirs = [
-    _sourceDir,
-    path.join(_sourceDir, 'services'),
-    path.join(_sourceDir, 'handlers'),
-    path.join(_sourceDir, 'menus')
-  ];
-  const files = [];
-  for (const dir of dirs) {
-    if (!fs.existsSync(dir)) continue;
-    const dirFiles = fs.readdirSync(dir)
-      .filter(f => f.endsWith('.js') && f !== 'version.js')
-      .map(f => path.relative(_sourceDir, path.join(dir, f)));
-    files.push(...dirFiles);
+function withStateSync(telegramId, fn) {
+  const id = String(telegramId);
+  if (stateLocks.has(id)) {
+    throw new Error(`State lock held for ${id}; use withState for async operations`);
   }
-  return files.sort();
-}
-
-function _computeSourceSnapshot() {
-  const jsFiles = _getSourceFiles();
-  const fileHashes = {};
-  const combinedHash = crypto.createHash('sha256');
-  for (const file of jsFiles) {
-    const filePath = path.join(_sourceDir, file);
-    try {
-      const content = fs.readFileSync(filePath, 'utf8');
-      const fileHash = crypto.createHash('sha256').update(content).digest('hex');
-      fileHashes[file] = fileHash;
-      combinedHash.update(file);
-      combinedHash.update(fileHash);
-    } catch {
-    }
+  const state = getState(id);
+  const result = fn(state);
+  if (result !== undefined) {
+    setState(id, result);
   }
-  return {
-    hash: combinedHash.digest('hex'),
-    files: fileHashes
-  };
-}
-
-function _getChangedFiles(previousFiles, currentFiles) {
-  const prev = previousFiles || {};
-  const next = currentFiles || {};
-  const allFiles = new Set([...Object.keys(prev), ...Object.keys(next)]);
-  return [...allFiles]
-    .filter((file) => prev[file] !== next[file])
-    .sort();
-}
-
-function _getCurrentGitHash() {
-  try {
-    return execSync('git rev-parse HEAD', { encoding: 'utf8', cwd: __dirname }).trim();
-  } catch {
-    return null;
-  }
-}
-
-const _EN_TO_RU = {
-  'gemini': 'Gemini', 'prompt': 'промт', 'remove': 'удалён', 'switch': 'замена',
-  'fix': 'исправление', 'add': 'добавлено', 'better': 'улучшен', 'single': 'только число',
-  'odometer': 'одометр', 'mileage': 'пробег', 'ocr': 'OCR', 'text': 'текст',
-  'fallback': 'запасной вариант', 'model': 'модель', 'available': 'доступна',
-  'deprecated': 'устарела', 'numpy': 'numpy', 'import': 'импорт',
-  'config': 'настройки', 'ecosystem': 'конфиг', 'server': 'сервер',
-  'reader': 'чтение', 'env': 'окружение', 'key': 'ключ', 'api': 'API',
-  'flash': 'Flash', 'lite': 'Lite', 'photo': 'фото', 'image': 'изображение',
-  'dashboard': 'панель приборов', 'car': 'автомобиля', 'number': 'номер',
-  'ignore': 'игнорируется', 'time': 'время', 'temperature': 'температура',
-  'fuel': 'топливо', 'speed': 'скорость', 'rpm': 'RPM', 'trip': 'поездка',
-  'reply': 'ответ', 'only': 'только', 'analyze': 'анализ', 'find': 'поиск',
-  'total': 'общий',
-  'initialize': 'загрузка',
-  'support': 'поддержка', 'configured': 'настроен', 'version': 'версия',
-  'startup': 'запуск', 'health': 'проверка', 'endpoint': 'эндпоинт',
-  'sheet': 'таблица', 'log': 'лог', 'change': 'изменение', 'update': 'обновление',
-  'clean': 'очистка', 'old': 'старый', 'new': 'новый', 'code': 'код',
-  'file': 'файл', 'function': 'функция', 'variable': 'переменная',
-  'error': 'ошибка', 'handle': 'обработка', 'result': 'результат',
-  'recognize': 'распознавание', 'recognize_text': 'распознавание текста',
-  'extract': 'извлечение', 'detect': 'обнаружение', 'check': 'проверка',
-  'validate': 'валидация', 'save': 'сохранение', 'load': 'загрузка',
-  'process': 'обработка', 'background': 'фоновая', 'async': 'асинхронно',
-};
-
-const COMMIT_PREFIX_RU = {
-  feat: '✨ Добавлено',
-  fix: '🔧 Исправлено',
-  refactor: '♻️ Переработано',
-  chore: '🔧 Техническое',
-  docs: '📝 Документация',
-  style: '🎨 Оформление',
-  perf: '⚡ Оптимизация',
-  test: '🧪 Тесты',
-  build: '📦 Сборка',
-  ci: '⚙️ CI/CD',
-  revert: '↩️ Откат'
-};
-
-function _translateToRussian(text) {
-  let result = text;
-  for (const [en, ru] of Object.entries(_EN_TO_RU)) {
-    const regex = new RegExp(`\\b${en}\\b`, 'gi');
-    result = result.replace(regex, ru);
-  }
-  result = result.replace(/\b(\d+)\s*-\s*(\w)/g, (m, d, w) => `${d} — ${w.toLowerCase()}`);
   return result;
 }
 
-function _getGitLogSince(fromHash) {
-  if (!fromHash) return null;
-  try {
-    const log = execSync(`git log --oneline --no-merges ${fromHash}..HEAD`, { encoding: 'utf8', cwd: __dirname });
-    return log.split('\n')
-      .map(line => line.trim())
-      .filter(Boolean)
-      .map(line => {
-        let msg = line.replace(/^[0-9a-f]+\s+/, '');
-        const prefixMatch = msg.match(/^(feat|fix|refactor|chore|docs|style|perf|test|build|ci|revert):\s*/i);
-        if (prefixMatch) {
-          const prefix = prefixMatch[1].toLowerCase();
-          const ruPrefix = COMMIT_PREFIX_RU[prefix] || prefix;
-          msg = msg.slice(prefixMatch[0].length);
-          msg = _translateToRussian(msg);
-          msg = msg.charAt(0).toUpperCase() + msg.slice(1);
-          return `${ruPrefix}: ${msg}`;
-        }
-        if (msg.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})\s*/u)) {
-          return msg.charAt(0).toUpperCase() + msg.slice(1);
-        }
-        msg = _translateToRussian(msg);
-        msg = msg.charAt(0).toUpperCase() + msg.slice(1);
-        return msg;
-      })
-      .filter(msg => msg.length > 0);
-  } catch {
-    return null;
-  }
-}
+// Per-user rate limiting for photo/OCR processing
+const MAX_MILEAGE_PHOTOS_PER_MINUTE = 5;
+const MILEAGE_PHOTO_WINDOW_MS = 60 * 1000;
+const userMileagePhotoTimestamps = new Map();
 
-function _bumpVersion(version, bumpType) {
-  const parts = version.split('.').map(Number);
-  if (bumpType === 'major') {
-    parts[0] += 1;
-    parts[1] = 0;
-    parts[2] = 0;
-  } else if (bumpType === 'minor') {
-    parts[1] += 1;
-    parts[2] = 0;
-  } else {
-    parts[2] = (parts[2] || 0) + 1;
-  }
-  return parts.join('.');
-}
+function isMileagePhotoRateLimited(telegramId) {
+  const id = String(telegramId);
+  const now = Date.now();
+  let timestamps = userMileagePhotoTimestamps.get(id) || [];
+  timestamps = timestamps.filter(ts => now - ts < MILEAGE_PHOTO_WINDOW_MS);
+  userMileagePhotoTimestamps.set(id, timestamps);
 
-function checkVersion() {
-  const snapshot = _computeSourceSnapshot();
-  const currentHash = snapshot.hash;
-  const currentFiles = snapshot.files;
-  const stored = _getCurrentVersion();
-  if (!stored) {
-    const initialVersion = '2.0.0';
-    const gitHash = _getCurrentGitHash();
-    const data = {
-      version: initialVersion,
-      lastHash: currentHash,
-      files: currentFiles,
-      updatedAt: new Date().toISOString(),
-      gitHash: gitHash || undefined,
-      updates: []
-    };
-    fs.writeFileSync(versionPath, JSON.stringify(data, null, 2), 'utf8');
-    return {
-      version: initialVersion,
-      changed: true,
-      prevVersion: null,
-      changedFiles: Object.keys(currentFiles).sort(),
-      updates: []
-    };
+  if (timestamps.length >= MAX_MILEAGE_PHOTOS_PER_MINUTE) {
+    return true;
   }
-  if (stored.lastHash === currentHash) {
-    return { version: stored.version, changed: false, prevVersion: null, changedFiles: [], updates: stored.updates || [] };
-  }
-  const changedFiles = _getChangedFiles(stored.files, currentFiles);
-  const bumpType = getChangelogBump();
-  const newVersion = _bumpVersion(stored.version, bumpType);
-  let updates = _getGitLogSince(stored.gitHash);
-  if (!updates || updates.length === 0) {
-    updates = null;
-  }
-  const gitHash = _getCurrentGitHash();
-  const data = {
-    version: newVersion,
-    lastHash: currentHash,
-    files: currentFiles,
-    updatedAt: new Date().toISOString(),
-    gitHash: gitHash || undefined,
-    updates: updates || []
-  };
-  fs.writeFileSync(versionPath, JSON.stringify(data, null, 2), 'utf8');
-  console.log(`version bumped: ${stored.version} → ${newVersion} (${bumpType})`);
-  return { version: newVersion, changed: true, prevVersion: stored.version, changedFiles, updates: updates || [] };
-}
-
-function getVersion() {
-  const stored = _getCurrentVersion();
-  return stored ? stored.version : '2.0.0';
+  timestamps.push(now);
+  return false;
 }
 
 
@@ -496,7 +351,7 @@ async function pokeCourier(ctx, courierId) {
       await ctx.replyWithHTML(`✅ Напоминание отправлено\n\n${esc(courierRecord.fio)} — <code>${esc(formatted)}</code> ₽`);
     }
   } catch (e) {
-    console.error('failed to send reminder to courier', e);
+    safeLog.error('failed to send reminder to courier', e);
     deleteReminder(shortId);
     if (ctx.callbackQuery) {
       await ctx.answerCbQuery('⚠️ Не удалось отправить уведомление');
@@ -590,7 +445,7 @@ async function openShopNotify(ctx) {
         { parse_mode: 'HTML' }
       );
     } catch (e) {
-      console.error('shop open notify error', e.message || e);
+      safeLog.error('shop open notify error', e.message || e);
     }
     return { status: 'ok', workplace };
   }
@@ -622,7 +477,7 @@ async function notifyLogistsAboutSelfClearance(courierId, courierFio, amount, fo
         { parse_mode: 'HTML', ...keyboard }
       );
     } catch (e) {
-      console.error('failed to notify logist about self-clearance', recipientId, e.message);
+      safeLog.error('failed to notify logist about self-clearance', recipientId, e.message);
     }
   }
 }
@@ -647,23 +502,23 @@ function createTelegramAgent() {
   try {
     parsed = new URL(proxyUrl);
   } catch (_) {
-    console.error('Invalid TELEGRAM_PROXY_URL, proxy disabled');
+    safeLog.error('Invalid TELEGRAM_PROXY_URL, proxy disabled');
     return null;
   }
 
   const protocol = String(parsed.protocol || '').toLowerCase();
 
   if (protocol.startsWith('socks')) {
-    console.log('Telegram proxy enabled (SOCKS)');
+    safeLog.log('Telegram proxy enabled (SOCKS)');
     return new SocksProxyAgent(proxyUrl);
   }
 
   if (protocol === 'http:' || protocol === 'https:') {
-    console.log('Telegram proxy enabled (HTTP/HTTPS)');
+    safeLog.log('Telegram proxy enabled (HTTP/HTTPS)');
     return new HttpsProxyAgent(proxyUrl);
   }
 
-  console.error(`Unsupported TELEGRAM_PROXY_URL protocol: ${protocol}`);
+  safeLog.error(`Unsupported TELEGRAM_PROXY_URL protocol: ${protocol}`);
   return null;
 }
 
@@ -680,7 +535,7 @@ bot.use(async (ctx, next) => {
   if (ms > 500) {
     const updateType = ctx.updateType || 'unknown';
     const text = ctx.message?.text || ctx.callbackQuery?.data || '';
-    console.log(`⚠️ Медленный запрос: ${ms}мс, тип: ${updateType}, от: ${ctx.from?.id}, текст/данные: ${text}`);
+    safeLog.log(`⚠️ Медленный запрос: ${ms}мс, тип: ${updateType}, от: ${ctx.from?.id}, текст/данные: ${text}`);
   }
 });
 
@@ -808,64 +663,9 @@ async function appendLog(filePath, entry) {
   try {
     await fs.promises.appendFile(filePath, line, 'utf8');
   } catch (error) {
-    console.error('log write error', filePath, error.message);
+    safeLog.error('log write error', filePath, error.message);
   }
   await trimLogIfNeeded(filePath);
-}
-
-const BACKUP_DIR = path.join(__dirname, 'backups');
-const BACKUP_FILES = ['database.sqlite', 'fun-reactions.json'];
-const BACKUP_INTERVAL_MS = LIMITS.BACKUP_INTERVAL_MS;
-const BACKUP_RETENTION_MS = LIMITS.BACKUP_RETENTION_MS;
-
-async function ensureBackupDir() {
-  try {
-    await fs.promises.mkdir(BACKUP_DIR, { recursive: true });
-  } catch (_) {}
-}
-
-async function makeBackup(reason = 'auto') {
-  await ensureBackupDir();
-  const now = new Date();
-  const ts = now.toISOString().replace(/[.:]/g, '-');
-  try {
-    checkpoint();
-  } catch (_) {}
-  for (const filename of BACKUP_FILES) {
-    const src = path.join(__dirname, filename);
-    try {
-      await fs.promises.access(src);
-      const dst = path.join(BACKUP_DIR, `${filename.replace('.json', '')}-${reason}-${ts}.json`);
-      await fs.promises.copyFile(src, dst);
-    } catch (_) {}
-  }
-}
-
-async function cleanOldBackups() {
-  const cutoff = Date.now() - BACKUP_RETENTION_MS;
-  let entries;
-  try {
-    entries = await fs.promises.readdir(BACKUP_DIR);
-  } catch (_) {
-    return;
-  }
-  for (const entry of entries) {
-    const fullPath = path.join(BACKUP_DIR, entry);
-    try {
-      const stat = await fs.promises.stat(fullPath);
-      if (stat.mtimeMs < cutoff) {
-        await fs.promises.unlink(fullPath);
-      }
-    } catch (_) {}
-  }
-}
-
-async function runBackupCycle() {
-  try {
-    checkpoint();
-  } catch (_) {}
-  await makeBackup('auto');
-  await cleanOldBackups();
 }
 
 function parseEnvList(value) {
@@ -954,7 +754,7 @@ function loadFunReactions() {
     funReactionsCache = normalizeFunReactionsData(data);
     return funReactionsCache;
   } catch (error) {
-    console.error('fun reactions load error', error.message);
+    safeLog.error('fun reactions load error', error.message);
     funReactionsCache = getEmptyFunReactions();
     return funReactionsCache;
   }
@@ -967,7 +767,7 @@ function scheduleFunReactionsWrite() {
   setImmediate(() => {
     funReactionsWriteScheduled = false;
     fs.promises.writeFile(funReactionsPath, JSON.stringify(funReactionsCache || getEmptyFunReactions(), null, 2), 'utf8').catch((error) => {
-      console.error('fun reactions write error', error.message);
+      safeLog.error('fun reactions write error', error.message);
     });
   });
 }
@@ -978,7 +778,7 @@ function flushFunReactionsNow() {
   try {
     fs.writeFileSync(funReactionsPath, JSON.stringify(funReactionsCache || getEmptyFunReactions(), null, 2), 'utf8');
   } catch (error) {
-    console.error('fun reactions flush error', error.message);
+    safeLog.error('fun reactions flush error', error.message);
   }
 }
 
@@ -1094,11 +894,11 @@ async function importStickerSetForFunReactions(ctx, stickerSetName) {
       total: stickers.length
     };
     scheduleFunReactionsWrite();
-    console.log(`fun stickers imported: ${setName}, total=${stickers.length}, added=${added}`);
+    safeLog.log(`fun stickers imported: ${setName}, total=${stickers.length}, added=${added}`);
 
     return { setName, imported: true, added, total: stickers.length };
   } catch (error) {
-    console.error('fun sticker set import error', setName, error.message);
+    safeLog.error('fun sticker set import error', setName, error.message);
     return { setName, imported: false, added: 0, total: 0, error: error.message };
   }
 }
@@ -1204,7 +1004,7 @@ async function sendFunReaction(ctx, reactionType) {
       await ctx.replyWithAnimation(gif);
     }
   } catch (error) {
-    console.error('fun reaction error', error.message);
+    safeLog.error('fun reaction error', error.message);
   }
 }
 
@@ -1232,7 +1032,54 @@ bot.use(async (ctx, next) => {
   await next();
 });
 
+// ===== Combo delete: user message + previous bot message =====
+const userLastBotMessage = new Map();
+const MAX_USER_LAST_MSG_CACHE = 1000;
+
+bot.use(async (ctx, next) => {
+  if (ctx.chat?.type !== 'private') return next();
+  if (!ctx.message?.text) return next();
+  if (ctx.message?.forward_from || ctx.message?.forward_from_chat) return next();
+
+  const id = ctx.from.id;
+
+  try { await ctx.deleteMessage(); } catch {}
+
+  const last = userLastBotMessage.get(id);
+  if (last && !last.hasKeyboard) {
+    try { await ctx.telegram.deleteMessage(ctx.chat.id, last.msgId); } catch {}
+  }
+
+  const originalReply = ctx.replyWithHTML.bind(ctx);
+  ctx.replyWithHTML = async (htmlText, extra) => {
+    let finalExtra = extra;
+    const hasRemove = extra?.reply_markup?.remove_keyboard;
+    const hasOwnKeyboard = extra?.reply_markup?.keyboard || extra?.reply_markup?.inline_keyboard;
+    if (!hasRemove && !hasOwnKeyboard) {
+      const menuMarkup = getMenuForRole(id);
+      if (menuMarkup?.reply_markup) {
+        const extraRM = extra?.reply_markup || {};
+        finalExtra = {
+          ...(extra || {}),
+          reply_markup: { ...extraRM, ...menuMarkup.reply_markup }
+        };
+      }
+    }
+    const msg = await originalReply(htmlText, finalExtra);
+    const hasKeyboard = !!(finalExtra?.reply_markup?.keyboard);
+    if (userLastBotMessage.size >= MAX_USER_LAST_MSG_CACHE) {
+      const firstKey = userLastBotMessage.keys().next().value;
+      userLastBotMessage.delete(firstKey);
+    }
+    userLastBotMessage.set(id, { msgId: msg.message_id, hasKeyboard });
+    return msg;
+  };
+
+  await next();
+});
+
 bot.on('sticker', async (ctx) => {
+  if (ctx.chat?.type !== 'private') return;
   const sticker = ctx.message?.sticker;
   if (!sticker?.file_id) return;
 
@@ -1240,7 +1087,7 @@ bot.on('sticker', async (ctx) => {
   const saved = saveFunSticker(sticker.file_id, reactionType);
 
   if (saved) {
-    console.log('fun sticker saved', reactionType, sticker.file_id);
+    safeLog.log('fun sticker saved', reactionType, sticker.file_id);
   }
 
   if (sticker.set_name) {
@@ -1249,12 +1096,13 @@ bot.on('sticker', async (ctx) => {
 });
 
 bot.on('animation', async (ctx) => {
+  if (ctx.chat?.type !== 'private') return;
   const animation = ctx.message?.animation;
   if (!animation?.file_id) return;
 
   const saved = saveFunGif(animation.file_id, 'neutral');
   if (saved) {
-    console.log('fun gif saved', animation.file_id);
+    safeLog.log('fun gif saved', animation.file_id);
   }
 });
 
@@ -1289,7 +1137,7 @@ function getNextRouteSheetNumber(state, date) {
 
     return count + 1;
   } catch (error) {
-    console.error('route sheet count error', error);
+    safeLog.error('route sheet count error', error);
     return 1;
   }
 }
@@ -1322,7 +1170,7 @@ function logReconciliationPhoto(telegramId, fileId, state, label) {
 
 function formatMoneyRu(value) {
   const number = Number(value || 0);
-  if (!Number.isFinite(number) || number < 0) return null;
+  if (!Number.isFinite(number) || number < 0) return '0,00 ₽';
   const formatted = new Intl.NumberFormat('ru-RU', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
@@ -1492,7 +1340,7 @@ async function saveCarNumber(ctx, value) {
   }
 
   setUserField(ctx.from.id, 'carNumber', carNumber);
-  console.log('номер машины сохранён');
+  safeLog.log('номер машины сохранён');
 
   if (!getUserField(ctx.from.id, 'workplace')) {
     await ctx.replyWithHTML(`✅ Номер машины сохранён: <code>${esc(carNumber)}</code>`);
@@ -1520,7 +1368,7 @@ async function saveWorkplace(ctx, value) {
   }
 
   setUserField(ctx.from.id, 'workplace', workplace);
-  console.log('интернет-магазин сохранён');
+  safeLog.log('интернет-магазин сохранён');
   const role = getUserRole(ctx.from.id);
 
   if (role === 'logist') {
@@ -1550,7 +1398,7 @@ async function saveDevice(ctx, value) {
 
   setUserField(ctx.from.id, 'device', device);
   clearState(ctx.from.id);
-  console.log('устройство сохранено');
+  safeLog.log('устройство сохранено');
   await ctx.replyWithHTML(`✅ Устройство сохранено: <b>${esc(device)}</b>`);
   return 'done';
 }
@@ -1607,17 +1455,17 @@ async function authorizeFio(ctx, fio) {
   const telegramId = ctx.from.id;
 
   try {
-    console.log('авторизация ФИО');
+    safeLog.log('авторизация ФИО');
     const employee = await findCourierInAllSheets(fio);
 
     if (!employee) {
-      console.log('сотрудник не найден');
+      safeLog.log('сотрудник не найден');
       await ctx.replyWithHTML('❌ Сотрудник не найден в таблице.\nПроверьте имя и фамилию и попробуйте ещё раз.');
       return;
     }
 
     setUserField(telegramId, 'fio', employee.fio);
-    console.log('сотрудник найден');
+    safeLog.log('сотрудник найден');
     await ctx.replyWithHTML(`✅ Сотрудник найден: <b>${esc(employee.fio)}</b>`);
 
     const auto = String(employee.auto || '').trim().toLowerCase();
@@ -1670,7 +1518,7 @@ async function authorizeFio(ctx, fio) {
       roleChoiceKeyboard()
     );
   } catch (error) {
-    console.error('ошибка Google Sheets', error);
+    safeLog.error('ошибка Google Sheets', error);
     await ctx.replyWithHTML('⚠️ Ошибка Google Таблицы.\nПопробуйте ещё раз или обратитесь к администратору.');
   }
 }
@@ -1685,9 +1533,20 @@ async function punchTimeFlow(ctx, explicitStage = null) {
 
   try {
     const isPedestrian = profile.courierType === 'pedestrian';
-    const result = explicitStage
-      ? await replaceTime(profile.fio, profile.workplace, explicitStage, isPedestrian)
-      : await punchTime(profile.fio, profile.workplace, isPedestrian);
+    let result;
+    if (explicitStage) {
+      result = await replaceTime(profile.fio, profile.workplace, explicitStage, isPedestrian);
+    } else {
+      const storedDate = getShiftDate(telegramId);
+      const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
+      const today = getCurrentDateInfo(timezone);
+      const todayStr = `${today.date.getFullYear()}-${String(today.date.getMonth()+1).padStart(2,'0')}-${String(today.date.getDate()).padStart(2,'0')}`;
+      if (storedDate && storedDate !== todayStr) {
+        result = await punchTime(profile.fio, profile.workplace, isPedestrian, storedDate + 'T12:00:00');
+      } else {
+        result = await punchTime(profile.fio, profile.workplace, isPedestrian);
+      }
+    }
 
     if (result.notFound) {
       const msg = formatNoSheetMessage(result, profile.workplace);
@@ -1696,7 +1555,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
     }
 
     if (result.needsReplaceChoice) {
-      console.log('нужна замена');
+      safeLog.log('нужна замена');
       setState(telegramId, { awaitingReplaceChoice: true, fio: profile.fio });
       await ctx.replyWithHTML(
         `⚠️ Время уже записано\n` +
@@ -1712,11 +1571,17 @@ async function punchTimeFlow(ctx, explicitStage = null) {
     const currentTimeStatus = getShiftStatus(telegramId, 'time');
     if (result.stage === 'start') {
       setShiftStatus(telegramId, 'time', currentTimeStatus === 'end' || currentTimeStatus === 'both' ? 'both' : 'start');
+      if (currentTimeStatus === 'none') {
+        const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
+        const now = getCurrentDateInfo(timezone);
+        const todayKey = `${now.date.getFullYear()}-${String(now.date.getMonth()+1).padStart(2,'0')}-${String(now.date.getDate()).padStart(2,'0')}`;
+        setShiftDate(telegramId, todayKey);
+      }
     } else {
       setShiftStatus(telegramId, 'time', currentTimeStatus === 'start' || currentTimeStatus === 'both' ? 'both' : 'end');
     }
 
-    if (result.stage === 'start') {
+    if (result.stage === 'start' && currentTimeStatus === 'none') {
       const cur = Number(getUserField(telegramId, 'shiftCount') || 0);
       setUserField(telegramId, 'shiftCount', cur + 1);
     }
@@ -1759,7 +1624,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       }
     }
   } catch (error) {
-    console.error('ошибка Google Sheets', error);
+    safeLog.error('ошибка Google Sheets', error);
     await ctx.replyWithHTML('⚠️ Не удалось записать время\n\nПопробуйте ещё раз.');
   }
 }
@@ -1787,7 +1652,7 @@ async function mileageFlow(ctx, explicitStage = null) {
     }
 
     if (result.needsReplaceChoice) {
-      console.log('нужна замена пробега');
+      safeLog.log('нужна замена пробега');
       setState(telegramId, { awaitingMileageReplaceChoice: true, fio: profile.fio });
       await ctx.replyWithHTML(
         `⚠️ Пробег уже записан\n` +
@@ -1810,7 +1675,7 @@ async function mileageFlow(ctx, explicitStage = null) {
     );
     return { status: 'awaiting_photo' };
   } catch (error) {
-    console.error('ошибка Google Sheets', error);
+    safeLog.error('ошибка Google Sheets', error);
     return { status: 'error' };
   }
 }
@@ -2033,35 +1898,6 @@ function parseUpdateNotesFromEnv() {
     .slice(0, 4);
 }
 
-function loadChangelog() {
-  try {
-    if (!fs.existsSync(changelogPath)) return null;
-    return JSON.parse(fs.readFileSync(changelogPath, 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
-function getLatestChangelogNotes() {
-  const changelog = loadChangelog();
-  if (!changelog || !Array.isArray(changelog.updates) || changelog.updates.length === 0) return null;
-
-  const latest = changelog.updates[changelog.updates.length - 1];
-  if (!latest || !Array.isArray(latest.notes) || latest.notes.length === 0) return null;
-
-  return latest.notes.slice(0, 4);
-}
-
-function getChangelogBump() {
-  const changelog = loadChangelog();
-  if (!changelog || !Array.isArray(changelog.updates) || changelog.updates.length === 0) return 'patch';
-
-  const latest = changelog.updates[changelog.updates.length - 1];
-  const bump = String(latest.bump || '').toLowerCase().trim();
-  if (bump === 'major' || bump === 'minor') return bump;
-  return 'patch';
-}
-
 function buildUpdateHighlights(changedFiles = [], version, updates = []) {
   const files = new Set((changedFiles || []).map((file) => String(file || '').toLowerCase()));
   const includesAny = (targets) => targets.some((target) => files.has(target.toLowerCase()));
@@ -2157,14 +1993,42 @@ async function notifyUsersAboutUpdate(version, changedFiles = [], updates = []) 
       setUserField(telegramId, 'version', currentVersion);
       notified++;
     } catch (error) {
-      console.error('update notify error', error.message);
+      safeLog.error('update notify error', error.message);
       failed++;
     }
 
     await new Promise((r) => setTimeout(r, 50));
   }
 
-  console.log(`update v${currentVersion} notify summary: total=${userIds.length}, sent=${notified}, skipped=${skipped}, failed=${failed}`);
+  safeLog.log(`update v${currentVersion} notify summary: total=${userIds.length}, sent=${notified}, skipped=${skipped}, failed=${failed}`);
+}
+
+async function refreshAllKeyboards() {
+  const userIds = getAllUserIds();
+  let sent = 0;
+  let failed = 0;
+
+  for (const telegramId of userIds) {
+    try {
+      const menuMarkup = getMenuForRole(Number(telegramId));
+      if (!menuMarkup?.reply_markup) continue;
+      const msg = await bot.telegram.sendMessage(Number(telegramId), '.', {
+        disable_notification: true,
+        reply_markup: menuMarkup.reply_markup
+      });
+      await new Promise((r) => setTimeout(r, 200));
+      await bot.telegram.deleteMessage(Number(telegramId), msg.message_id).catch((e) => {
+        safeLog.error('keyboard refresh delete failed for', telegramId, e.message);
+      });
+      sent++;
+    } catch (error) {
+      safeLog.error('keyboard refresh error for', telegramId, error.message);
+      failed++;
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+
+  safeLog.log(`keyboard refresh summary: total=${userIds.length}, sent=${sent}, failed=${failed}`);
 }
 
 const _pendingUpdates = {};
@@ -2175,10 +2039,10 @@ function loadPendingUpdates() {
     if (fs.existsSync(PENDING_UPDATES_FILE)) {
       const data = JSON.parse(fs.readFileSync(PENDING_UPDATES_FILE, 'utf8'));
       Object.assign(_pendingUpdates, data);
-      console.log('loaded pending updates', Object.keys(data));
+      safeLog.log('loaded pending updates', Object.keys(data));
     }
   } catch (e) {
-    console.error('failed to load pending updates', e.message);
+    safeLog.error('failed to load pending updates', e.message);
   }
 }
 
@@ -2186,7 +2050,7 @@ function savePendingUpdates() {
   try {
     fs.writeFileSync(PENDING_UPDATES_FILE, JSON.stringify(_pendingUpdates, null, 2));
   } catch (e) {
-    console.error('failed to save pending updates', e.message);
+    safeLog.error('failed to save pending updates', e.message);
   }
 }
 
@@ -2195,7 +2059,7 @@ loadPendingUpdates();
 async function askAdminsAboutUpdate(version, changedFiles = [], updates = []) {
   const adminIds = getAdminIds();
   if (adminIds.length === 0) {
-    console.log('no admin IDs configured, skipping update approval');
+    safeLog.log('no admin IDs configured, skipping update approval');
     return;
   }
 
@@ -2225,7 +2089,7 @@ async function askAdminsAboutUpdate(version, changedFiles = [], updates = []) {
         ...keyboard
       });
     } catch (error) {
-      console.error('admin update ask error', adminId, error.message);
+      safeLog.error('admin update ask error', adminId, error.message);
     }
   }
 }
@@ -2249,13 +2113,13 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
     }
     const live = getState(telegramId);
     if (live && live.fileId && live.fileId !== fallbackState.fileId) {
-      console.log('mileage: user started new photo, skipping old save');
+      safeLog.log('mileage: user started new photo, skipping old save');
       return;
     }
     state = fallbackState;
   } else if (state.fileId && fallbackState && state.fileId !== fallbackState.fileId) {
     // Живое состояние есть, но fileId разный — пользователь начал новый пробег
-    console.log('mileage: live state has different fileId, skipping old save');
+    safeLog.log('mileage: live state has different fileId, skipping old save');
     await replyFn('⚠️ Пробег распознан, но вы начали новое действие\n\nОтправьте фото повторно, если нужно.', mileageConfirmKeyboard());
     return;
   }
@@ -2272,7 +2136,7 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
 
   try {
     await updateMileage(state.mileageRow, state.day, state.stage, mileageValue, state.workplace);
-    console.log('пробег записан');
+    safeLog.log('пробег записан');
     const currentMileageStatus = getShiftStatus(telegramId, 'mileage');
     if (state.stage === 'start') {
       setShiftStatus(telegramId, 'mileage', currentMileageStatus === 'end' || currentMileageStatus === 'both' ? 'both' : 'start');
@@ -2303,7 +2167,7 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
       mileageSavedKeyboard()
     );
   } catch (error) {
-    console.error('ошибка Google Sheets', error);
+    safeLog.error('ошибка Google Sheets', error);
     await replyFn('⚠️ Не удалось записать пробег\n\nПопробуйте ещё раз.');
   } finally {
     if (telegram) {
@@ -2314,155 +2178,6 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
     }
   }
 }
-
-async function sendPhotoToChat(ctx, fileId, caption, { envChatId, envThreadId, parseMode, fallbackChatId } = {}) {
-  let chatId = envChatId ? process.env[envChatId] : null;
-
-  if (!chatId && fallbackChatId) {
-    chatId = fallbackChatId;
-  }
-
-  if (!chatId) {
-    console.log(`${envChatId || 'chatId'} is empty, photo is not forwarded`);
-    return null;
-  }
-
-  const options = { caption };
-
-  if (parseMode) {
-    options.parse_mode = parseMode;
-  }
-
-  const threadId = envThreadId ? process.env[envThreadId] : null;
-  if (threadId) {
-    options.message_thread_id = Number(threadId);
-  }
-
-  // Clear any stale reply keyboard in group chats
-  options.reply_markup = { remove_keyboard: true };
-
-  try {
-    const result = await ctx.telegram.sendPhoto(chatId, fileId, options);
-    return result;
-  } catch (error) {
-    console.error('telegram sendPhoto error', error?.message || error);
-    return null;
-  }
-}
-
-async function sendMediaGroupToChat(ctx, items, { envChatId, envThreadId, parseMode, fallbackChatId } = {}) {
-  let chatId = envChatId ? process.env[envChatId] : null;
-
-  if (!chatId && fallbackChatId) {
-    chatId = fallbackChatId;
-  }
-
-  if (!chatId) {
-    console.log(`${envChatId || 'chatId'} is empty, media group is not forwarded`);
-    return null;
-  }
-
-  const media = items.map((item, index) => {
-    const entry = {
-      type: 'photo',
-      media: item.fileId
-    };
-    if (index === 0 && item.caption) {
-      entry.caption = item.caption;
-      if (parseMode) {
-        entry.parse_mode = parseMode;
-      }
-    }
-    return entry;
-  });
-
-  const options = {};
-  const threadId = envThreadId ? process.env[envThreadId] : null;
-  if (threadId) {
-    options.message_thread_id = Number(threadId);
-  }
-
-  try {
-    const result = await ctx.telegram.sendMediaGroup(chatId, media, options);
-
-    // Clear any stale reply keyboard in group chats
-    try {
-      const cleanupMsg = await ctx.telegram.sendMessage(chatId, '', {
-        reply_markup: { remove_keyboard: true },
-        message_thread_id: threadId ? Number(threadId) : undefined
-      });
-      await ctx.telegram.deleteMessage(chatId, cleanupMsg.message_id).catch(() => {});
-    } catch (_) {}
-
-    return result;
-  } catch (error) {
-    console.error('telegram sendMediaGroup error', error?.message || error);
-    return null;
-  }
-}
-
-// Конфиг назначений фото — единая таблица. Если появится новый чат
-// (например, для штрафов), добавить запись и одну функцию-обёртку.
-const PHOTO_DESTINATIONS = {
-  work: {
-    envChatId: 'WORK_CHAT_ID',
-    envThreadId: 'WORK_THREAD_ID',
-    parseMode: 'HTML'
-  },
-  routeSheet: {
-    envChatId: 'ROUTE_SHEET_CHAT_ID',
-    envThreadId: 'ROUTE_SHEET_THREAD_ID',
-    fallbackEnvChatId: 'WORK_CHAT_ID',
-    parseMode: 'HTML'
-  },
-  reconciliation: {
-    envChatId: 'RECONCILIATION_CHAT_ID',
-    envThreadId: 'RECONCILIATION_THREAD_ID',
-    fallbackEnvChatId: 'WORK_CHAT_ID',
-    parseMode: 'HTML'
-  }
-};
-
-function forwardPhoto(ctx, fileId, caption, destinationKey) {
-  const dest = PHOTO_DESTINATIONS[destinationKey];
-  if (!dest) {
-    console.error('forwardPhoto: unknown destination', destinationKey);
-    return Promise.resolve(null);
-  }
-  return sendPhotoToChat(ctx, fileId, caption, {
-    envChatId: dest.envChatId,
-    envThreadId: dest.envThreadId,
-    parseMode: dest.parseMode,
-    fallbackChatId: dest.fallbackEnvChatId ? process.env[dest.fallbackEnvChatId] : undefined
-  });
-}
-
-// Обёртки оставлены для читаемости в местах вызова.
-const sendPhotoToWorkChat = (ctx, fileId, caption) => forwardPhoto(ctx, fileId, caption, 'work');
-const sendPhotoToRouteSheetChat = (ctx, fileId, caption) => forwardPhoto(ctx, fileId, caption, 'routeSheet');
-const sendPhotoToReconciliationChat = (ctx, fileId, caption) => forwardPhoto(ctx, fileId, caption, 'reconciliation');
-
-function forwardMediaGroup(ctx, items, destinationKey) {
-  const dest = PHOTO_DESTINATIONS[destinationKey];
-  if (!dest) {
-    console.error('forwardMediaGroup: unknown destination', destinationKey);
-    return Promise.resolve(null);
-  }
-  return sendMediaGroupToChat(ctx, items, {
-    envChatId: dest.envChatId,
-    envThreadId: dest.envThreadId,
-    parseMode: dest.parseMode,
-    fallbackChatId: dest.fallbackEnvChatId ? process.env[dest.fallbackEnvChatId] : undefined
-  });
-}
-
-function savePhotoThread(result, telegramId, type) {
-  if (!result || !result.chat || !result.message_id || !telegramId) return;
-  saveThread(result.chat.id, result.message_id, telegramId, type);
-  cleanupOldThreads(7);
-}
-
-const sendMediaGroupToReconciliationChat = (ctx, items) => forwardMediaGroup(ctx, items, 'reconciliation');
 
 async function backToMainMenu(ctx) {
   const state = getState(ctx.from.id);
@@ -2526,7 +2241,7 @@ async function notifyAdmins(html, options = {}) {
     try {
       await bot.telegram.sendMessage(adminId, html, { parse_mode: 'HTML', ...options });
     } catch (e) {
-      console.error('admin notify failed', adminId, e.message);
+      safeLog.error('admin notify failed', adminId, e.message);
     }
   }
 }
@@ -2574,7 +2289,7 @@ function logOcrFeedback(telegramId, ocrMileage, confirmedMileage, sourceBuffer, 
 
       fs.writeFileSync(ocrFeedbackPath, JSON.stringify(feedback, null, 2), 'utf8');
     } catch (error) {
-      console.error('OCR feedback log error', error.message);
+      safeLog.error('OCR feedback log error', error.message);
     }
 
     if (sourceBuffer) {
@@ -2660,7 +2375,7 @@ async function replaceMileageFlow(ctx, stage) {
     }
 
     setState(ctx.from.id, makeMileageState(ctx.from.id, applyProfile(result, profile), { source: 'mileage' }));
-    console.log('ожидание замены пробега', stage);
+    safeLog.log('ожидание замены пробега', stage);
     await ctx.replyWithHTML(
       `📸 Замена пробега\n` +
       `──────────────\n\n` +
@@ -2669,7 +2384,7 @@ async function replaceMileageFlow(ctx, stage) {
     );
     return { status: 'awaiting_photo' };
   } catch (error) {
-    console.error('ошибка Google Sheets', error);
+    safeLog.error('ошибка Google Sheets', error);
     return { status: 'error' };
   }
 }
@@ -2688,14 +2403,14 @@ async function replaceTimeAction(ctx, stage) {
     clearState(ctx.from.id);
     return { status: 'replaced', stage, timeValue: result.timeValue };
   } catch (error) {
-    console.error('ошибка Google Sheets', error);
+    safeLog.error('ошибка Google Sheets', error);
     return { status: 'error' };
   }
 }
 
 async function handleRouteSheetPhoto(ctx, state, fileId) {
   const telegramId = ctx.from.id;
-  console.log('фото маршрутного листа получено');
+  safeLog.log('фото маршрутного листа получено');
   const date = getTodayText();
   const routeSheetNumber = getNextRouteSheetNumber(state, date);
   logRouteSheetPhoto(telegramId, fileId, state, date, routeSheetNumber);
@@ -2716,7 +2431,7 @@ async function handleRouteSheetPhoto(ctx, state, fileId) {
       routeSheetKeyboard()
     );
   } catch (error) {
-    console.error('telegram send route sheet photo error', error);
+    safeLog.error('telegram send route sheet photo error', error);
     await ctx.replyWithHTML('⚠️ Не удалось отправить фото\n\nПопробуйте ещё раз.', routeSheetKeyboard());
   }
 }
@@ -2731,13 +2446,13 @@ async function finalizeReconciliationPostSend(ctx, state, telegramId, totalOrder
     try {
       const result = await updateEfficiencyOrders(state.fio, state.workplace, day, totalOrders);
       if (result.ok) {
-        console.log(`эффективность: записано ${totalOrders} заказов для ${state.fio}, день ${day}, ячейка ${result.cell}`);
+        safeLog.log(`эффективность: записано ${totalOrders} заказов для ${state.fio}, день ${day}, ячейка ${result.cell}`);
       } else {
-        console.error('эффективность: не удалось записать', result.error);
+        safeLog.error('эффективность: не удалось записать', result.error);
         errors.push('заказы в таблицу эффективности');
       }
     } catch (effError) {
-      console.error('эффективность: ошибка записи', effError.message || effError);
+      safeLog.error('эффективность: ошибка записи', effError.message || effError);
       errors.push('заказы в таблицу эффективности');
     }
   }
@@ -2770,7 +2485,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     if (shouldAttachCash && cashFormatted) {
         const rawAmount = Number(cashAmount);
       if (!Number.isFinite(rawAmount) || rawAmount < 1 || rawAmount > MAX_REASONABLE_CASH_AMOUNT) {
-        console.log('сверка OCR: сумма наличных вне допустимого диапазона', rawAmount);
+        safeLog.log('сверка OCR: сумма наличных вне допустимого диапазона', rawAmount);
       } else {
         const totalAmount = roundMoney(rawAmount);
         const totalFormatted = formatMoneyRu(totalAmount);
@@ -2792,7 +2507,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
 
     const caption = truncateCaption(captionLines.join('\n'));
 
-    console.log('фото сверок получено', `${photosSent}/${total}`, '(статистика)');
+    safeLog.log('фото сверок получено', `${photosSent}/${total}`, '(статистика)');
     logReconciliationPhoto(telegramId, fileId, state, 'Терминал (статистика)');
     appendLog(reconciliationLogPath, {
       at: new Date().toISOString(),
@@ -2827,7 +2542,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
   }
 
   if (isTerminal && photosSent === 2) {
-    console.log('фото сверок получено', `${photosSent}/${total}`, '(чек)');
+    safeLog.log('фото сверок получено', `${photosSent}/${total}`, '(чек)');
     logReconciliationPhoto(telegramId, fileId, state, 'Терминал (чек)');
     appendLog(reconciliationLogPath, {
       at: new Date().toISOString(),
@@ -2857,15 +2572,15 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       }
       savePhotoThread(forwarded[0], ctx.from.id, 'reconciliation');
 
-      clearState(telegramId);
       const ocrWarning = !state.reconciliationPhoto1TotalOrders && state.reconciliationPhoto1OcrReason
         ? `\n\n⚠️ OCR не распознал заказы/наличные. Фото отправлены, но данные не записаны автоматически.`
         : '';
       const totalOrders = state.reconciliationPhoto1TotalOrders;
       const postRes = await finalizeReconciliationPostSend(ctx, state, telegramId, totalOrders);
+      clearState(telegramId);
       return { status: 'photos_sent_terminal', ocrWarning, postRes };
     } catch (error) {
-      console.error('telegram send reconciliation album error', error);
+      safeLog.error('telegram send reconciliation album error', error);
       await ctx.replyWithHTML('⚠️ Не удалось отправить фото\n\nПопробуйте ещё раз.', routeSheetKeyboard());
     }
     return;
@@ -2886,7 +2601,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
   if (shouldAttachCash && cashFormatted) {
       const rawAmount = Number(cashAmount);
     if (!Number.isFinite(rawAmount) || rawAmount < 1 || rawAmount > MAX_REASONABLE_CASH_AMOUNT) {
-      console.log('сверка OCR: сумма наличных вне допустимого диапазона', rawAmount);
+      safeLog.log('сверка OCR: сумма наличных вне допустимого диапазона', rawAmount);
     } else {
       const totalAmount = roundMoney(rawAmount);
       const totalFormatted = formatMoneyRu(totalAmount);
@@ -2908,7 +2623,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
 
   const caption = truncateCaption(captionLines.join('\n'));
 
-  console.log('фото сверок получено', `${photosSent}/${total}`);
+  safeLog.log('фото сверок получено', `${photosSent}/${total}`);
   logReconciliationPhoto(telegramId, fileId, state, label);
   appendLog(reconciliationLogPath, {
     at: new Date().toISOString(),
@@ -2933,21 +2648,32 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
     }
     savePhotoThread(forwarded, telegramId, 'reconciliation');
 
-    clearState(telegramId);
     const ocrWarning = !shouldAttachCash && !cashInfo.totalOrders
       ? `\n\n⚠️ OCR не распознал сумму наличных. Фото отправлено, но данные не записаны автоматически.`
       : '';
     const postRes = await finalizeReconciliationPostSend(ctx, state, telegramId, cashInfo.totalOrders);
+    clearState(telegramId);
     return { status: 'photos_sent', total, ocrWarning, postRes };
   } catch (error) {
-    console.error('telegram send reconciliation photo error', error);
+    safeLog.error('telegram send reconciliation photo error', error);
     await ctx.replyWithHTML('⚠️ Не удалось отправить фото\n\nПопробуйте ещё раз.', routeSheetKeyboard());
   }
 }
 
 async function handleMileagePhoto(ctx, state, fileId) {
   const telegramId = ctx.from.id;
-  console.log('фото получено');
+
+  if (isMileagePhotoRateLimited(telegramId)) {
+    await ctx.replyWithHTML('⚠️ Слишком много фото пробега. Попробуйте через минуту.', getMenuForRole(telegramId));
+    return;
+  }
+
+  if (state?.mileageProcessing) {
+    await ctx.replyWithHTML('⏳ Дождитесь завершения обработки предыдущего фото.', getMenuForRole(telegramId));
+    return;
+  }
+
+  safeLog.log('фото получено');
   logMileagePhoto(telegramId, fileId, state);
 
   const photoState = {
@@ -2974,7 +2700,7 @@ async function handleMileagePhoto(ctx, state, fileId) {
       const forwarded = await sendPhotoToWorkChat(ctx, fileId, buildPhotoCaption(state, telegramId));
       savePhotoThread(forwarded, telegramId, 'mileage');
     } catch (error) {
-      console.error('telegram send photo error', error);
+      safeLog.error('telegram send photo error', error);
     }
     await ctx.replyWithHTML('⚠️ Сервер распознавания недоступен\n\nВведите пробег вручную или отправьте фото повторно.', mileageConfirmKeyboard());
     return;
@@ -2982,7 +2708,7 @@ async function handleMileagePhoto(ctx, state, fileId) {
 
   const ocrHealthy = await checkGeminiOcrHealth();
   if (!ocrHealthy) {
-    console.warn('Gemini OCR health check failed, falling back to manual input');
+    safeLog.warn('Gemini OCR health check failed, falling back to manual input');
     setState(telegramId, {
       ...photoState,
       mileageProcessing: false,
@@ -2995,7 +2721,7 @@ async function handleMileagePhoto(ctx, state, fileId) {
       const forwarded = await sendPhotoToWorkChat(ctx, fileId, buildPhotoCaption(state, telegramId));
       savePhotoThread(forwarded, telegramId, 'mileage');
     } catch (error) {
-      console.error('telegram send photo error', error);
+      safeLog.error('telegram send photo error', error);
     }
     await ctx.replyWithHTML('⚠️ Сервер распознавания недоступен\n\nВведите пробег вручную или отправьте фото повторно.', mileageConfirmKeyboard());
     return;
@@ -3008,10 +2734,10 @@ async function handleMileagePhoto(ctx, state, fileId) {
 
   withTimeout(processMileagePhotoInBackground(telegram, chatId, telegramId, photoState, fileId, photoState), 120000, 'mileage processing').catch((err) => {
     if (err.message && err.message.includes('timeout')) {
-      console.error('mileage processing timeout');
+      safeLog.error('mileage processing timeout');
       telegram.sendMessage(chatId, '⚠️ Время распознавания истекло\n\nВведите пробег вручную или отправьте фото повторно.', { parse_mode: 'HTML' }).catch(() => {});
     } else {
-      console.error('mileage bg error:', err.message);
+      safeLog.error('mileage bg error:', err.message);
     }
   });
 }
@@ -3021,25 +2747,25 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
     try {
       await telegram.sendMessage(chatId, html, { parse_mode: 'HTML', ...(extra || {}) });
     } catch (e) {
-      console.error('background sendMsg error', e.message);
+      safeLog.error('background sendMsg error', e.message);
     }
   };
 
   try {
-    console.log('mileage bg: start processing', { telegramId, fileId });
+    safeLog.log('mileage bg: start processing', { telegramId, fileId });
 
     const [recognitionOptions, forwardedResult] = await Promise.all([
       buildMileageRecognitionOptions(originalState),
       forwardPhoto({ telegram }, fileId, buildPhotoCaption(originalState, telegramId), 'work').catch((error) => {
-        console.error('telegram send photo error', error);
+      safeLog.error('telegram send photo error', error);
         return null;
       })
     ]);
     savePhotoThread(forwardedResult, telegramId, 'mileage');
-    console.log('mileage bg: recognition options built', recognitionOptions);
+    safeLog.log('mileage bg: recognition options built', recognitionOptions);
 
     const sourceBuffer = await downloadTelegramFile({ telegram }, fileId);
-    console.log('mileage bg: file downloaded', { size: sourceBuffer?.length });
+    safeLog.log('mileage bg: file downloaded', { size: sourceBuffer?.length });
 
     const ocrResult = await recognizeMileage({ telegram, chat: { id: chatId } }, fileId, {
       ...recognitionOptions,
@@ -3051,7 +2777,7 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
 
     const mileageValue = ocrResult?.mileage || null;
     const ocrCandidates = ocrResult?.candidates || [];
-    console.log('mileage bg: OCR result', { mileageValue, candidateCount: ocrCandidates.length });
+    safeLog.log('mileage bg: OCR result', { mileageValue, candidateCount: ocrCandidates.length });
 
     if (!mileageValue) {
       if (sourceBuffer) {
@@ -3092,7 +2818,7 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
     // OCR успешно распознал — проверяем, не изменил ли пользователь состояние
     const currentState = getState(telegramId);
     if (!currentState || currentState.fileId !== fileId || !currentState.mileageProcessing) {
-      console.log('mileage bg: state changed, ignoring OCR result');
+      safeLog.log('mileage bg: state changed, ignoring OCR result');
       return;
     }
 
@@ -3102,7 +2828,7 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
       { sourceBuffer, telegram, chatId, fallbackState: originalState }
     );
   } catch (error) {
-    console.error('background mileage processing error', error);
+    safeLog.error('background mileage processing error', error);
     await sendMsg('⚠️ Ошибка обработки фото\n\nПопробуйте отправить ещё раз.', mileageConfirmKeyboard());
   } finally {
     const cs = getState(telegramId);
@@ -3146,7 +2872,7 @@ async function handleManualTime(ctx, state, text) {
     await ctx.replyWithHTML(`${icon} <b>${label} смены</b> изменён\n\n⏰ <code>${esc(timeValue)}</code>`);
     return 'done';
   } catch (error) {
-    console.error('ошибка Google Sheets', error);
+    safeLog.error('ошибка Google Sheets', error);
     await ctx.replyWithHTML('⚠️ Не удалось изменить время\n\nПопробуйте ещё раз.');
     return 'error';
   }
@@ -3197,7 +2923,10 @@ async function handleSheetsInfo(ctx, state, text, telegramId) {
     msg += `🏬 <b>${esc(wp)}</b>\n`;
     msg += `   Текущий: ${activeId ? '✅ привязана' : '❌ нет'}\n`;
     msg += `   Следующий: ${nextId ? '✅ привязана' : '❌ нет'}\n`;
-    msg += `   Источник: ${esc(info.source)}\n\n`;
+    const sourceText = info.sheetId
+      ? (info.isMonthly ? `monthly (${info.monthKey})` : 'global fallback')
+      : 'not configured';
+    msg += `   Источник: ${esc(sourceText)}\n\n`;
   }
   msg += `<b>Команды:</b>\n`;
   msg += `<code>/sheet east URL</code> — привязать для ИМ Восток\n`;
@@ -3274,14 +3003,14 @@ async function handleManualMileageInput(ctx, state, text) {
 let _shutdownInProgress = false;
 
 function flushAllSync() {
-  try { flushFunReactionsNow(); } catch (e) { console.error('flushFunReactionsNow failed', e.message); }
+  try { flushFunReactionsNow(); } catch (e) { safeLog.error('flushFunReactionsNow failed', e.message); }
 }
 
 async function shutdown(signal) {
   if (_shutdownInProgress) return;
   _shutdownInProgress = true;
 
-  console.log(`shutdown initiated by ${signal}`);
+  safeLog.log(`shutdown initiated by ${signal}`);
   try {
     checkpoint();
   } catch (_) {}
@@ -3290,7 +3019,7 @@ async function shutdown(signal) {
   try {
     await makeBackup('pre-shutdown');
   } catch (e) {
-    console.error('pre-shutdown backup failed', e.message);
+    safeLog.error('pre-shutdown backup failed', e.message);
   }
 
   if (funReactionCleanupTimer) {
@@ -3301,32 +3030,38 @@ async function shutdown(signal) {
   try {
     await bot.stop(signal);
   } catch (e) {
-    console.error('bot.stop failed', e.message);
+    safeLog.error('bot.stop failed', e.message);
   }
 
   setTimeout(() => {
-    console.log('forced exit after shutdown timeout');
+    safeLog.log('forced exit after shutdown timeout');
     process.exit(0);
   }, 5000);
 }
 
 bot.catch(async (error, ctx) => {
-  console.error('bot error', error.message);
+  if (error.message?.includes('text must be non-empty')) return;
+  safeLog.error('bot error', error.message);
   try {
     await ctx.replyWithHTML('⚠️ Произошла ошибка. Попробуйте ещё раз или используйте /start.');
   } catch (replyErr) {
-    console.error('failed to send error reply:', replyErr.message);
+    safeLog.error('failed to send error reply:', replyErr.message);
   }
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('uncaught exception:', error);
+  safeLog.error('uncaught exception:', error);
   shutdown('uncaughtException');
 });
 
 process.on('unhandledRejection', (reason) => {
-  console.error('unhandled rejection:', reason);
-  shutdown('unhandledRejection');
+  safeLog.error('unhandled rejection:', reason);
+  // Do not shutdown on unhandledRejection; log and notify admins instead
+  try {
+    notifyAdmins(`⚠️ <b>Необработанная ошибка (unhandledRejection)</b>\n\n<pre>${esc(String(reason).substring(0, 500))}</pre>\n\nПроцесс продолжает работать.`);
+  } catch (e) {
+    safeLog.error('failed to notify admins about unhandled rejection', e.message);
+  }
 });
 
 const LAUNCH_RETRIES = LIMITS.LAUNCH_RETRIES;
@@ -3349,17 +3084,17 @@ async function setupBotCommands() {
       { command: 'role', description: 'Сменить роль (админ)' }
     ], { scope: { type: 'all_private_chats' } });
   } catch (e) {
-    console.error('setMyCommands private error', e.message);
+    safeLog.error('setMyCommands private error', e.message);
   }
 
   // Чистим команды для групп/админов/дефолта (бот предназначен только для приватов)
   await Promise.all([
     bot.telegram.deleteMyCommands({ scope: { type: 'all_group_chats' } })
-      .catch((e) => console.error('deleteMyCommands group error', e.message)),
+      .catch((e) => safeLog.error('deleteMyCommands group error', e.message)),
     bot.telegram.deleteMyCommands({ scope: { type: 'all_chat_administrators' } })
-      .catch((e) => console.error('deleteMyCommands admins error', e.message)),
+      .catch((e) => safeLog.error('deleteMyCommands admins error', e.message)),
     bot.telegram.deleteMyCommands()
-      .catch((e) => console.error('deleteMyCommands default error', e.message))
+      .catch((e) => safeLog.error('deleteMyCommands default error', e.message))
   ]);
 }
 
@@ -3373,6 +3108,7 @@ const services = {
   isAdminUser, getSheetAccessUsers, addSheetAccessUser, removeSheetAccessUser,
   _pendingUpdates, savePendingUpdates, notifyUsersAboutUpdate,
   setState, getState, clearState,
+  withState, withStateSync,
   clearShiftStatus,
   // text router flows
   punchTimeFlow, mileageFlow, routeSheetFlow, reconciliationFlow,
@@ -3387,7 +3123,7 @@ const services = {
   handleRouteSheetPhoto, handleReconciliationPhoto, handleMileagePhoto,
   finalizeReconciliationPostSend, saveMileageFromState,
   getTodayText, getNextRouteSheetNumber, logRouteSheetPhoto,
-  buildRouteSheetCaption, sendPhotoToRouteSheetChat, savePhotoThread,
+  buildRouteSheetCaption, sendPhotoToRouteSheetChat, sendPhotoToReconciliationChat, sendMediaGroupToReconciliationChat, savePhotoThread,
   normalizeTimeValue, formatStage, formatMoneyRu,
   notifyLogistsAboutSelfClearance, sendFunReaction,
   courierMainMenu,
@@ -3428,7 +3164,7 @@ setupLogist(bot, services);
 
 async function startBot(retry = 0) {
   if (process.env.BOT_DISABLED === 'true') {
-    console.log('bot disabled — .env BOT_DISABLED=true');
+    safeLog.log('bot disabled — .env BOT_DISABLED=true');
     return;
   }
   try {
@@ -3438,7 +3174,7 @@ async function startBot(retry = 0) {
     loadPendingUpdatesFromDb();
     const removedMonths = cleanupOldMonths();
     if (removedMonths) {
-      console.log('cleaned up old month(s) from storage');
+      safeLog.log('cleaned up old month(s) from storage');
     }
 
     // ВАЖНО: в Telegraf 4 у bot.launch() нет коллбэка после старта — он
@@ -3447,9 +3183,9 @@ async function startBot(retry = 0) {
     // Теперь всё это вынесено наружу.
 
     // Команды Telegram и стикерпаки — fire-and-forget до launch
-    setupBotCommands().catch((e) => console.error('setupBotCommands fatal', e.message));
+    setupBotCommands().catch((e) => safeLog.error('setupBotCommands fatal', e.message));
     importConfiguredFunStickerSets({ telegram: bot.telegram }).catch((error) => {
-      console.error('fun sticker import fatal', error.message || error);
+      safeLog.error('fun sticker import fatal', error.message || error);
     });
 
     // Бэкапы — только при первом запуске, чтобы ретраи не плодили таймеры
@@ -3457,10 +3193,10 @@ async function startBot(retry = 0) {
       if (_backupInitialTimer) clearTimeout(_backupInitialTimer);
       if (_backupIntervalTimer) clearInterval(_backupIntervalTimer);
       _backupInitialTimer = setTimeout(() => {
-        runBackupCycle().catch((e) => console.error('initial backup error', e.message));
+        runBackupCycle().catch((e) => safeLog.error('initial backup error', e.message));
       }, 5000);
       _backupIntervalTimer = setInterval(() => {
-        runBackupCycle().catch((e) => console.error('backup cycle error', e.message));
+        runBackupCycle().catch((e) => safeLog.error('backup cycle error', e.message));
       }, BACKUP_INTERVAL_MS);
       _backupInitialTimer.unref?.();
       _backupIntervalTimer.unref?.();
@@ -3470,7 +3206,7 @@ async function startBot(retry = 0) {
     if (changed && retry === 0) {
       setTimeout(() => {
         askAdminsAboutUpdate(version, changedFiles, updates).catch((error) => {
-          console.error('admin update ask fatal', error.message || error);
+          safeLog.error('admin update ask fatal', error.message || error);
         });
       }, 3000);
     }
@@ -3478,16 +3214,26 @@ async function startBot(retry = 0) {
     // Очистка клавиатур во всех топиках и группах при старте
     // bot.launch() возвращает Promise, который резолвится только при stop().
     // НЕ ставим await — иначе всё, что после, не выполнится.
-    bot.launch();
-    console.log(`bot started v${version}${changed ? ' (updated)' : ''}`);
+    bot.launch().catch((error) => {
+      safeLog.error('bot.launch() error:', error?.message || error);
+    });
+    safeLog.log(`bot started v${version}${changed ? ' (updated)' : ''}`);
+
+    if (changed && retry === 0) {
+      setTimeout(() => {
+        refreshAllKeyboards().catch((error) => {
+          safeLog.error('keyboard refresh error', error.message || error);
+        });
+      }, 5000);
+    }
   } catch (error) {
     const delay = Math.min(LAUNCH_BASE_DELAY * Math.pow(2, retry), LAUNCH_MAX_DELAY);
-    console.error(`bot launch error (attempt ${retry + 1}/${LAUNCH_RETRIES}):`, error?.message || error);
+    safeLog.error(`bot launch error (attempt ${retry + 1}/${LAUNCH_RETRIES}):`, error?.message || error);
     if (retry < LAUNCH_RETRIES) {
-      console.error(`retrying in ${delay / 1000}s ...`);
+      safeLog.error(`retrying in ${delay / 1000}s ...`);
       setTimeout(() => startBot(retry + 1), delay);
     } else {
-      console.error('max launch retries reached, exiting');
+      safeLog.error('max launch retries reached, exiting');
       process.exit(1);
     }
   }

@@ -93,3 +93,36 @@
   добавлен `FUN_TONE`.
 - `README.md` — секция «Архитектура» с описанием файлов проекта.
 - Этот `CHANGELOG.md`.
+
+### Phase C — аудит: рефакторинг и тесты
+
+- **Извлечены модули из `bot.js`:**
+  - `services/photoForwarder.js` — пересылка фото и медиагрупп.
+  - `services/backup.js` — бэкапы SQLite через `VACUUM INTO`.
+  - `services/version.js` — версионирование, git-лог, changelog bump.
+- **Централизованное логирование:** почти все `console.log/error/warn` в
+  `bot.js` переведены на `utils/safeLog.js` (маскирование PII).
+- **Удалены неиспользуемые импорты** (`axios`, `execSync`) из `bot.js`.
+- **Восстановлены тесты:** `tests/run.js` с собственным раннером.
+  16 кейсов для `utils`, `safeLog`, `version`. `npm test` проходит.
+
+### Phase D — безопасность (следующая итерация)
+
+- Ротация секретов (`BOT_TOKEN`, `GOOGLE_PRIVATE_KEY`, `GEMINI_API_KEY`).
+- Перевод оставшихся `console.*` в `db.js` и сервисах на `safeLog`.
+
+- **Sticker / animation ограничены приватным чатом.** Реакции больше не
+  срабатывают в группах/топиках, где бот видит чужие медиа.
+- **`deploy.sh`:** резервная копия кода перед деплоем, `npm ci`, health-check
+  бота и OCR-сервера, автоматический rollback при падении проверки.
+- **Rate limiting:** защита от спама фото пробега (`MILEAGE_RATE_LIMIT_*`).
+- **Forum topics (`message_thread_id`):** сохраняются в `message_threads` и
+  используются при ответе курьера из группы-форума.
+- **`npm audit fix`:** устранены уязвимости `axios`, `brace-expansion`,
+  `form-data`. Оставшиеся 2 moderate уязвимости — транзитивные от `gaxios`
+  (Google API) и требуют обновления пакетов Google вручную.
+- **PII redaction:** добавлен `utils/safeLog.js`, чувствительные логи
+  (медленные запросы, ID пользователей, ошибки рассылок) маскируют
+  телефоны, email, ID и токены.
+- **Консистентные бэкапы SQLite:** `database.sqlite` теперь бэкапится через
+  `VACUUM INTO` вместо `copyFile`, что гарантирует целостную копию в WAL-режиме.

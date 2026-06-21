@@ -5,7 +5,9 @@ module.exports = function setupReplyForwarding(bot, services) {
     findThreadById,
     saveForwardedMessage,
     findForwardedMessage,
-    cleanupOldThreads
+    cleanupOldThreads,
+    getUserRole,
+    isAdminUser
   } = services;
 
   const esc = services.esc || ((s) => String(s || '').replace(/[<>&"]/g, (c) => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])));
@@ -24,6 +26,12 @@ module.exports = function setupReplyForwarding(bot, services) {
 
     const thread = findThreadByGroupMessage(ctx.chat.id, ctx.message.reply_to_message.message_id);
     if (!thread) return next();
+
+    const senderId = String(ctx.from?.id);
+    const senderRole = getUserRole(senderId);
+    if (senderRole !== 'logist' && !isAdminUser(senderId)) {
+      return next();
+    }
 
     const courierId = Number(thread.courier_telegram_id);
     if (!courierId) return next();
@@ -92,7 +100,7 @@ module.exports = function setupReplyForwarding(bot, services) {
       } catch (_) {}
     }
 
-    return next();
+    return;
   });
 
   // ─── Courier replies in private → forward to group ───
@@ -112,33 +120,40 @@ module.exports = function setupReplyForwarding(bot, services) {
 
     const groupChatId = thread.group_chat_id;
     const groupMessageId = thread.group_message_id;
+    const messageThreadId = thread.message_thread_id ? Number(thread.message_thread_id) : undefined;
     const courierName = ctx.from?.first_name || 'Курьер';
 
     try {
       let result;
 
+      const baseOpts = { parse_mode: 'HTML' };
+      if (messageThreadId) {
+        baseOpts.message_thread_id = messageThreadId;
+      }
+
       if (ctx.message.text) {
         const text = `↩️ <b>Ответ ${esc(courierName)}:</b>\n\n${esc(ctx.message.text)}`;
         try {
           result = await bot.telegram.sendMessage(groupChatId, text, {
-            parse_mode: 'HTML',
+            ...baseOpts,
             reply_to_message_id: Number(groupMessageId)
           });
         } catch (replyErr) {
-          result = await bot.telegram.sendMessage(groupChatId, text, { parse_mode: 'HTML' });
+          result = await bot.telegram.sendMessage(groupChatId, text, baseOpts);
         }
       } else if (ctx.message.photo) {
         const caption = `↩️ <b>Фото от ${esc(courierName)}:</b>`;
+        const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
         try {
-          result = await bot.telegram.sendPhoto(groupChatId, ctx.message.photo[ctx.message.photo.length - 1].file_id, {
+          result = await bot.telegram.sendPhoto(groupChatId, fileId, {
             caption,
-            parse_mode: 'HTML',
+            ...baseOpts,
             reply_to_message_id: Number(groupMessageId)
           });
         } catch (replyErr) {
-          result = await bot.telegram.sendPhoto(groupChatId, ctx.message.photo[ctx.message.photo.length - 1].file_id, {
+          result = await bot.telegram.sendPhoto(groupChatId, fileId, {
             caption,
-            parse_mode: 'HTML'
+            ...baseOpts
           });
         }
       } else if (ctx.message.document) {
@@ -146,13 +161,13 @@ module.exports = function setupReplyForwarding(bot, services) {
         try {
           result = await bot.telegram.sendDocument(groupChatId, ctx.message.document.file_id, {
             caption,
-            parse_mode: 'HTML',
+            ...baseOpts,
             reply_to_message_id: Number(groupMessageId)
           });
         } catch (replyErr) {
           result = await bot.telegram.sendDocument(groupChatId, ctx.message.document.file_id, {
             caption,
-            parse_mode: 'HTML'
+            ...baseOpts
           });
         }
       } else if (ctx.message.voice) {
@@ -160,24 +175,24 @@ module.exports = function setupReplyForwarding(bot, services) {
         try {
           result = await bot.telegram.sendVoice(groupChatId, ctx.message.voice.file_id, {
             caption,
-            parse_mode: 'HTML',
+            ...baseOpts,
             reply_to_message_id: Number(groupMessageId)
           });
         } catch (replyErr) {
           result = await bot.telegram.sendVoice(groupChatId, ctx.message.voice.file_id, {
             caption,
-            parse_mode: 'HTML'
+            ...baseOpts
           });
         }
       } else {
         const text = `↩️ <b>Сообщение от ${esc(courierName)}:</b>`;
         try {
           result = await bot.telegram.sendMessage(groupChatId, text, {
-            parse_mode: 'HTML',
+            ...baseOpts,
             reply_to_message_id: Number(groupMessageId)
           });
         } catch (replyErr) {
-          result = await bot.telegram.sendMessage(groupChatId, text, { parse_mode: 'HTML' });
+          result = await bot.telegram.sendMessage(groupChatId, text, baseOpts);
         }
       }
 
@@ -204,6 +219,6 @@ module.exports = function setupReplyForwarding(bot, services) {
       } catch (_) {}
     }
 
-    return next();
+    return;
   });
 };

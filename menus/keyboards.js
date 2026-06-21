@@ -6,7 +6,8 @@ const {
   getActiveRemindersForCourier,
   getSelfClearanceRequest,
   isSheetAccessUser,
-  getShiftStatus
+  getShiftStatus,
+  getPendingCash
 } = require('../services/storage');
 const { isAdminUser } = require('../services/auth');
 const { styledButton, styledReplyButton } = require('../utils');
@@ -53,15 +54,27 @@ function courierMainMenu(telegramId) {
   const courierType = getUserField(telegramId, 'courierType') || 'auto';
   const timeBtn = getTimeButtonLabel(telegramId);
   const mileageBtn = getMileageButtonLabel(telegramId);
-  const rows = [
-    [timeBtn]
-  ];
+
+  const rows = [];
+
   if (courierType !== 'pedestrian') {
-    rows.push([mileageBtn, BUTTONS.routeSheet]);
+    rows.push([timeBtn]);
+    rows.push([mileageBtn]);
   } else {
-    rows.push([BUTTONS.routeSheet]);
+    rows.push([timeBtn]);
   }
-  rows.push([BUTTONS.reconciliation, BUTTONS.cashCheck]);
+
+  rows.push([BUTTONS.routeSheet, BUTTONS.reconciliation]);
+
+  const pendingCash = getPendingCash(telegramId);
+  const hasCash = pendingCash && pendingCash.amount > 0 && pendingCash.confirmationStatus !== 'awaiting';
+  if (hasCash) {
+    const cashText = pendingCash.formatted
+      ? `${BUTTONS.cashCheck} ${pendingCash.formatted}`
+      : BUTTONS.cashCheck;
+    rows.push([styledReplyButton(cashText, 'danger')]);
+  }
+
   rows.push([BUTTONS.issues, BUTTONS.settings]);
   return Markup.keyboard(rows).resize();
 }

@@ -13,8 +13,10 @@ module.exports = function setupCourier(bot, services) {
     backToMainMenu,
     replaceTimeAction,
     WORKPLACE_FEATURES, sendCommandsList,
+    withState,
+    sendPhotoToReconciliationChat,
     manualMileageKeyboard, skipMileageKeyboard, courierMainMenu,
-    Markup, BUTTONS, esc
+    Markup, BUTTONS, esc, styledButton
   } = services;
 
   bot.on('photo', async (ctx) => {
@@ -81,6 +83,11 @@ module.exports = function setupCourier(bot, services) {
   });
 
   bot.action('confirm_switch_user', async (ctx) => {
+    const swState = getState(ctx.from.id);
+    if (!swState?.awaitingSwitchUser) {
+      await ctx.answerCbQuery('⚠️ Сначала нажмите «Поменять сотрудника» в настройках.', { show_alert: true });
+      return;
+    }
     await ctx.answerCbQuery();
     const telegramId = ctx.from.id;
     const state = getState(telegramId);
@@ -95,21 +102,48 @@ module.exports = function setupCourier(bot, services) {
 
   bot.action('route_sheet_done', async (ctx) => {
     await ctx.answerCbQuery('Готово');
-    const state = getState(ctx.from.id);
-    clearState(ctx.from.id);
-    if (state?.awaitingReconciliationPhoto) {
-      const sent = state.reconciliationPhotosSent || 0;
-      await ctx.replyWithHTML(
-        sent > 0
-          ? `✅ Завершено. Отправлено фото: <b>${sent}</b>.`
-          : '✅ Завершено. Фото не отправлены.',
-        courierMainMenu(ctx.from.id)
-      );
-      return;
-    }
-    const curSheets = Number(getUserField(ctx.from.id, 'routeSheetsSubmitted') || 0);
-    setUserField(ctx.from.id, 'routeSheetsSubmitted', curSheets + 1);
-    await ctx.replyWithHTML('✅ Маршрутный лист завершён\n\nСпасибо!', courierMainMenu(ctx.from.id));
+
+    await withState(ctx.from.id, async (state) => {
+      if (state?.awaitingReconciliationPhoto) {
+        const sent = state.reconciliationPhotosSent || 0;
+        const isTerminal = state.device === 'Терминал';
+
+        // Если есть неполный набор фото сверки — переслать то, что есть
+        if (sent > 0) {
+          try {
+            if (isTerminal && state.reconciliationPhoto1FileId) {
+              await sendPhotoToReconciliationChat(
+                ctx,
+                state.reconciliationPhoto1FileId,
+                (state.reconciliationPhoto1Caption || '') + '\n\n⚠️ Завершено без фото чека'
+              );
+            } else if (!isTerminal && state.reconciliationPhoto1FileId) {
+              await sendPhotoToReconciliationChat(
+                ctx,
+                state.reconciliationPhoto1FileId,
+                (state.reconciliationPhoto1Caption || '') + '\n\n⚠️ Завершено без дополнительных фото'
+              );
+            }
+          } catch (e) {
+            console.error('route_sheet_done: failed to forward partial reconciliation photo', e.message);
+          }
+        }
+
+        clearState(ctx.from.id);
+        await ctx.replyWithHTML(
+          sent > 0
+            ? `✅ Завершено. Отправлено фото: <b>${sent}</b>.`
+            : '✅ Завершено. Фото не отправлены.',
+          courierMainMenu(ctx.from.id)
+        );
+        return;
+      }
+
+      clearState(ctx.from.id);
+      const curSheets = Number(getUserField(ctx.from.id, 'routeSheetsSubmitted') || 0);
+      setUserField(ctx.from.id, 'routeSheetsSubmitted', curSheets + 1);
+      await ctx.replyWithHTML('✅ Маршрутный лист завершён\n\nСпасибо!', courierMainMenu(ctx.from.id));
+    });
   });
 
   bot.action('cash_submit_yes', async (ctx) => {

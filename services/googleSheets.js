@@ -47,6 +47,7 @@ function getSheetsAuth() {
 let rowCache = {};
 let cacheTimestamp = 0;
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const MAX_ROW_CACHE_SIZE = 200;
 
 // --- Batch update queue ---
 let pendingUpdates = [];
@@ -76,8 +77,12 @@ function migratePendingSheetUpdatesSchema() {
 function loadPendingUpdatesFromDb() {
   try {
     migratePendingSheetUpdatesSchema();
-    const rows = db.prepare('SELECT id, spreadsheetId, range, value, createdAt, attempts, lastAttemptAt FROM pending_sheet_updates').all();
+    const rows = db.prepare('SELECT id, spreadsheetId, range, value, createdAt, attempts, lastAttemptAt FROM pending_sheet_updates ORDER BY id DESC').all();
+    const seen = new Set();
     for (const row of rows) {
+      const key = `${row.spreadsheetId}:${row.range}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       pendingUpdates.push({
         _dbId: row.id,
         spreadsheetId: row.spreadsheetId,
@@ -87,8 +92,8 @@ function loadPendingUpdatesFromDb() {
         attempts: row.attempts || 0
       });
     }
-    if (rows.length > 0) {
-      console.log(`restored ${rows.length} pending sheet update(s) from db`);
+    if (pendingUpdates.length > 0) {
+      console.log(`restored ${pendingUpdates.length} pending sheet update(s) from db`);
     }
   } catch (e) {
     console.error('failed to load pending sheet updates from db', e.message);
@@ -97,6 +102,8 @@ function loadPendingUpdatesFromDb() {
 
 function savePendingUpdateToDb(spreadsheetId, range, value) {
   try {
+    db.prepare('DELETE FROM pending_sheet_updates WHERE spreadsheetId = ? AND range = ?')
+      .run(spreadsheetId, range);
     const stmt = db.prepare('INSERT INTO pending_sheet_updates (spreadsheetId, range, value) VALUES (?, ?, ?)');
     const result = stmt.run(spreadsheetId, range, String(value));
     return result.lastInsertRowid;
@@ -113,6 +120,21 @@ function deletePendingUpdatesFromDb(ids) {
     db.prepare(`DELETE FROM pending_sheet_updates WHERE id IN (${placeholders})`).run(...ids);
   } catch (e) {
     console.error('failed to delete pending sheet updates from db', e.message);
+  }
+}
+
+function deletePendingUpdatesByRange(ranges) {
+  if (!ranges || ranges.length === 0) return;
+  try {
+    const stmt = db.prepare('DELETE FROM pending_sheet_updates WHERE spreadsheetId = ? AND range = ?');
+    const tx = db.transaction((items) => {
+      for (const item of items) {
+        stmt.run(item.spreadsheetId, item.range);
+      }
+    });
+    tx(ranges);
+  } catch (e) {
+    console.error('failed to delete pending sheet updates by range', e.message);
   }
 }
 
@@ -309,23 +331,40 @@ async function updateCell(sheetName, cell, value, spreadsheetId) {
   const range = `${quoteSheetName(sheetName)}!${cell}`;
   const dbId = savePendingUpdateToDb(spreadsheetId, range, value);
 
-  pendingUpdates.push({
-    _dbId: dbId,
-    spreadsheetId,
-    range,
-    values: [[value]]
-  });
+  const existing = pendingUpdates.findIndex(u => u.spreadsheetId === spreadsheetId && u.range === range);
+  const now = new Date().toISOString();
+  if (existing >= 0) {
+    pendingUpdates[existing].values = [[value]];
+    pendingUpdates[existing]._dbId = dbId;
+    pendingUpdates[existing].createdAt = now;
+  } else {
+    pendingUpdates.push({
+      _dbId: dbId,
+      spreadsheetId,
+      range,
+      values: [[value]],
+      createdAt: now,
+      attempts: 0
+    });
+  }
 
   if (!updateTimer) {
     updateTimer = setTimeout(flushSheetUpdates, 3000);
   }
 }
 
+let isFlushing = false;
+let pendingFlush = false;
+
 async function flushSheetUpdates() {
   if (pendingUpdates.length === 0) return;
-  const dataToUpdate = [...pendingUpdates];
-  pendingUpdates = [];
-  updateTimer = null;
+  if (isFlushing) { pendingFlush = true; return; }
+  isFlushing = true;
+
+  try {
+    const dataToUpdate = [...pendingUpdates];
+    pendingUpdates = [];
+    updateTimer = null;
 
   // Group by spreadsheetId because batchUpdate is per-sheet
   const bySheet = {};
@@ -363,7 +402,8 @@ async function flushSheetUpdates() {
   }
 
   if (!hadError) {
-    deletePendingUpdatesFromDb(dbIds);
+    const rangesToDelete = dataToUpdate.map(item => ({ spreadsheetId: item.spreadsheetId, range: item.range }));
+    deletePendingUpdatesByRange(rangesToDelete);
     return;
   }
 
@@ -435,6 +475,14 @@ async function flushSheetUpdates() {
       console.error('failed to notify admins about sheets error', e.message);
     }
   }
+
+  } finally {
+    isFlushing = false;
+    if (pendingFlush) {
+      pendingFlush = false;
+      flushSheetUpdates();
+    }
+  }
 }
 
 async function findCourierByFio(fio, workplace, sheetContext = null) {
@@ -462,6 +510,13 @@ async function findCourierByFio(fio, workplace, sheetContext = null) {
     }
   }
   cacheTimestamp = Date.now();
+
+  const keys = Object.keys(rowCache);
+  if (keys.length > MAX_ROW_CACHE_SIZE) {
+    for (let i = 0; i < keys.length - MAX_ROW_CACHE_SIZE; i++) {
+      delete rowCache[keys[i]];
+    }
+  }
 
   return rowCache[cacheKey] || null;
 }
@@ -492,6 +547,13 @@ async function findMileageByFio(fio, workplace, sheetContext = null) {
     }
   }
   cacheTimestamp = Date.now();
+
+  const keys = Object.keys(rowCache);
+  if (keys.length > MAX_ROW_CACHE_SIZE) {
+    for (let i = 0; i < keys.length - MAX_ROW_CACHE_SIZE; i++) {
+      delete rowCache[keys[i]];
+    }
+  }
 
   return rowCache[cacheKey] || null;
 }
@@ -653,7 +715,7 @@ async function prepareMileage(fio, workplace, stage = null) {
   };
 }
 
-async function punchTime(fio, workplace, isPedestrian = false) {
+async function punchTime(fio, workplace, isPedestrian = false, overrideDate = null) {
   const ctx = await resolveCourierContext(fio, workplace, { requireMileage: !isPedestrian });
   if (ctx.notFound) {
     if (ctx.noSheet) {
@@ -665,7 +727,8 @@ async function punchTime(fio, workplace, isPedestrian = false) {
   const { spreadsheetId, config, courier, mileage } = ctx;
 
   const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
-  const { dateText, day, date } = getCurrentDateInfo(timezone);
+  const dateInfo = overrideDate ? getCurrentDateInfo(timezone, overrideDate) : getCurrentDateInfo(timezone);
+  const { dateText, day, date } = dateInfo;
   const timeValue = roundTimeToHalfHour(date);
   const columns = getCourierColumnsByDay(day);
   const startCell = `${getColumnLetter(columns.startColumn)}${courier.row}`;

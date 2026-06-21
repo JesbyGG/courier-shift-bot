@@ -91,7 +91,7 @@ module.exports = function setupTextRouter(bot, services) {
       const res = await reconciliationFlow(ctx);
       if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
     }},
-    { button: BUTTONS.cashCheck, legacy: ['Сдать наличные', 'Деньги к сдаче', '💵 Наличные'], handler: async (ctx) => {
+    { button: BUTTONS.cashCheck, match: (text) => typeof text === 'string' && text.startsWith(BUTTONS.cashCheck), legacy: ['Сдать наличные', 'Деньги к сдаче', '💵 Наличные'], handler: async (ctx) => {
       const res = await showPendingCashStatus(ctx);
       if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
       else if (res.status === 'no_debt') await ctx.replyWithHTML('✅ Долгов нет — все деньги сданы', getMenuForRole(ctx.from.id));
@@ -177,12 +177,19 @@ module.exports = function setupTextRouter(bot, services) {
     if (ctx.chat?.type !== 'private') return;
     const telegramId = ctx.from.id;
     const text = ctx.message.text.trim();
+    if (!text) return;
     const state = getState(telegramId);
 
-    for (const route of TEXT_ROUTES) {
-      if (matchTextRoute(route, text, state)) {
-        return route.handler(ctx, state, text, telegramId);
+    try {
+      for (const route of TEXT_ROUTES) {
+        if (matchTextRoute(route, text, state)) {
+          return route.handler(ctx, state, text, telegramId);
+        }
       }
+    } catch (e) {
+      console.error('textRouter route error:', e.message);
+      try { await ctx.replyWithHTML('⚠️ Произошла ошибка. Попробуйте ещё раз.', getMenuForRole(telegramId)); } catch (_) {}
+      return;
     }
 
     // Fallback: если reply на сообщение бота — не отправлять меню

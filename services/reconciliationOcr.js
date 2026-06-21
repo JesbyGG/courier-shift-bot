@@ -25,28 +25,43 @@ function extractCashFromGemini(text) {
     return { amount: 0, totalOrders: 0, valid: false, reason: 'empty_text' };
   }
 
-  let amount = 0;
+  const normalized = raw
+    .replace(/\u00A0/g, ' ')
+    .replace(/₽/g, ' ₽')
+    .replace(/\s+/g, ' ')
+    .trim();
+
   let totalOrders = 0;
-
-  const cashMatch = raw.match(/CASH:\s*(\d+(?:[.,]\d+)?)/i);
-  if (cashMatch) {
-    amount = parseMoneyRu(cashMatch[1]) || 0;
-  }
-
-  const ordersMatch = raw.match(/ORDERS:\s*(\d+)/i);
+  const ordersMatch = normalized.match(/ORDERS:\s*(\d+)/i);
   if (ordersMatch) {
     totalOrders = Number(ordersMatch[1]) || 0;
   }
 
-  const hasAmount = amount >= 1;
-  const hasOrders = totalOrders > 0;
+  // 1) Structured: "CASH: 17 777,18"
+  const cashMatch = normalized.match(/CASH:\s*([\d.,\s]+)/i);
+  if (cashMatch) {
+    const amount = parseMoneyRu(cashMatch[1]);
+    if (amount !== null && amount === 0) return { amount: 0, totalOrders, valid: false, reason: 'cash_zero' };
+    if (amount !== null && amount >= 1) return { amount, totalOrders, valid: true, reason: 'ok' };
+  }
 
-  return {
-    amount: hasAmount ? amount : 0,
-    totalOrders,
-    valid: hasAmount,
-    reason: hasAmount ? 'ok' : (cashMatch ? 'amount_too_small' : 'no_cash_line')
-  };
+  // 2) Legacy: "Наличные 5 / 17 777,18" or "Наличные 2/16 451,96"
+  const legacyMatch = normalized.match(/(?:налич[а-яa-z]*)\s+\d{1,3}\s*\/\s*([\d\s.,]+)/i);
+  if (legacyMatch) {
+    const amount = parseMoneyRu(legacyMatch[1]);
+    if (amount !== null && amount === 0) return { amount: 0, totalOrders, valid: false, reason: 'cash_zero' };
+    if (amount !== null && amount >= 1) return { amount, totalOrders, valid: true, reason: 'ok' };
+  }
+
+  // 3) Fallback: plain number (only if no structured fields found)
+  const hasStructFields = /(?:CASH|ORDERS):\s*/i.test(normalized);
+  if (!hasStructFields) {
+    const plainAmount = parseMoneyRu(normalized);
+    if (plainAmount !== null && plainAmount === 0) return { amount: 0, totalOrders, valid: false, reason: 'cash_zero' };
+    if (plainAmount !== null && plainAmount >= 1) return { amount: plainAmount, totalOrders, valid: true, reason: 'ok' };
+  }
+
+  return { amount: 0, totalOrders, valid: false, reason: 'no_cash_line' };
 }
 
 function getReconciliationOcrTimeoutMs() {
@@ -78,7 +93,7 @@ async function recognizeReconciliationCashSafe(ctx, fileId, label) {
 function shouldWarnAboutReconciliationOcr(cashInfo) {
   if (!cashInfo) return true;
   if (cashInfo.valid) return false;
-  if (cashInfo.totalOrders && cashInfo.totalOrders > 0) return false;
+  if (cashInfo.reason === 'cash_zero') return false;
   return ['ocr_timeout', 'error', 'no_ocr_result'].includes(cashInfo.reason);
 }
 
@@ -91,6 +106,7 @@ async function recognizeReconciliationCash(ctx, fileId) {
     if (isGeminiOcrEnabled()) {
       const geminiText = await recognizeTextWithGemini(imageBuffer);
       if (geminiText) {
+        console.log('сверка OCR raw text:', geminiText);
         const parsed = extractCashFromGemini(geminiText);
         console.log('сверка OCR:', JSON.stringify({ cashValid: parsed.valid, cashReason: parsed.reason, cashAmount: parsed.amount, totalOrders: parsed.totalOrders, source: 'gemini' }));
         return { ...parsed, source: 'gemini' };
