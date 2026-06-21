@@ -21,10 +21,7 @@ module.exports = function setupCommands(bot, services) {
     sendHelp,
     backToMainMenu,
     getState,
-    clearState,
-    setState,
-    Markup,
-    workplaceMenu
+    clearState
   } = services;
 
   bot.start(async (ctx) => {
@@ -168,12 +165,8 @@ module.exports = function setupCommands(bot, services) {
       setUserField(telegramId, 'workplace', state.workplace);
     }
     clearState(telegramId);
-    await ctx.replyWithHTML(
-      `✅ <b>Курьер</b> (авто)\n\n` +
-      `🚗 Введите гос. номер автомобиля.\nНапример: <code>А123ВС777</code>`,
-      Markup.removeKeyboard()
-    );
-    setState(telegramId, { awaitingCarNumber: true, fio: state.fio });
+    await ctx.replyWithHTML('✅ Роль: <b>Курьер</b> (авто).\n\nТеперь введите номер машины.');
+    await askForCarNumber(ctx, state.fio);
   });
 
   bot.action('role_logist', async (ctx) => {
@@ -186,11 +179,7 @@ module.exports = function setupCommands(bot, services) {
     }
     setUserField(telegramId, 'role', 'logist');
     clearState(telegramId);
-    await ctx.replyWithHTML(
-      `✅ <b>Логист</b>\n\n` +
-      '🏬 Выберите ваш магазин:',
-      workplaceMenu()
-    );
-    setState(telegramId, { awaitingWorkplace: true, fio: state.fio });
+    await ctx.replyWithHTML('✅ Роль: <b>Логист</b>\n\nТеперь выберите ваш магазин.', logistMainMenu(ctx.from.id));
+    await askForWorkplace(ctx, state.fio);
   });
 };

@@ -1466,6 +1466,7 @@ async function authorizeFio(ctx, fio) {
 
     setUserField(telegramId, 'fio', employee.fio);
     safeLog.log('сотрудник найден');
+    await ctx.replyWithHTML(`✅ Сотрудник найден: <b>${esc(employee.fio)}</b>`);
 
     const auto = String(employee.auto || '').trim().toLowerCase();
     const workplace = employee.workplace;
@@ -1475,49 +1476,32 @@ async function authorizeFio(ctx, fio) {
         setUserField(telegramId, 'courierType', 'pedestrian');
         setUserField(telegramId, 'role', 'courier');
         setUserField(telegramId, 'workplace', 'ИМ Центр');
-        await ctx.replyWithHTML(
-          `✅ ${esc(employee.fio)} — 🚶 <b>Пеший курьер</b>, <b>ИМ Центр</b>.\n\n` +
-          '💻 Выберите устройство:',
-          deviceMenu()
-        );
-        setState(telegramId, { awaitingDevice: true, fio: employee.fio });
+        await ctx.replyWithHTML('🚶 <b>Пеший курьер</b>, магазин <b>ИМ Центр</b>.');
+        await askForDevice(ctx, employee.fio);
         return;
       }
       if (auto === 'логист') {
         setUserField(telegramId, 'role', 'logist');
-        await ctx.replyWithHTML(
-          `✅ ${esc(employee.fio)} — 📦 <b>Логист</b>.\n\n` +
-          '🏬 Выберите ваш магазин:',
-          workplaceMenu()
-        );
-        setState(telegramId, { awaitingWorkplace: true, fio: employee.fio });
+        await ctx.replyWithHTML('📦 <b>Логист</b>.\n\nТеперь выберите ваш магазин.', logistMainMenu(telegramId));
+        await askForWorkplace(ctx, employee.fio);
         return;
       }
       setUserField(telegramId, 'courierType', 'auto');
       setUserField(telegramId, 'role', 'courier');
-      await ctx.replyWithHTML(
-        `✅ ${esc(employee.fio)} — 🚗 <b>Авто-курьер</b>.\n\n` +
-        `🚗 Введите гос. номер автомобиля.\nНапример: <code>А123ВС777</code>`,
-        Markup.removeKeyboard()
-      );
-      setState(telegramId, { awaitingCarNumber: true, fio: employee.fio });
+      await ctx.replyWithHTML('🚗 <b>Авто-курьер</b>.\n\nТеперь введите номер машины.');
+      await askForCarNumber(ctx, employee.fio);
       return;
     }
 
     if (workplace === 'ИМ Восток') {
       if (auto === 'логист') {
         setUserField(telegramId, 'role', 'logist');
-        await ctx.replyWithHTML(
-          `✅ ${esc(employee.fio)} — 📦 <b>Логист</b>.\n\n` +
-          '🏬 Выберите ваш магазин:',
-          workplaceMenu()
-        );
-        setState(telegramId, { awaitingWorkplace: true, fio: employee.fio });
+        await ctx.replyWithHTML('📦 <b>Логист</b>.\n\nТеперь выберите ваш магазин.', logistMainMenu(telegramId));
+        await askForWorkplace(ctx, employee.fio);
         return;
       }
       setState(telegramId, { awaitingRoleChoice: true, fio: employee.fio, workplace: employee.workplace });
       await ctx.replyWithHTML(
-        `✅ ${esc(employee.fio)}\n\n` +
         '👤 <b>Выберите вашу роль:</b>\n\n' +
         '▫️ <b>Курьер</b> — доставка заказов, пробег, маршрутник, сверка, наличные\n' +
         '▫️ <b>Логист</b> — учёт времени, сбор наличных с курьеров, таблицы',
@@ -1528,7 +1512,6 @@ async function authorizeFio(ctx, fio) {
 
     setState(telegramId, { awaitingRoleChoice: true, fio: employee.fio, workplace: employee.workplace });
     await ctx.replyWithHTML(
-      `✅ ${esc(employee.fio)}\n\n` +
       '👤 <b>Выберите вашу роль:</b>\n\n' +
       '▫️ <b>Курьер</b> — доставка заказов, пробег, маршрутник, сверка, наличные\n' +
       '▫️ <b>Логист</b> — учёт времени, сбор наличных с курьеров, таблицы',
