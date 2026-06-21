@@ -1567,7 +1567,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       return;
     }
 
-    console.log('время записано', result.stage);
+    safeLog.log('время записано', result.stage);
     const currentTimeStatus = getShiftStatus(telegramId, 'time');
     if (result.stage === 'start') {
       setShiftStatus(telegramId, 'time', currentTimeStatus === 'end' || currentTimeStatus === 'both' ? 'both' : 'start');
@@ -1607,7 +1607,6 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       `📝 Неверно? → «Изменить время»`,
       timeChangeKeyboard()
     );
-    await ctx.replyWithHTML('✅', getMenuForRole(telegramId));
 
     if (result.stage === 'start') {
       const pendingCash = getPendingCash(telegramId);
@@ -1668,7 +1667,7 @@ async function mileageFlow(ctx, explicitStage = null) {
     }
 
     setState(telegramId, makeMileageState(telegramId, applyProfile(result, profile), { source: 'mileage' }));
-    console.log('ожидание пробега', result.stage);
+    safeLog.log('ожидание пробега', result.stage);
     await ctx.replyWithHTML(
       `📸 Пробег — <b>${esc(formatStage(result.stage))}</b>\n` +
       `──────────────\n\n` +
@@ -2169,7 +2168,6 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
       `📝 Неверно? → «Изменить пробег»`,
       mileageSavedKeyboard()
     );
-    await replyFn('✅', getMenuForRole(telegramId));
   } catch (error) {
     safeLog.error('ошибка Google Sheets', error);
     await replyFn('⚠️ Не удалось записать пробег\n\nПопробуйте ещё раз.');
@@ -2404,7 +2402,7 @@ async function replaceTimeAction(ctx, stage) {
       return { status: 'not_found', result, workplace: profile.workplace };
     }
 
-    console.log('время записано', `replace_${stage}`);
+    safeLog.log('время записано', `replace_${stage}`);
     clearState(ctx.from.id);
     return { status: 'replaced', stage, timeValue: result.timeValue };
   } catch (error) {
@@ -2867,7 +2865,7 @@ async function handleManualTime(ctx, state, text) {
   try {
     await updateCourierTime(state.courierRow, state.day, state.stage, timeValue, state.workplace);
     clearState(telegramId);
-    console.log('время изменено', state.stage);
+    safeLog.log('время изменено', state.stage);
     const icon = state.stage === 'start' ? '🟢' : '🔴';
     const label = state.stage === 'start' ? 'Старт' : 'Конец';
     await ctx.replyWithHTML(`${icon} <b>${label} смены</b> изменён\n\n⏰ <code>${esc(timeValue)}</code>`);
