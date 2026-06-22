@@ -477,19 +477,6 @@ function clearShiftStatus(telegramId) {
   }
 }
 
-function setShiftDate(telegramId, dateKey) {
-  const record = _getRecord(telegramId) || {};
-  if (!record.shiftStatus) record.shiftStatus = {};
-  record.shiftStatus.date = dateKey;
-  _setRecord(telegramId, record);
-}
-
-function getShiftDate(telegramId) {
-  const record = _getRecord(telegramId) || {};
-  const statusObj = record.shiftStatus || {};
-  return statusObj.date || null;
-}
-
 module.exports = {
   getUserField,
   setUserField,
@@ -524,8 +511,6 @@ module.exports = {
   getShiftStatus,
   setShiftStatus,
   clearShiftStatus,
-  getShiftDate,
-  setShiftDate,
 
   logCashAction,
   getCashHistory,

@@ -58,9 +58,7 @@ const {
   cleanupStaleReminders,
   getShiftStatus,
   setShiftStatus,
-  clearShiftStatus,
-  getShiftDate,
-  setShiftDate
+  clearShiftStatus
 } = require('./services/storage');
 const { recognizeMileage, downloadTelegramFile, isGeminiOcrEnabled, recognizeTextWithGemini, getMinMileageThreshold, checkGeminiOcrHealth } = require('./services/mileageOcr');
 const { saveOcrDebugImage, updateOcrDebugStatus } = require('./services/ocrDebug');
@@ -1536,15 +1534,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
     if (explicitStage) {
       result = await replaceTime(profile.fio, profile.workplace, explicitStage, isPedestrian);
     } else {
-      const storedDate = getShiftDate(telegramId);
-      const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
-      const today = getCurrentDateInfo(timezone);
-      const todayStr = `${today.year}-${String(today.month).padStart(2,'0')}-${String(today.day).padStart(2,'0')}`;
-      if (storedDate && storedDate !== todayStr) {
-        result = await punchTime(profile.fio, profile.workplace, isPedestrian, storedDate + 'T12:00:00');
-      } else {
-        result = await punchTime(profile.fio, profile.workplace, isPedestrian);
-      }
+      result = await punchTime(profile.fio, profile.workplace, isPedestrian);
     }
 
     if (result.notFound) {
@@ -1571,12 +1561,6 @@ async function punchTimeFlow(ctx, explicitStage = null) {
     const currentTimeStatus = getShiftStatus(telegramId, 'time');
     if (result.stage === 'start') {
       setShiftStatus(telegramId, 'time', currentTimeStatus === 'end' || currentTimeStatus === 'both' ? 'both' : 'start');
-      if (currentTimeStatus === 'none') {
-        const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
-        const now = getCurrentDateInfo(timezone);
-        const todayKey = `${now.year}-${String(now.month).padStart(2,'0')}-${String(now.day).padStart(2,'0')}`;
-        setShiftDate(telegramId, todayKey);
-      }
     } else {
       setShiftStatus(telegramId, 'time', currentTimeStatus === 'start' || currentTimeStatus === 'both' ? 'both' : 'end');
     }
