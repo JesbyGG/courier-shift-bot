@@ -37,10 +37,14 @@ function extractCashFromGemini(text) {
     totalOrders = Number(ordersMatch[1]) || 0;
   }
 
+  // Helper: join digits separated by spaces (e.g. "10 404,37" -> "10404,37")
+  const joinDigitGroups = (str) => str.replace(/(\d)\s+(\d)/g, '$1$2');
+
   // 1) Structured: "CASH: 17 777,18"
   const cashMatch = normalized.match(/CASH:\s*([\d.,\s]+)/i);
   if (cashMatch) {
-    const amount = parseMoneyRu(cashMatch[1]);
+    const joinedAmount = joinDigitGroups(cashMatch[1].trim());
+    const amount = parseMoneyRu(joinedAmount);
     if (amount !== null && amount === 0) return { amount: 0, totalOrders, valid: false, reason: 'cash_zero' };
     if (amount !== null && amount >= 1) return { amount, totalOrders, valid: true, reason: 'ok' };
   }
@@ -48,7 +52,8 @@ function extractCashFromGemini(text) {
   // 2) Legacy: "Наличные 5 / 17 777,18" or "Наличные 2/16 451,96"
   const legacyMatch = normalized.match(/(?:налич[а-яa-z]*)\s+\d{1,3}\s*\/\s*([\d\s.,]+)/i);
   if (legacyMatch) {
-    const amount = parseMoneyRu(legacyMatch[1]);
+    const joinedAmount = joinDigitGroups(legacyMatch[1].trim());
+    const amount = parseMoneyRu(joinedAmount);
     if (amount !== null && amount === 0) return { amount: 0, totalOrders, valid: false, reason: 'cash_zero' };
     if (amount !== null && amount >= 1) return { amount, totalOrders, valid: true, reason: 'ok' };
   }
@@ -56,7 +61,8 @@ function extractCashFromGemini(text) {
   // 3) Fallback: plain number (only if no structured fields found)
   const hasStructFields = /(?:CASH|ORDERS):\s*/i.test(normalized);
   if (!hasStructFields) {
-    const plainAmount = parseMoneyRu(normalized);
+    const joinedAmount = joinDigitGroups(normalized);
+    const plainAmount = parseMoneyRu(joinedAmount);
     if (plainAmount !== null && plainAmount === 0) return { amount: 0, totalOrders, valid: false, reason: 'cash_zero' };
     if (plainAmount !== null && plainAmount >= 1) return { amount: plainAmount, totalOrders, valid: true, reason: 'ok' };
   }

@@ -187,12 +187,15 @@ def recognize_text_with_gemini(image_bytes):
                          "It shows format 'Наличные X / Y ₽' where Y is cash amount in rubles. "
                          "If there is no amount shown or amount is 0,00, reply: CASH: 0. "
                          "Otherwise reply the cash amount with comma as decimal separator. "
+                         "Important: read the FULL number including thousands separator. "
+                         "For example, '10 404,37' means ten thousand four hundred four rubles 37 kopecks. "
+                         "Reply: CASH: 10 404,37 (with space as thousands separator). "
                          "2) ORDERS: Find the large number under 'ЗАКАЗОВ ЗА СЕГОДНЯ' (total orders for today). "
                          "This is the TOTAL order count across ALL payment methods. "
                          "Do NOT confuse with individual counts like 'Наличные 5' or 'Карта 3'. "
                          "Reply ONLY in this exact format: "
                          "CASH: <amount> ORDERS: <total integer> "
-                         "Example: CASH: 17 777,18 ORDERS: 22")
+                         "Example: CASH: 10 404,37 ORDERS: 22")
 
 
 # ===== Response formatting =====

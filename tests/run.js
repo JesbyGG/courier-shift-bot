@@ -33,6 +33,7 @@ async function run() {
   require('./utils.test');
   require('./safeLog.test');
   require('./version.test');
+  require('./reconciliationOcr.test');
 
   let passed = 0;
   let failed = 0;
