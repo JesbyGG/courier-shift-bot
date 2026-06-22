@@ -79,11 +79,22 @@ function roundMinutesToHalfHour(hours, minutes) {
   return String(h);
 }
 
-function roundTimeToHalfHour(date = new Date()) {
-  return roundMinutesToHalfHour(date.getHours(), date.getMinutes());
+function roundTimeToHalfHour(input = new Date()) {
+  let h;
+  let m;
+  if (input instanceof Date) {
+    h = input.getHours();
+    m = input.getMinutes();
+  } else if (input && typeof input === 'object' && Number.isFinite(input.hour) && Number.isFinite(input.minute)) {
+    h = input.hour;
+    m = input.minute;
+  } else {
+    return null;
+  }
+  return roundMinutesToHalfHour(h, m);
 }
 
-function getDateInTimezone(timezone = 'Europe/Moscow') {
+function getDateInTimezone(timezone = 'Europe/Moscow', dateInput = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
     year: 'numeric',
@@ -93,7 +104,7 @@ function getDateInTimezone(timezone = 'Europe/Moscow') {
     minute: '2-digit',
     second: '2-digit',
     hour12: false
-  }).formatToParts(new Date());
+  }).formatToParts(dateInput);
 
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   const year = Number(values.year);
@@ -103,16 +114,17 @@ function getDateInTimezone(timezone = 'Europe/Moscow') {
   const minute = Number(values.minute);
   const second = Number(values.second);
 
-  return new Date(year, month - 1, day, hour, minute, second);
+  return { year, month, day, hour, minute, second };
 }
 
 function getCurrentDateInfo(timezone = 'Europe/Moscow', overrideDate = null) {
-  const date = overrideDate ? new Date(overrideDate) : getDateInTimezone(timezone);
-  const day = date.getDate();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const dateText = `${String(day).padStart(2, '0')}.${month}.${date.getFullYear()}`;
+  const parts = overrideDate
+    ? getDateInTimezone(timezone, new Date(overrideDate))
+    : getDateInTimezone(timezone);
 
-  return { dateText, day, date };
+  const dateText = `${String(parts.day).padStart(2, '0')}.${String(parts.month).padStart(2, '0')}.${parts.year}`;
+
+  return { ...parts, dateText, day: parts.day };
 }
 
 function isEmptyCell(value) {

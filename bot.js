@@ -1539,7 +1539,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       const storedDate = getShiftDate(telegramId);
       const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
       const today = getCurrentDateInfo(timezone);
-      const todayStr = `${today.date.getFullYear()}-${String(today.date.getMonth()+1).padStart(2,'0')}-${String(today.date.getDate()).padStart(2,'0')}`;
+      const todayStr = `${today.year}-${String(today.month).padStart(2,'0')}-${String(today.day).padStart(2,'0')}`;
       if (storedDate && storedDate !== todayStr) {
         result = await punchTime(profile.fio, profile.workplace, isPedestrian, storedDate + 'T12:00:00');
       } else {
@@ -1574,7 +1574,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       if (currentTimeStatus === 'none') {
         const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
         const now = getCurrentDateInfo(timezone);
-        const todayKey = `${now.date.getFullYear()}-${String(now.date.getMonth()+1).padStart(2,'0')}-${String(now.date.getDate()).padStart(2,'0')}`;
+        const todayKey = `${now.year}-${String(now.month).padStart(2,'0')}-${String(now.day).padStart(2,'0')}`;
         setShiftDate(telegramId, todayKey);
       }
     } else {

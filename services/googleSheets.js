@@ -728,8 +728,8 @@ async function punchTime(fio, workplace, isPedestrian = false, overrideDate = nu
 
   const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
   const dateInfo = overrideDate ? getCurrentDateInfo(timezone, overrideDate) : getCurrentDateInfo(timezone);
-  const { dateText, day, date } = dateInfo;
-  const timeValue = roundTimeToHalfHour(date);
+  const { dateText, day } = dateInfo;
+  const timeValue = roundTimeToHalfHour({ hour: dateInfo.hour, minute: dateInfo.minute });
   const columns = getCourierColumnsByDay(day);
   const startCell = `${getColumnLetter(columns.startColumn)}${courier.row}`;
   const endCell = `${getColumnLetter(columns.endColumn)}${courier.row}`;
@@ -775,8 +775,8 @@ async function replaceTime(fio, workplace, stage, isPedestrian = false) {
   const { courier, mileage } = ctx;
 
   const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
-  const { dateText, day, date } = getCurrentDateInfo(timezone);
-  const timeValue = roundTimeToHalfHour(date);
+  const { dateText, day, hour, minute } = getCurrentDateInfo(timezone);
+  const timeValue = roundTimeToHalfHour({ hour, minute });
 
   await updateCourierTime(courier.row, day, stage, timeValue, workplace);
 
