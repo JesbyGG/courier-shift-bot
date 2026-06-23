@@ -103,6 +103,8 @@ const {
   getMenuForRole,
   getSettingsMenuForRole,
   getProfileMenuForRole,
+  settingsInlineKeyboard,
+  profileInlineKeyboard,
   getTimeButtonLabel,
   getMileageButtonLabel,
   isTimeButton,
