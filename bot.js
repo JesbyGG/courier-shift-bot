@@ -1097,17 +1097,27 @@ async function sendLoadingMessage(ctx, loadingText) {
 // Edits the last message if possible; otherwise deletes old + sends new.
 async function replaceMessage(ctx, text, extra) {
   const last = userLastBotMessage.get(ctx.from.id);
+  const hasText = !!(text && String(text).trim());
   if (last?.msgId) {
     try {
-      const opts = { parse_mode: 'HTML', ...(extra || {}) };
-      await ctx.telegram.editMessageText(ctx.chat.id, last.msgId, undefined, text, opts);
-      userLastBotMessage.set(ctx.from.id, { msgId: last.msgId, hasKeyboard: !!(opts.reply_markup?.keyboard) });
+      if (hasText) {
+        const opts = { parse_mode: 'HTML', ...(extra || {}) };
+        await ctx.telegram.editMessageText(ctx.chat.id, last.msgId, undefined, text, opts);
+        userLastBotMessage.set(ctx.from.id, { msgId: last.msgId, hasKeyboard: !!(opts.reply_markup?.keyboard) });
+      } else if (extra?.reply_markup) {
+        // Just change keyboard, keep existing text
+        await ctx.telegram.editMessageReplyMarkup(ctx.chat.id, last.msgId, undefined, extra.reply_markup);
+      } else {
+        try { await ctx.telegram.deleteMessage(ctx.chat.id, last.msgId); } catch {}
+      }
       return;
     } catch (e) {
       try { await ctx.telegram.deleteMessage(ctx.chat.id, last.msgId); } catch {}
     }
   }
-  await ctx.replyWithHTML(text, extra || {});
+  if (hasText) {
+    await ctx.replyWithHTML(text, extra || {});
+  }
 }
 
 bot.on('sticker', async (ctx) => {

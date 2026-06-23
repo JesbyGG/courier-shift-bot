@@ -43,8 +43,8 @@ module.exports = function setupTextRouter(bot, services) {
     // 1) «Назад в меню» — общая кнопка
     { match: (text) => ['🏠 В меню', '◀️ Назад', '⬅️ Назад', 'Назад'].includes(text) || text === BUTTONS.back, handler: async (ctx) => {
       const res = await backToMainMenu(ctx);
-      if (res.status === 'mileage_processing') await replaceMessage(ctx, '📸 Обработка фото продолжается...\n\nРезультат придёт в новый чат.', getMenuForRole(ctx.from.id));
-      else if (res.status === 'back_to_menu') await replaceMessage(ctx, res.message, getMenuForRole(ctx.from.id));
+      if (res.status === 'mileage_processing') return;
+      else if (res.status === 'back_to_menu') await replaceMessage(ctx, '', getMenuForRole(ctx.from.id));
     }},
 
     // 2) State-based: пользователь сейчас что-то вводит
