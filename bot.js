@@ -1087,7 +1087,7 @@ bot.use(async (ctx, next) => {
 // Returns a finalize(text, extra) function that updates the message
 // and fixes combo-delete tracking.
 async function sendLoadingMessage(ctx, loadingText) {
-  // Capture old reply message to update its keyboard after state change
+  // Capture old reply message to replace after state change
   const oldLast = userLastBotMessage.get(ctx.from.id);
   const oldReplyMsgId = (oldLast && oldLast.hasKeyboard) ? oldLast.msgId : null;
 
@@ -1097,11 +1097,20 @@ async function sendLoadingMessage(ctx, loadingText) {
     const hasKeyboard = !!(extra.reply_markup?.keyboard || extra.reply_markup?.inline_keyboard);
     userLastBotMessage.set(ctx.from.id, { msgId: msg.message_id, hasKeyboard });
 
-    // Update reply keyboard of old message to reflect new state
+    // Replace old reply message with updated keyboard
     if (oldReplyMsgId) {
+      await ctx.telegram.deleteMessage(ctx.chat.id, oldReplyMsgId).catch(() => {});
       const menu = getMenuForRole(ctx.from.id);
       if (menu?.reply_markup) {
-        ctx.telegram.editMessageReplyMarkup(ctx.chat.id, oldReplyMsgId, undefined, menu.reply_markup).catch(() => {});
+        const dotMsg = await ctx.telegram.sendMessage(ctx.chat.id, '•', {
+          disable_notification: true,
+          reply_markup: menu.reply_markup
+        }).catch(() => null);
+        if (dotMsg) {
+          setTimeout(() => {
+            ctx.telegram.deleteMessage(ctx.chat.id, dotMsg.message_id).catch(() => {});
+          }, 300);
+        }
       }
     }
   };
@@ -2299,11 +2308,20 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
       mileageSavedKeyboard()
     );
 
-    // Update reply keyboard of old message to reflect new state
+    // Replace old reply message with updated keyboard
     if (oldReplyMsgId && ctx.chat?.id) {
+      await ctx.telegram.deleteMessage(ctx.chat.id, oldReplyMsgId).catch(() => {});
       const menu = getMenuForRole(telegramId);
       if (menu?.reply_markup) {
-        ctx.telegram.editMessageReplyMarkup(ctx.chat.id, oldReplyMsgId, undefined, menu.reply_markup).catch(() => {});
+        const dotMsg = await ctx.telegram.sendMessage(ctx.chat.id, '•', {
+          disable_notification: true,
+          reply_markup: menu.reply_markup
+        }).catch(() => null);
+        if (dotMsg) {
+          setTimeout(() => {
+            ctx.telegram.deleteMessage(ctx.chat.id, dotMsg.message_id).catch(() => {});
+          }, 300);
+        }
       }
     }
   } catch (error) {
