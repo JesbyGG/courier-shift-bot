@@ -1100,25 +1100,33 @@ async function sendLoadingMessage(ctx, loadingText) {
 async function replaceMessage(ctx, text, extra) {
   const last = userLastBotMessage.get(ctx.from.id);
   const hasText = !!(text && String(text).trim());
-  if (last?.msgId) {
+  const rp = extra?.reply_markup;
+  // Same keyboard type: inline→inline or reply→reply — edit in place
+  const sameKeyboardType = !rp || !!last?.hasKeyboard === !!rp.keyboard;
+
+  if (last?.msgId && sameKeyboardType) {
     try {
       if (hasText) {
         const opts = { parse_mode: 'HTML', ...(extra || {}) };
         await ctx.telegram.editMessageText(ctx.chat.id, last.msgId, undefined, text, opts);
-        userLastBotMessage.set(ctx.from.id, { msgId: last.msgId, hasKeyboard: !!(opts.reply_markup?.keyboard) });
-      } else if (extra?.reply_markup) {
-        // Just change keyboard, keep existing text
-        await ctx.telegram.editMessageReplyMarkup(ctx.chat.id, last.msgId, undefined, extra.reply_markup);
-      } else {
-        try { await ctx.telegram.deleteMessage(ctx.chat.id, last.msgId); } catch {}
+        userLastBotMessage.set(ctx.from.id, { msgId: last.msgId, hasKeyboard: !!rp?.keyboard });
+      } else if (rp) {
+        await ctx.telegram.editMessageReplyMarkup(ctx.chat.id, last.msgId, undefined, rp);
       }
       return;
     } catch (e) {
       try { await ctx.telegram.deleteMessage(ctx.chat.id, last.msgId); } catch {}
     }
   }
-  if (hasText) {
-    await ctx.replyWithHTML(text, extra || {});
+
+  // Different keyboard type or can't edit — delete old + send new
+  if (last?.msgId) {
+    try { await ctx.telegram.deleteMessage(ctx.chat.id, last.msgId); } catch {}
+  }
+  if (hasText || rp) {
+    const displayText = hasText ? text : '•';
+    const msg = await ctx.telegram.sendMessage(ctx.chat.id, displayText, { parse_mode: 'HTML', ...(extra || {}) });
+    userLastBotMessage.set(ctx.from.id, { msgId: msg.message_id, hasKeyboard: !!rp?.keyboard });
   }
 }
 
