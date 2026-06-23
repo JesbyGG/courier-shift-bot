@@ -1130,6 +1130,17 @@ async function replaceMessage(ctx, text, extra) {
   }
 }
 
+// Helper: silently update reply keyboard after state changes.
+// Uses zero-width space so the message is invisible.
+function updateReplyKeyboard(ctx) {
+  const menu = getMenuForRole(ctx.from.id);
+  if (!menu?.reply_markup) return;
+  ctx.telegram.sendMessage(ctx.chat.id, '\u200B', {
+    disable_notification: true,
+    reply_markup: menu.reply_markup
+  }).catch(() => {});
+}
+
 bot.on('sticker', async (ctx) => {
   if (ctx.chat?.type !== 'private') return;
   const sticker = ctx.message?.sticker;
@@ -1597,6 +1608,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
     if (result.notFound) {
       const msg = formatNoSheetMessage(result, profile.workplace);
       await finalize(msg);
+      updateReplyKeyboard(ctx);
       return;
     }
 
@@ -1611,6 +1623,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
         `Что заменить?`,
         { reply_markup: replaceKeyboard().reply_markup }
       );
+      updateReplyKeyboard(ctx);
       return;
     }
 
@@ -1648,6 +1661,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       `📝 Неверно? → «Изменить время»`,
       { reply_markup: timeChangeKeyboard().reply_markup }
     );
+    updateReplyKeyboard(ctx);
 
     if (result.stage === 'start') {
       const pendingCash = getPendingCash(telegramId);
@@ -2212,6 +2226,7 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
       `📝 Неверно? → «Изменить пробег»`,
       mileageSavedKeyboard()
     );
+    updateReplyKeyboard(ctx);
   } catch (error) {
     safeLog.error('ошибка Google Sheets', error);
     await replyFn('⚠️ Не удалось записать пробег\n\nПопробуйте ещё раз.');
