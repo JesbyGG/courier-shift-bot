@@ -181,7 +181,7 @@ function settingsInlineKeyboard(telegramId) {
       [styledButton(BUTTONS.profile, 'cfg_profile', 'primary')],
       [styledButton(BUTTONS.myId, 'cfg_my_id')],
       [styledButton(BUTTONS.help, 'cfg_help')],
-      [styledButton('🏠 В меню', 'cfg_back_to_menu')]
+      [styledButton('❌ Закрыть', 'cfg_back_to_menu', 'danger')]
     ]);
   }
   const showSheets = isAdminUser(telegramId) || isSheetAccessUser(telegramId);
