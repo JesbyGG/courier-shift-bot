@@ -2997,7 +2997,7 @@ async function processMileagePhotoInBackground(telegram, chatId, telegramId, ori
     }
 
     await saveMileageFromState(
-      { from: { id: telegramId }, telegram, replyWithHTML: sendMsg },
+      { from: { id: telegramId }, chat: { id: chatId }, telegram, replyWithHTML: sendMsg },
       mileageValue,
       { sourceBuffer, telegram, chatId, fallbackState: originalState }
     );
