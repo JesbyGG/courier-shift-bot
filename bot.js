@@ -1084,7 +1084,7 @@ bot.use(async (ctx, next) => {
 // Returns a finalize(text, extra) function that updates the message
 // and fixes combo-delete tracking.
 async function sendLoadingMessage(ctx, loadingText) {
-  const msg = await ctx.replyWithHTML(loadingText);
+  const msg = await ctx.telegram.sendMessage(ctx.chat.id, loadingText, { parse_mode: 'HTML' });
   return async function finalize(text, extra = {}) {
     await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, undefined, text, { parse_mode: 'HTML', ...extra });
     const hasKeyboard = !!(extra.reply_markup?.keyboard || extra.reply_markup?.inline_keyboard);
@@ -2480,7 +2480,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
   const isTerminalFirstPhoto = isTerminal && photosSent === 1;
 
   if (isTerminalFirstPhoto) {
-    const loadingMsg = await ctx.replyWithHTML('📸 Обрабатываю фото сверки...');
+    const loadingMsg = await ctx.telegram.sendMessage(ctx.chat.id, '📸 Обрабатываю фото сверки...', { parse_mode: 'HTML' });
     const cashInfo = await recognizeReconciliationCashSafe(ctx, fileId, 'Терминал');
     const cashAmount = cashInfo.amount;
     const shouldAttachCash = cashInfo.valid && cashAmount > 0;
@@ -2701,7 +2701,7 @@ async function handleMileagePhoto(ctx, state, fileId) {
   const ocrAvailable = isGeminiOcrEnabled();
 
   if (!ocrAvailable) {
-    const loadingMsg = await ctx.replyWithHTML('📸 Фото принято. Обрабатываю...');
+    const loadingMsg = await ctx.telegram.sendMessage(ctx.chat.id, '📸 Фото принято. Обрабатываю...', { parse_mode: 'HTML' });
     setState(telegramId, {
       ...photoState,
       mileageProcessing: false,
@@ -2724,7 +2724,7 @@ async function handleMileagePhoto(ctx, state, fileId) {
     return;
   }
 
-  const loadingMsg = await ctx.replyWithHTML('📸 Фото принято. Считываю пробег...');
+  const loadingMsg = await ctx.telegram.sendMessage(ctx.chat.id, '📸 Фото принято. Считываю пробег...', { parse_mode: 'HTML' });
   const ocrHealthy = await checkGeminiOcrHealth();
   if (!ocrHealthy) {
     safeLog.warn('Gemini OCR health check failed, falling back to manual input');
