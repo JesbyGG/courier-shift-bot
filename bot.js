@@ -1110,10 +1110,10 @@ async function sendLoadingMessage(ctx, loadingText) {
     // Replace old reply message with updated keyboard via sticker or dot
     if (oldReplyMsgId) {
       await ctx.telegram.deleteMessage(ctx.chat.id, oldReplyMsgId).catch(() => {});
-      const menu = getMenuForRole(ctx.from.id);
-      if (menu?.reply_markup) {
-        await sendFunReaction(ctx, 'success', menu.reply_markup);
-      }
+    }
+    const menu = getMenuForRole(ctx.from.id);
+    if (menu?.reply_markup) {
+      await sendFunReaction(ctx, 'success', menu.reply_markup);
     }
   };
 }
@@ -2313,6 +2313,8 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
     // Replace old reply message with updated keyboard via sticker or dot
     if (oldReplyMsgId && ctx.chat?.id) {
       await ctx.telegram.deleteMessage(ctx.chat.id, oldReplyMsgId).catch(() => {});
+    }
+    if (ctx.chat?.id) {
       const menu = getMenuForRole(telegramId);
       if (menu?.reply_markup) {
         await sendFunReaction(ctx, 'success', menu.reply_markup);
