@@ -972,11 +972,11 @@ function canSendFunReaction(chatId) {
   return true;
 }
 
-async function sendFunReaction(ctx, reactionType) {
-  if (!isFunReactionsEnabled()) return;
+async function sendFunReaction(ctx, reactionType, replyMarkup = null) {
+  if (!isFunReactionsEnabled() && !replyMarkup) return;
   const chatId = ctx?.chat?.id;
   if (!chatId) return;
-  if (!canSendFunReaction(chatId)) return;
+  if (!canSendFunReaction(chatId) && !replyMarkup) return;
 
   const envStickerList = reactionType === 'error'
     ? parseEnvList(process.env.FUN_ERROR_STICKERS)
@@ -999,14 +999,25 @@ async function sendFunReaction(ctx, reactionType) {
   const sticker = pickRandom(stickerList);
   const gif = pickRandom(gifList);
 
+  const extra = replyMarkup ? { reply_markup: replyMarkup, disable_notification: true } : null;
+
   try {
     if (sticker) {
-      await ctx.replyWithSticker(sticker);
+      await ctx.replyWithSticker(sticker, extra);
       return;
     }
 
     if (gif) {
-      await ctx.replyWithAnimation(gif);
+      await ctx.replyWithAnimation(gif, extra);
+      return;
+    }
+
+    // No stickers/GIFs available, fallback to dot with keyboard
+    if (replyMarkup) {
+      await ctx.telegram.sendMessage(ctx.chat.id, '•', {
+        disable_notification: true,
+        reply_markup: replyMarkup
+      }).catch(() => {});
     }
   } catch (error) {
     safeLog.error('fun reaction error', error.message);
@@ -1097,15 +1108,12 @@ async function sendLoadingMessage(ctx, loadingText) {
     const hasKeyboard = !!(extra.reply_markup?.keyboard || extra.reply_markup?.inline_keyboard);
     userLastBotMessage.set(ctx.from.id, { msgId: msg.message_id, hasKeyboard });
 
-    // Replace old reply message with updated keyboard
+    // Replace old reply message with updated keyboard via sticker or dot
     if (oldReplyMsgId) {
       await ctx.telegram.deleteMessage(ctx.chat.id, oldReplyMsgId).catch(() => {});
       const menu = getMenuForRole(ctx.from.id);
       if (menu?.reply_markup) {
-        await ctx.telegram.sendMessage(ctx.chat.id, '•', {
-          disable_notification: true,
-          reply_markup: menu.reply_markup
-        }).catch(() => {});
+        await sendFunReaction(ctx, 'success', menu.reply_markup);
       }
     }
   };
@@ -2303,15 +2311,12 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
       mileageSavedKeyboard()
     );
 
-    // Replace old reply message with updated keyboard
+    // Replace old reply message with updated keyboard via sticker or dot
     if (oldReplyMsgId && ctx.chat?.id) {
       await ctx.telegram.deleteMessage(ctx.chat.id, oldReplyMsgId).catch(() => {});
       const menu = getMenuForRole(telegramId);
       if (menu?.reply_markup) {
-        await ctx.telegram.sendMessage(ctx.chat.id, '•', {
-          disable_notification: true,
-          reply_markup: menu.reply_markup
-        }).catch(() => {});
+        await sendFunReaction(ctx, 'success', menu.reply_markup);
       }
     }
   } catch (error) {
