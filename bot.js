@@ -972,11 +972,11 @@ function canSendFunReaction(chatId) {
   return true;
 }
 
-async function sendFunReaction(ctx, reactionType) {
-  if (!isFunReactionsEnabled()) return;
+async function sendFunReaction(ctx, reactionType, replyMarkup = null) {
+  if (!isFunReactionsEnabled() && !replyMarkup) return;
   const chatId = ctx?.chat?.id;
   if (!chatId) return;
-  if (!canSendFunReaction(chatId)) return;
+  if (!canSendFunReaction(chatId) && !replyMarkup) return;
 
   const envStickerList = reactionType === 'error'
     ? parseEnvList(process.env.FUN_ERROR_STICKERS)
@@ -999,19 +999,28 @@ async function sendFunReaction(ctx, reactionType) {
   const sticker = pickRandom(stickerList);
   const gif = pickRandom(gifList);
 
+  const extra = replyMarkup ? { reply_markup: replyMarkup, disable_notification: true } : null;
+
+  let sent = false;
   try {
     if (sticker) {
-      await ctx.replyWithSticker(sticker);
-      lastFunReactionAt.set(chatId, Date.now());
-      return;
-    }
-
-    if (gif) {
-      await ctx.replyWithAnimation(gif);
-      lastFunReactionAt.set(chatId, Date.now());
+      await ctx.telegram.sendSticker(chatId, sticker, extra || {});
+      sent = true;
+    } else if (gif) {
+      await ctx.telegram.sendAnimation(chatId, gif, extra || {});
+      sent = true;
     }
   } catch (error) {
     safeLog.error('fun reaction error', error.message);
+  }
+  lastFunReactionAt.set(chatId, Date.now());
+
+  // Fallback keyboard update if requested and no sticker/GIF was sent
+  if (replyMarkup && !sent) {
+    await ctx.telegram.sendMessage(chatId, '•', {
+      disable_notification: true,
+      reply_markup: replyMarkup
+    }).catch(() => {});
   }
 }
 
@@ -1105,10 +1114,7 @@ async function sendLoadingMessage(ctx, loadingText) {
     }
     const menu = getMenuForRole(ctx.from.id);
     if (menu?.reply_markup) {
-      await ctx.telegram.sendMessage(ctx.chat.id, '•', {
-        disable_notification: true,
-        reply_markup: menu.reply_markup
-      }).catch(() => {});
+      await sendFunReaction(ctx, 'success', menu.reply_markup);
     }
   };
 }
@@ -2312,10 +2318,7 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
     if (ctx.chat?.id) {
       const menu = getMenuForRole(telegramId);
       if (menu?.reply_markup) {
-        await ctx.telegram.sendMessage(ctx.chat.id, '•', {
-          disable_notification: true,
-          reply_markup: menu.reply_markup
-        }).catch(() => {});
+        await sendFunReaction(ctx, 'success', menu.reply_markup);
       }
     }
   } catch (error) {
