@@ -3141,13 +3141,10 @@ let _backupIntervalTimer = null;
 async function setupBotCommands() {
   try {
     await bot.telegram.setMyCommands([
-      { command: 'start', description: 'Начать работу' },
-      { command: 'help', description: 'Помощь' },
-      { command: 'car', description: 'Изменить номер машины' },
-      { command: 'workplace', description: 'Изменить магазин' },
-      { command: 'device', description: 'Изменить устройство' },
-      { command: 'cancel', description: 'Отмена' },
-      { command: 'role', description: 'Сменить роль (админ)' }
+      { command: 'start', description: 'Начать заново' },
+      { command: 'refresh', description: 'Обновить бота' },
+      { command: 'settings', description: 'Настройки' },
+      { command: 'cancel', description: 'Отмена' }
     ], { scope: { type: 'all_private_chats' } });
   } catch (e) {
     safeLog.error('setMyCommands private error', e.message);

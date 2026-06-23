@@ -75,7 +75,7 @@ function courierMainMenu(telegramId) {
     rows.push([styledReplyButton(cashText, 'danger')]);
   }
 
-  rows.push([BUTTONS.issues, BUTTONS.settings]);
+  rows.push([BUTTONS.issues]);
   return Markup.keyboard(rows).resize();
 }
 
@@ -117,7 +117,7 @@ function logistMainMenu(telegramId) {
   if (features.cashCollection) {
     rows.push([BUTTONS.cashCollect, BUTTONS.cashHistory]);
   }
-  rows.push([BUTTONS.sheetInfo, BUTTONS.settings]);
+  rows.push([BUTTONS.sheetInfo]);
   return Markup.keyboard(rows).resize();
 }
 

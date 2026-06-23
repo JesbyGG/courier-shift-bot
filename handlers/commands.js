@@ -11,7 +11,7 @@ module.exports = function setupCommands(bot, services) {
     esc,
     clearShiftStatus,
     getEmployeeDisplayName,
-    askForFio,
+    astForFio,
     logistMainMenu,
     getMenuForRole,
     isLogist,
@@ -22,6 +22,7 @@ module.exports = function setupCommands(bot, services) {
     backToMainMenu,
     getState,
     clearState,
+    deleteUser,
     settingsInlineKeyboard,
     profileInlineKeyboard,
     replaceMessage,
@@ -31,76 +32,53 @@ module.exports = function setupCommands(bot, services) {
     handleMyId,
     notifyAdmins,
     styledButton,
-    Markup
+    Markup,
+    userLastBotMessage
   } = services;
 
   bot.start(async (ctx) => {
     if (ctx.chat?.type !== 'private') return;
-    console.log('/start');
+    safeLog.log('/start');
 
+    deleteUser(ctx.from.id);
     clearState(ctx.from.id);
-
-    if (!getUserField(ctx.from.id, 'fio')) {
-      setUserField(ctx.from.id, 'version', getVersion());
-      clearShiftStatus(ctx.from.id);
-      const isNew = markUserSeen(ctx.from.id);
-      if (isNew) {
-        const firstName = ctx.from.first_name || '';
-        const lastName = ctx.from.last_name || '';
-        const username = ctx.from.username ? `@${ctx.from.username}` : '';
-        const displayName = [firstName, lastName].filter(Boolean).join(' ') || 'Без имени';
-        const adminIds = getAdminIds();
-        for (const adminId of adminIds) {
-          try {
-            await ctx.telegram.sendMessage(adminId,
-              `🆕 <b>Новый пользователь</b>\n\n` +
-              `👤 ${esc(displayName)} ${esc(username)}\n` +
-              `🆔 <code>${ctx.from.id}</code>`,
-              { parse_mode: 'HTML' }
-            );
-          } catch (e) { /* ignore */ }
-        }
-      }
-      await ctx.replyWithHTML(`${getTimeGreeting()}! 👋 <b>Привет!</b>\n\nЭто бот для учёта смены, времени и пробега автомобиля.`);
-      await askForFio(ctx);
-      return;
-    }
-
-    setUserField(ctx.from.id, 'version', getVersion());
     clearShiftStatus(ctx.from.id);
+    setUserField(ctx.from.id, 'version', getVersion());
 
-    const profile = await ensureProfile(ctx);
+    await ctx.replyWithHTML(`${getTimeGreeting()}! 👋\n\nБот перезапущен. Введите имя и фамилию.`);
+    await askForFio(ctx);
+  });
 
-    if (!profile) {
-      await ctx.replyWithHTML('⚠️ Не удалось загрузить профиль. Попробуйте /start позже или обратитесь к администратору.');
+  bot.command('refresh', async (ctx) => {
+    if (ctx.chat?.type !== 'private') return;
+    clearState(ctx.from.id);
+    clearShiftStatus(ctx.from.id);
+    setUserField(ctx.from.id, 'version', getVersion());
+
+    const fio = getUserField(ctx.from.id, 'fio');
+    if (!fio) {
+      await ctx.replyWithHTML('👤 Сначала зарегистрируйтесь — /start');
       return;
     }
 
-    const role = getUserRole(ctx.from.id);
-
-    if (role === 'logist') {
-      await ctx.replyWithHTML(
-        `${getTimeGreeting()}, <b>${esc(getEmployeeDisplayName(profile.fio))}</b>! 👋\n\n` +
-        `⏱ <b>Записать время</b> — отметить начало или конец смены.\n` +
-        `🔓 <b>Открыть ИМ</b> — отправить уведомление об открытии магазина в группу.\n` +
-        `💳 <b>Принять наличные</b> — посмотреть курьеров с долгами и отправить напоминание.\n` +
-        `📋 <b>Таблицы</b> — информация о привязке таблиц.\n` +
-        `⚙️ <b>Настройки</b> — профиль, магазин, смена сотрудника.`,
-        logistMainMenu(ctx.from.id)
-      );
-    } else {
-      await ctx.replyWithHTML(
-        `${getTimeGreeting()}, <b>${esc(getEmployeeDisplayName(profile.fio))}</b>! 👋\n\n` +
-        `⏱ <b>Записать время</b> — отметить начало или конец смены, автоматически выбирается время старта и вносится в таблицу ботом.\n` +
-        `🚗 <b>Фото пробега</b> — отправить фото одометра и бот автоматически скинет фото в нужный чат и запишет пробег в таблицу.\n` +
-        `📄 <b>Отправить маршрутник</b> — прикрепить маршрутный лист, бот отправит фото в нужный чат.\n` +
-        `📊 <b>Отправить сверку</b> — отправить фото сверки, бот отправит фото в нужный чат.\n` +
-        `💵 <b>Сдать наличные</b> — отметить сдачу наличных, также укажет сумму нужную сдать и подтверждение сдал/не сдал.\n` +
-        `⚠️ <b>Проблема с заказом</b> — сообщить о проблеме, бот предлагает варианты ссылками на нужный чат/бота поддержки.\n` +
-        `⚙️ <b>Настройки</b> — профиль, машина, магазин, также смена сотрудника и тд.`,
-        getMenuForRole(ctx.from.id)
-      );
+    const menu = getMenuForRole(ctx.from.id);
+    if (menu?.reply_markup) {
+      await ctx.replyWithHTML('🔄 Бот обновлён', menu);
     }
+  });
+
+  bot.command('settings', async (ctx) => {
+    if (ctx.chat?.type !== 'private') return;
+    const fio = getUserField(ctx.from.id, 'fio');
+    if (!fio) {
+      await ctx.replyWithHTML('👤 Сначала зарегистрируйтесь — /start');
+      return;
+    }
+    const last = userLastBotMessage.get(ctx.from.id);
+    if (last?.msgId) {
+      try { await ctx.telegram.deleteMessage(ctx.chat.id, last.msgId); } catch {}
+    }
+    await ctx.replyWithHTML('⚙️ Настройки\n──────────────', settingsInlineKeyboard(ctx.from.id));
   });
 
   bot.help(sendHelp);
