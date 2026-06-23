@@ -3141,9 +3141,9 @@ let _backupIntervalTimer = null;
 async function setupBotCommands() {
   try {
     await bot.telegram.setMyCommands([
-      { command: 'start', description: 'Начать заново' },
-      { command: 'refresh', description: 'Обновить бота' },
-      { command: 'settings', description: 'Настройки' },
+      { command: 'start', description: 'Начать заново (сброс данных)' },
+      { command: 'refresh', description: 'Обновить (перезапуск бота)' },
+      { command: 'settings', description: 'Меню настроек' },
       { command: 'cancel', description: 'Отмена' }
     ], { scope: { type: 'all_private_chats' } });
   } catch (e) {
