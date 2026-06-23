@@ -81,7 +81,7 @@ const BUTTONS = {
   routeSheet: '📄 Маршрутник',
   reconciliation: '📊 Сверка',
   cashCheck: '💵 Наличные',
-  issues: '⚠️ Проблема',
+  issues: '⚠️ Проблема с заказом',
   settings: '⚙️ Настройки',
   help: '❓ Помощь',
   profile: '👤 Профиль',
