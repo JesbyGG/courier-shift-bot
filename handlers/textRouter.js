@@ -29,6 +29,8 @@ module.exports = function setupTextRouter(bot, services) {
     getMenuForRole,
     getSettingsMenuForRole,
     getProfileMenuForRole,
+    settingsInlineKeyboard,
+    profileInlineKeyboard,
     roleChoiceKeyboard,
     isTimeButton,
     isMileageButton,
@@ -129,9 +131,9 @@ module.exports = function setupTextRouter(bot, services) {
     }},
 
     // 4) Меню настроек
-    { button: BUTTONS.settings, legacy: ['Настройки'], handler: async (ctx, s, text, id) => replaceMessage(ctx, '⚙️ Настройки\n──────────────', getSettingsMenuForRole(id)) },
-    { button: BUTTONS.profile, legacy: ['✏️ Профиль', 'Профиль'], handler: async (ctx, s, text, id) => replaceMessage(ctx, '👤 Профиль\n──────────────', getProfileMenuForRole(ctx.from.id)) },
-    { button: BUTTONS.backToSettings, legacy: ['↩️ К настройкам'], handler: async (ctx, s, text, id) => replaceMessage(ctx, '⚙️ Настройки\n──────────────', getSettingsMenuForRole(id)) },
+    { button: BUTTONS.settings, legacy: ['Настройки'], handler: async (ctx, s, text, id) => replaceMessage(ctx, '⚙️ Настройки\n──────────────', settingsInlineKeyboard(id)) },
+    { button: BUTTONS.profile, legacy: ['✏️ Профиль', 'Профиль'], handler: async (ctx, s, text, id) => replaceMessage(ctx, '👤 Профиль\n──────────────', profileInlineKeyboard(ctx.from.id)) },
+    { button: BUTTONS.backToSettings, legacy: ['↩️ К настройкам'], handler: async (ctx, s, text, id) => replaceMessage(ctx, '⚙️ Настройки\n──────────────', settingsInlineKeyboard(id)) },
     { button: BUTTONS.help, legacy: ['Помощь'], handler: (ctx) => sendHelp(ctx) },
 
     // 5) Профиль (требуют ФИО)

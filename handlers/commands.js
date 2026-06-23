@@ -21,7 +21,17 @@ module.exports = function setupCommands(bot, services) {
     sendHelp,
     backToMainMenu,
     getState,
-    clearState
+    clearState,
+    settingsInlineKeyboard,
+    profileInlineKeyboard,
+    replaceMessage,
+    requireFio,
+    handleSwitchUser,
+    handleSheetsInfo,
+    handleMyId,
+    notifyAdmins,
+    styledButton,
+    Markup
   } = services;
 
   bot.start(async (ctx) => {
@@ -198,5 +208,75 @@ module.exports = function setupCommands(bot, services) {
     clearState(telegramId);
     await ctx.replyWithHTML('✅ Роль: <b>Логист</b>\n\nТеперь выберите ваш магазин.', logistMainMenu(ctx.from.id));
     await askForWorkplace(ctx, state.fio);
+  });
+
+  // ─── Inline settings callbacks ───
+
+  bot.action('cfg_back_to_menu', async (ctx) => {
+    await ctx.answerCbQuery();
+    try { await ctx.deleteMessage(); } catch {}
+    const res = await backToMainMenu(ctx);
+    if (res.status !== 'mileage_processing') {
+      const menuMarkup = getMenuForRole(ctx.from.id);
+      if (menuMarkup?.reply_markup) {
+        await ctx.replyWithHTML('🏠', menuMarkup);
+      }
+    }
+  });
+
+  bot.action('cfg_profile', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.editMessageText('👤 Профиль\n──────────────', profileInlineKeyboard(ctx.from.id));
+  });
+
+  bot.action('cfg_back_to_settings', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.editMessageText('⚙️ Настройки\n──────────────', settingsInlineKeyboard(ctx.from.id));
+  });
+
+  bot.action('cfg_help', async (ctx) => {
+    await ctx.answerCbQuery();
+    try { await ctx.deleteMessage(); } catch {}
+    await sendHelp(ctx);
+  });
+
+  bot.action('cfg_my_id', async (ctx) => {
+    await ctx.answerCbQuery();
+    await handleMyId(ctx);
+  });
+
+  bot.action('cfg_sheet_info', async (ctx) => {
+    await ctx.answerCbQuery();
+    await handleSheetsInfo(ctx, null, null, ctx.from.id);
+  });
+
+  bot.action('cfg_car', async (ctx) => {
+    await ctx.answerCbQuery();
+    try { await ctx.deleteMessage(); } catch {}
+    const fio = await requireFio(ctx);
+    if (fio) await askForCarNumber(ctx, fio);
+  });
+
+  bot.action('cfg_workplace', async (ctx) => {
+    await ctx.answerCbQuery();
+    try { await ctx.deleteMessage(); } catch {}
+    const fio = await requireFio(ctx);
+    if (fio) await askForWorkplace(ctx, fio);
+  });
+
+  bot.action('cfg_device', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (isLogist(ctx.from.id)) {
+      await ctx.replyWithHTML('❌ Эта функция доступна только курьерам.', getMenuForRole(ctx.from.id));
+      return;
+    }
+    try { await ctx.deleteMessage(); } catch {}
+    const fio = await requireFio(ctx);
+    if (fio) await askForDevice(ctx, fio);
+  });
+
+  bot.action('cfg_switch_user', async (ctx) => {
+    await ctx.answerCbQuery();
+    await handleSwitchUser(ctx);
   });
 };

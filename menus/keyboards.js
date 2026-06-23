@@ -172,6 +172,53 @@ function getProfileMenuForRole(telegramId) {
   return profileMenu(telegramId);
 }
 
+// ─── Inline настройки (callback-based, без засорения чата) ───
+
+function settingsInlineKeyboard(telegramId) {
+  const role = getUserRole(telegramId);
+  if (role === 'logist') {
+    return Markup.inlineKeyboard([
+      [styledButton(BUTTONS.profile, 'cfg_profile', 'primary')],
+      [styledButton(BUTTONS.myId, 'cfg_my_id')],
+      [styledButton(BUTTONS.help, 'cfg_help')],
+      [styledButton('🏠 В меню', 'cfg_back_to_menu')]
+    ]);
+  }
+  const showSheets = isAdminUser(telegramId) || isSheetAccessUser(telegramId);
+  const rows = [
+    [styledButton(BUTTONS.profile, 'cfg_profile', 'primary')]
+  ];
+  if (showSheets) {
+    rows.push([styledButton(BUTTONS.sheetInfo, 'cfg_sheet_info'), styledButton(BUTTONS.myId, 'cfg_my_id')]);
+  } else {
+    rows.push([styledButton(BUTTONS.myId, 'cfg_my_id')]);
+  }
+  rows.push([styledButton(BUTTONS.help, 'cfg_help')]);
+  rows.push([styledButton('🏠 В меню', 'cfg_back_to_menu')]);
+  return Markup.inlineKeyboard(rows);
+}
+
+function profileInlineKeyboard(telegramId) {
+  const role = getUserRole(telegramId);
+  if (role === 'logist') {
+    return Markup.inlineKeyboard([
+      [styledButton(BUTTONS.changeWorkplace, 'cfg_workplace')],
+      [styledButton(BUTTONS.switchUser, 'cfg_switch_user')],
+      [styledButton('◀️ К настройкам', 'cfg_back_to_settings')]
+    ]);
+  }
+  const courierType = getUserField(telegramId, 'courierType') || 'auto';
+  const rows = [];
+  if (courierType !== 'pedestrian') {
+    rows.push([styledButton(BUTTONS.changeCar, 'cfg_car'), styledButton(BUTTONS.changeWorkplace, 'cfg_workplace')]);
+  } else {
+    rows.push([styledButton(BUTTONS.changeWorkplace, 'cfg_workplace')]);
+  }
+  rows.push([styledButton(BUTTONS.changeDevice, 'cfg_device'), styledButton(BUTTONS.switchUser, 'cfg_switch_user')]);
+  rows.push([styledButton('◀️ К настройкам', 'cfg_back_to_settings')]);
+  return Markup.inlineKeyboard(rows);
+}
+
 function roleChoiceKeyboard() {
   return Markup.inlineKeyboard([
     [styledButton('👤 Курьер', 'role_courier', 'primary')],
@@ -297,6 +344,8 @@ module.exports = {
   getMenuForRole,
   getSettingsMenuForRole,
   getProfileMenuForRole,
+  settingsInlineKeyboard,
+  profileInlineKeyboard,
   getTimeButtonLabel,
   getMileageButtonLabel,
   getButtonText,

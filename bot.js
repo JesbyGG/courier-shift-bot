@@ -3173,6 +3173,7 @@ const services = {
   saveCarNumber, saveWorkplace, saveDevice, authorizeFio,
   handleManualTime, handleUpdateEditText, handleManualMileageInput,
   requireFio, roleChoiceKeyboard, getSettingsMenuForRole, getProfileMenuForRole,
+  settingsInlineKeyboard, profileInlineKeyboard,
   // courier helpers
   formatNoSheetMessage, makeMileageState, applyProfile,
   replaceMileageFlow, replaceTimeAction,
