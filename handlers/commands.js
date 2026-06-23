@@ -52,7 +52,6 @@ module.exports = function setupCommands(bot, services) {
   bot.command('refresh', async (ctx) => {
     if (ctx.chat?.type !== 'private') return;
     clearState(ctx.from.id);
-    clearShiftStatus(ctx.from.id);
     setUserField(ctx.from.id, 'version', getVersion());
 
     const fio = getUserField(ctx.from.id, 'fio');
