@@ -2447,6 +2447,12 @@ async function replaceTimeAction(ctx, stage) {
     }
 
     safeLog.log('время записано', `replace_${stage}`);
+    const currentTimeStatus = getShiftStatus(ctx.from.id, 'time');
+    if (stage === 'start') {
+      setShiftStatus(ctx.from.id, 'time', currentTimeStatus === 'end' || currentTimeStatus === 'both' ? 'both' : 'start');
+    } else {
+      setShiftStatus(ctx.from.id, 'time', currentTimeStatus === 'start' || currentTimeStatus === 'both' ? 'both' : 'end');
+    }
     clearState(ctx.from.id);
     return { status: 'replaced', stage, timeValue: result.timeValue };
   } catch (error) {
