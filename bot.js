@@ -2267,7 +2267,7 @@ async function showIssuesMenu(ctx) {
     return { status: 'unavailable' };
   }
 
-  buttons.push([styledButton('⬅️ Назад', 'issues_back')]);
+  buttons.push([styledButton('❌ Закрыть', 'close_message', 'danger')]);
 
   await ctx.replyWithHTML(
     '⚠️ <b>Проблема с заказом</b>\n\nВыберите чат для обращения:',

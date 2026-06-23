@@ -70,13 +70,6 @@ module.exports = function setupCourier(bot, services) {
     return handleMileagePhoto(ctx, state, fileId);
   });
 
-  bot.action('issues_back', async (ctx) => {
-    await ctx.answerCbQuery();
-    try { await ctx.deleteMessage(); } catch (e) { /* сообщение уже удалено */ }
-    const res = await backToMainMenu(ctx);
-    if (res.status === 'back_to_menu') await ctx.replyWithHTML(res.message, getMenuForRole(ctx.from.id));
-  });
-
   bot.action('help_commands', async (ctx) => {
     await ctx.answerCbQuery();
     await sendCommandsList(ctx);
