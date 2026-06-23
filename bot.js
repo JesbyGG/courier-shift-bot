@@ -1092,6 +1092,24 @@ async function sendLoadingMessage(ctx, loadingText) {
   };
 }
 
+// Helper: replace previous bot message with new content.
+// Used for navigation (settings, profile, back, etc.) to avoid stacking messages.
+// Edits the last message if possible; otherwise deletes old + sends new.
+async function replaceMessage(ctx, text, extra) {
+  const last = userLastBotMessage.get(ctx.from.id);
+  if (last?.msgId) {
+    try {
+      const opts = { parse_mode: 'HTML', ...(extra || {}) };
+      await ctx.telegram.editMessageText(ctx.chat.id, last.msgId, undefined, text, opts);
+      userLastBotMessage.set(ctx.from.id, { msgId: last.msgId, hasKeyboard: !!(opts.reply_markup?.keyboard) });
+      return;
+    } catch (e) {
+      try { await ctx.telegram.deleteMessage(ctx.chat.id, last.msgId); } catch {}
+    }
+  }
+  await ctx.replyWithHTML(text, extra || {});
+}
+
 bot.on('sticker', async (ctx) => {
   if (ctx.chat?.type !== 'private') return;
   const sticker = ctx.message?.sticker;
@@ -3154,7 +3172,7 @@ const services = {
   buildRouteSheetCaption, sendPhotoToRouteSheetChat, sendPhotoToReconciliationChat, sendMediaGroupToReconciliationChat, savePhotoThread,
   normalizeTimeValue, formatStage, formatMoneyRu,
   notifyLogistsAboutSelfClearance, sendFunReaction,
-  courierMainMenu,
+  courierMainMenu, replaceMessage,
   // logist helpers
   pokeCourier, showCashHistoryForDate,
   // common business
