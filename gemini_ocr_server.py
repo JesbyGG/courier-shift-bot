@@ -38,6 +38,7 @@ GEMINI_ENABLED = bool(GEMINI_API_KEY)
 
 GEMINI_MAX_DIM = int(os.getenv('GEMINI_MAX_DIM', '1200') or 1200)
 GEMINI_JPEG_QUALITY = int(os.getenv('GEMINI_JPEG_QUALITY', '85') or 85)
+GEMINI_MAX_RETRIES = int(os.getenv('GEMINI_MAX_RETRIES', '3') or 3)
 
 NOISE_PATTERNS = [r'x1000', r'r/min', r'rpm', r'km/h', r'mph', r'trip', r'avg', r'speedo', r'tacho']
 KM_MARKERS = re.compile(r'km|км|ml|мл', re.IGNORECASE)
@@ -125,7 +126,22 @@ def optimize_image_for_ocr(image_bytes, max_dim=None, quality=None):
     return encoded.tobytes()
 
 
-def _call_gemini(image_bytes, system_prompt):
+def _call_gemini(image_bytes, system_prompt, max_retries=GEMINI_MAX_RETRIES):
+    """Send image to Gemini and return lines list. Retries on 503."""
+    for attempt in range(max_retries):
+        lines, err = _call_gemini_once(image_bytes, system_prompt)
+        if lines:
+            return lines, None
+        if err and '503' in str(err) and attempt < max_retries - 1:
+            delay = 2 ** (attempt + 1)
+            print(f'Gemini 503, retry {attempt+2}/{max_retries} in {delay}s')
+            time.sleep(delay)
+            continue
+        return None, err
+    return None, 'Gemini unavailable after retries'
+
+
+def _call_gemini_once(image_bytes, system_prompt):
     """Send image to Gemini and return lines list."""
     api_key = GEMINI_API_KEY
     if not api_key:
