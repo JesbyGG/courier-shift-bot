@@ -1179,7 +1179,7 @@ async function syncShiftStatus(ctx) {
     const target = normalizeFio(fio);
     for (let i = 0; i < mileageRows.length; i += 1) {
       const row = mileageRows[i];
-      const rowFio = (row[0] || row[1] || '').toString().trim();
+      const rowFio = (row[row.length - 1] || '').toString().trim();
       if (normalizeFio(rowFio) === target) {
         mileageRow = i + 3;
         break;
