@@ -194,7 +194,7 @@ function settingsInlineKeyboard(telegramId) {
     rows.push([styledButton(BUTTONS.myId, 'cfg_my_id')]);
   }
   rows.push([styledButton(BUTTONS.help, 'cfg_help')]);
-  rows.push([styledButton('🏠 В меню', 'cfg_back_to_menu')]);
+  rows.push([styledButton('❌ Закрыть', 'cfg_back_to_menu', 'danger')]);
   return Markup.inlineKeyboard(rows);
 }
 
