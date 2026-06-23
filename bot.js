@@ -1102,15 +1102,10 @@ async function sendLoadingMessage(ctx, loadingText) {
       await ctx.telegram.deleteMessage(ctx.chat.id, oldReplyMsgId).catch(() => {});
       const menu = getMenuForRole(ctx.from.id);
       if (menu?.reply_markup) {
-        const dotMsg = await ctx.telegram.sendMessage(ctx.chat.id, '•', {
+        await ctx.telegram.sendMessage(ctx.chat.id, '•', {
           disable_notification: true,
           reply_markup: menu.reply_markup
-        }).catch(() => null);
-        if (dotMsg) {
-          setTimeout(() => {
-            ctx.telegram.deleteMessage(ctx.chat.id, dotMsg.message_id).catch(() => {});
-          }, 300);
-        }
+        }).catch(() => {});
       }
     }
   };
@@ -2313,15 +2308,10 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
       await ctx.telegram.deleteMessage(ctx.chat.id, oldReplyMsgId).catch(() => {});
       const menu = getMenuForRole(telegramId);
       if (menu?.reply_markup) {
-        const dotMsg = await ctx.telegram.sendMessage(ctx.chat.id, '•', {
+        await ctx.telegram.sendMessage(ctx.chat.id, '•', {
           disable_notification: true,
           reply_markup: menu.reply_markup
-        }).catch(() => null);
-        if (dotMsg) {
-          setTimeout(() => {
-            ctx.telegram.deleteMessage(ctx.chat.id, dotMsg.message_id).catch(() => {});
-          }, 300);
-        }
+        }).catch(() => {});
       }
     }
   } catch (error) {
