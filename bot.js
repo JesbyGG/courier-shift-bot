@@ -1086,7 +1086,7 @@ bot.use(async (ctx, next) => {
 async function sendLoadingMessage(ctx, loadingText) {
   const msg = await ctx.replyWithHTML(loadingText);
   return async function finalize(text, extra = {}) {
-    await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, text, { parse_mode: 'HTML', ...extra });
+    await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, undefined, text, { parse_mode: 'HTML', ...extra });
     const hasKeyboard = !!(extra.reply_markup?.keyboard || extra.reply_markup?.inline_keyboard);
     userLastBotMessage.set(ctx.from.id, { msgId: msg.message_id, hasKeyboard });
   };
@@ -2716,7 +2716,7 @@ async function handleMileagePhoto(ctx, state, fileId) {
     } catch (error) {
       safeLog.error('telegram send photo error', error);
     }
-    await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null,
+    await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, undefined,
       '⚠️ Сервер распознавания недоступен\n\nВведите пробег вручную или отправьте фото повторно.',
       { parse_mode: 'HTML', reply_markup: mileageConfirmKeyboard().reply_markup }
     );
@@ -2742,7 +2742,7 @@ async function handleMileagePhoto(ctx, state, fileId) {
     } catch (error) {
       safeLog.error('telegram send photo error', error);
     }
-    await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null,
+    await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, undefined,
       '⚠️ Сервер распознавания недоступен\n\nВведите пробег вручную или отправьте фото повторно.',
       { parse_mode: 'HTML', reply_markup: mileageConfirmKeyboard().reply_markup }
     );
