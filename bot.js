@@ -3219,7 +3219,8 @@ const services = {
   updateCourierTime, updateMileage,
   // misc
   openShopNotify,
-  sendCommandsList
+  sendCommandsList,
+  userLastBotMessage
 };
 
 setupCommands(bot, services);

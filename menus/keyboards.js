@@ -180,8 +180,7 @@ function settingsInlineKeyboard(telegramId) {
     return Markup.inlineKeyboard([
       [styledButton(BUTTONS.profile, 'cfg_profile', 'primary')],
       [styledButton(BUTTONS.myId, 'cfg_my_id')],
-      [styledButton(BUTTONS.help, 'cfg_help')],
-      [styledButton('❌ Закрыть', 'cfg_back_to_menu', 'danger')]
+      [styledButton(BUTTONS.help, 'cfg_help')]
     ]);
   }
   const showSheets = isAdminUser(telegramId) || isSheetAccessUser(telegramId);
@@ -194,7 +193,7 @@ function settingsInlineKeyboard(telegramId) {
     rows.push([styledButton(BUTTONS.myId, 'cfg_my_id')]);
   }
   rows.push([styledButton(BUTTONS.help, 'cfg_help')]);
-  rows.push([styledButton('❌ Закрыть', 'cfg_back_to_menu', 'danger')]);
+
   return Markup.inlineKeyboard(rows);
 }
 

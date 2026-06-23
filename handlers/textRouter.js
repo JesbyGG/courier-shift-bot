@@ -38,6 +38,8 @@ module.exports = function setupTextRouter(bot, services) {
     getState,
     formatNoSheetMessage,
     replaceMessage,
+    clearState,
+    userLastBotMessage,
     esc
   } = services;
 
@@ -131,7 +133,18 @@ module.exports = function setupTextRouter(bot, services) {
     }},
 
     // 4) Меню настроек
-    { button: BUTTONS.settings, legacy: ['Настройки'], handler: async (ctx, s, text, id) => replaceMessage(ctx, '⚙️ Настройки\n──────────────', settingsInlineKeyboard(id)) },
+    { button: BUTTONS.settings, legacy: ['Настройки'], handler: async (ctx, s, text, id) => {
+      const last = userLastBotMessage.get(id);
+      if (last && last.hasKeyboard === false) {
+        // Settings are open (inline keyboard) — close to main menu
+        try { await ctx.telegram.deleteMessage(ctx.chat.id, last.msgId); } catch {}
+        clearState(id);
+        const menu = getMenuForRole(id);
+        if (menu?.reply_markup) await ctx.replyWithHTML('•', menu);
+        return;
+      }
+      await replaceMessage(ctx, '⚙️ Настройки\n──────────────', settingsInlineKeyboard(id));
+    }},
     { button: BUTTONS.profile, legacy: ['✏️ Профиль', 'Профиль'], handler: async (ctx, s, text, id) => replaceMessage(ctx, '👤 Профиль\n──────────────', profileInlineKeyboard(ctx.from.id)) },
     { button: BUTTONS.backToSettings, legacy: ['↩️ К настройкам'], handler: async (ctx, s, text, id) => replaceMessage(ctx, '⚙️ Настройки\n──────────────', settingsInlineKeyboard(id)) },
     { button: BUTTONS.help, legacy: ['Помощь'], handler: (ctx) => sendHelp(ctx) },

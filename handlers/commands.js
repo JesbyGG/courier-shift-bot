@@ -150,6 +150,10 @@ module.exports = function setupCommands(bot, services) {
   bot.action('close_message', async (ctx) => {
     await ctx.answerCbQuery();
     try { await ctx.deleteMessage(); } catch {}
+    const menu = getMenuForRole(ctx.from.id);
+    if (menu?.reply_markup) {
+      await ctx.replyWithHTML('•', menu);
+    }
   });
 
   bot.action('show_my_id', async (ctx) => {
