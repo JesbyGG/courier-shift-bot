@@ -1087,11 +1087,23 @@ bot.use(async (ctx, next) => {
 // Returns a finalize(text, extra) function that updates the message
 // and fixes combo-delete tracking.
 async function sendLoadingMessage(ctx, loadingText) {
+  // Capture old reply message to update its keyboard after state change
+  const oldLast = userLastBotMessage.get(ctx.from.id);
+  const oldReplyMsgId = (oldLast && oldLast.hasKeyboard) ? oldLast.msgId : null;
+
   const msg = await ctx.telegram.sendMessage(ctx.chat.id, loadingText, { parse_mode: 'HTML' });
   return async function finalize(text, extra = {}) {
     await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, undefined, text, { parse_mode: 'HTML', ...extra });
     const hasKeyboard = !!(extra.reply_markup?.keyboard || extra.reply_markup?.inline_keyboard);
     userLastBotMessage.set(ctx.from.id, { msgId: msg.message_id, hasKeyboard });
+
+    // Update reply keyboard of old message to reflect new state
+    if (oldReplyMsgId) {
+      const menu = getMenuForRole(ctx.from.id);
+      if (menu?.reply_markup) {
+        ctx.telegram.editMessageReplyMarkup(ctx.chat.id, oldReplyMsgId, undefined, menu.reply_markup).catch(() => {});
+      }
+    }
   };
 }
 
@@ -1668,7 +1680,6 @@ async function punchTimeFlow(ctx, explicitStage = null) {
     if (result.notFound) {
       const msg = formatNoSheetMessage(result, profile.workplace);
       await finalize(msg);
-      updateReplyKeyboard(ctx);
       return;
     }
 
@@ -1683,7 +1694,6 @@ async function punchTimeFlow(ctx, explicitStage = null) {
         `Что заменить?`,
         { reply_markup: replaceKeyboard().reply_markup }
       );
-      updateReplyKeyboard(ctx);
       return;
     }
 
@@ -1721,7 +1731,6 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       `📝 Неверно? → «Изменить время»`,
       { reply_markup: timeChangeKeyboard().reply_markup }
     );
-    updateReplyKeyboard(ctx);
 
     if (result.stage === 'start') {
       const pendingCash = getPendingCash(telegramId);
@@ -2279,6 +2288,9 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
       savedMileage: mileageValue,
       mileageProcessing: false
     });
+    const oldLast = userLastBotMessage.get(telegramId);
+    const oldReplyMsgId = (oldLast && oldLast.hasKeyboard) ? oldLast.msgId : null;
+
     await replyFn(
       `✅ Пробег записан\n` +
       `──────────────\n\n` +
@@ -2286,7 +2298,14 @@ async function saveMileageFromState(ctx, mileage, options = {}) {
       `📝 Неверно? → «Изменить пробег»`,
       mileageSavedKeyboard()
     );
-    updateReplyKeyboard(ctx);
+
+    // Update reply keyboard of old message to reflect new state
+    if (oldReplyMsgId && ctx.chat?.id) {
+      const menu = getMenuForRole(telegramId);
+      if (menu?.reply_markup) {
+        ctx.telegram.editMessageReplyMarkup(ctx.chat.id, oldReplyMsgId, undefined, menu.reply_markup).catch(() => {});
+      }
+    }
   } catch (error) {
     safeLog.error('ошибка Google Sheets', error);
     await replyFn('⚠️ Не удалось записать пробег\n\nПопробуйте ещё раз.');
