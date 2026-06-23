@@ -1001,26 +1001,25 @@ async function sendFunReaction(ctx, reactionType, replyMarkup = null) {
 
   const extra = replyMarkup ? { reply_markup: replyMarkup, disable_notification: true } : null;
 
+  let stickerSent = false;
   try {
     if (sticker) {
       await ctx.replyWithSticker(sticker, extra);
-      return;
-    }
-
-    if (gif) {
+      stickerSent = true;
+    } else if (gif) {
       await ctx.replyWithAnimation(gif, extra);
-      return;
-    }
-
-    // No stickers/GIFs available, fallback to dot with keyboard
-    if (replyMarkup) {
-      await ctx.telegram.sendMessage(ctx.chat.id, '•', {
-        disable_notification: true,
-        reply_markup: replyMarkup
-      }).catch(() => {});
+      stickerSent = true;
     }
   } catch (error) {
     safeLog.error('fun reaction error', error.message);
+  }
+
+  // Fallback: always update keyboard if requested and nothing was sent
+  if (replyMarkup && !stickerSent) {
+    await ctx.telegram.sendMessage(ctx.chat.id, '•', {
+      disable_notification: true,
+      reply_markup: replyMarkup
+    }).catch(() => {});
   }
 }
 
@@ -3331,7 +3330,8 @@ const services = {
   openShopNotify,
   sendCommandsList,
   userLastBotMessage,
-  syncShiftStatus
+  syncShiftStatus,
+  safeLog
 };
 
 setupCommands(bot, services);

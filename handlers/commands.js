@@ -22,6 +22,7 @@ module.exports = function setupCommands(bot, services) {
     backToMainMenu,
     getState,
     clearState,
+    safeLog,
     deleteUser,
     syncShiftStatus,
     settingsInlineKeyboard,
