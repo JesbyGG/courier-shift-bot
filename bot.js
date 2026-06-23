@@ -3216,7 +3216,8 @@ const services = {
   updateCourierTime, updateMileage,
   // misc
   openShopNotify,
-  sendCommandsList
+  sendCommandsList,
+  userLastBotMessage
 };
 
 setupCommands(bot, services);
@@ -3282,14 +3283,6 @@ async function startBot(retry = 0) {
       safeLog.error('bot.launch() error:', error?.message || error);
     });
     safeLog.log(`bot started v${version}${changed ? ' (updated)' : ''}`);
-
-    if (changed && retry === 0) {
-      setTimeout(() => {
-        refreshAllKeyboards().catch((error) => {
-          safeLog.error('keyboard refresh error', error.message || error);
-        });
-      }, 5000);
-    }
   } catch (error) {
     const delay = Math.min(LAUNCH_BASE_DELAY * Math.pow(2, retry), LAUNCH_MAX_DELAY);
     safeLog.error(`bot launch error (attempt ${retry + 1}/${LAUNCH_RETRIES}):`, error?.message || error);
