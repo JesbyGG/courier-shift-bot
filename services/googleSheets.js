@@ -853,6 +853,7 @@ module.exports = {
   updateMileage,
   readCell,
   updateCell,
+  getValues,
   flushSheetUpdates,
   verifySheetAccess,
   getSheetConfig,

@@ -23,6 +23,7 @@ module.exports = function setupCommands(bot, services) {
     getState,
     clearState,
     deleteUser,
+    syncShiftStatus,
     settingsInlineKeyboard,
     profileInlineKeyboard,
     replaceMessage,
@@ -60,6 +61,7 @@ module.exports = function setupCommands(bot, services) {
       return;
     }
 
+    await syncShiftStatus(ctx);
     const menu = getMenuForRole(ctx.from.id);
     if (menu?.reply_markup) {
       await ctx.replyWithHTML('🔄 Бот обновлён', menu);

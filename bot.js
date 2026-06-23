@@ -19,6 +19,7 @@ const {
   updateMileage,
   readCell,
   updateCell,
+  getValues,
   flushSheetUpdates,
   getSheetConfig,
   updateEfficiencyOrders,
@@ -69,7 +70,7 @@ const {
   recognizeReconciliationCashSafe,
   shouldWarnAboutReconciliationOcr
 } = require('./services/reconciliationOcr');
-const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, getCourierColumnsByDay, roundMinutesToHalfHour, roundTimeToHalfHour, isEmptyCell, isScheduleMarker, withTimeout, styledButton } = require('./utils');
+const { getCurrentDateInfo, getColumnLetter, getMileageColumnsByDay, getCourierColumnsByDay, roundMinutesToHalfHour, roundTimeToHalfHour, isEmptyCell, isScheduleMarker, withTimeout, styledButton, normalizeFio } = require('./utils');
 const safeLog = require('./utils/safeLog');
 const {
   forwardPhoto,
@@ -1139,6 +1140,65 @@ function updateReplyKeyboard(ctx) {
     disable_notification: true,
     reply_markup: menu.reply_markup
   }).catch(() => {});
+}
+
+// Helper: sync shift status from Google Sheets to local DB.
+// Runs on /refresh to detect manual sheet edits.
+async function syncShiftStatus(ctx) {
+  const id = ctx.from.id;
+  const fio = getUserField(id, 'fio');
+  const workplace = getUserField(id, 'workplace');
+  if (!fio || !workplace) return;
+
+  const courier = await findCourierInAllSheets(fio);
+  if (!courier) return;
+
+  const config = getSheetConfig(workplace);
+  const tz = process.env.APP_TIMEZONE || 'Europe/Moscow';
+  const { day } = getCurrentDateInfo(tz);
+
+  // Sync time
+  const timeCols = getCourierColumnsByDay(day);
+  const [from, to] = await Promise.all([
+    readCell(config.courierSheet, `${getColumnLetter(timeCols.startColumn)}${courier.row}`, courier.spreadsheetId),
+    readCell(config.courierSheet, `${getColumnLetter(timeCols.endColumn)}${courier.row}`, courier.spreadsheetId)
+  ]);
+  const fromOk = !isEmptyCell(from) && !isScheduleMarker(from);
+  const toOk = !isEmptyCell(to) && !isScheduleMarker(to);
+  if (fromOk && toOk) setShiftStatus(id, 'time', 'both');
+  else if (fromOk) setShiftStatus(id, 'time', 'start');
+  else if (toOk) setShiftStatus(id, 'time', 'end');
+  else setShiftStatus(id, 'time', 'none');
+
+  // Sync mileage
+  const courierType = getUserField(id, 'courierType') || 'auto';
+  if (courierType !== 'pedestrian') {
+    // Find mileage row by FIO
+    const mileageRows = await getValues(`${config.mileageSheet}!${config.mileageFioRange}`, courier.spreadsheetId);
+    let mileageRow = null;
+    const target = normalizeFio(fio);
+    for (let i = 0; i < mileageRows.length; i += 1) {
+      const row = mileageRows[i];
+      const rowFio = (row[0] || row[1] || '').toString().trim();
+      if (normalizeFio(rowFio) === target) {
+        mileageRow = i + 3;
+        break;
+      }
+    }
+    if (mileageRow) {
+      const mCols = getMileageColumnsByDay(day);
+      const [ms, me] = await Promise.all([
+        readCell(config.mileageSheet, `${getColumnLetter(mCols.startColumn)}${mileageRow}`, courier.spreadsheetId),
+        readCell(config.mileageSheet, `${getColumnLetter(mCols.endColumn)}${mileageRow}`, courier.spreadsheetId)
+      ]);
+      const msOk = !isEmptyCell(ms) && !isScheduleMarker(ms);
+      const meOk = !isEmptyCell(me) && !isScheduleMarker(me);
+      if (msOk && meOk) setShiftStatus(id, 'mileage', 'both');
+      else if (msOk) setShiftStatus(id, 'mileage', 'start');
+      else if (meOk) setShiftStatus(id, 'mileage', 'end');
+      else setShiftStatus(id, 'mileage', 'none');
+    }
+  }
 }
 
 bot.on('sticker', async (ctx) => {
@@ -3238,7 +3298,8 @@ const services = {
   // misc
   openShopNotify,
   sendCommandsList,
-  userLastBotMessage
+  userLastBotMessage,
+  syncShiftStatus
 };
 
 setupCommands(bot, services);
