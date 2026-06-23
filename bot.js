@@ -434,6 +434,8 @@ async function openShopNotify(ctx) {
     return { status: 'no_workplace' };
   }
 
+  const finalize = await sendLoadingMessage(ctx, '📤 Отправляю уведомление...');
+
   const fio = getUserField(telegramId, 'fio') || 'Логист';
   const chatId = process.env.SHOP_STATUS_CHAT_ID;
   if (chatId) {
@@ -447,7 +449,10 @@ async function openShopNotify(ctx) {
     }
   }
 
-  return { status: 'ok', workplace };
+  await finalize(`✅ Магазин открыт\n──────────────\n\n🏬 ${esc(workplace)} — ОТКРЫТ`,
+    { reply_markup: getMenuForRole(telegramId).reply_markup }
+  );
+  return { status: 'ok', workplace, handled: true };
 }
 
 async function notifyLogistsAboutSelfClearance(courierId, courierFio, amount, formatted, workplace) {
@@ -1075,6 +1080,18 @@ bot.use(async (ctx, next) => {
   await next();
 });
 
+// Helper: send loading message that gets edited to final result.
+// Returns a finalize(text, extra) function that updates the message
+// and fixes combo-delete tracking.
+async function sendLoadingMessage(ctx, loadingText) {
+  const msg = await ctx.replyWithHTML(loadingText);
+  return async function finalize(text, extra = {}) {
+    await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, text, { parse_mode: 'HTML', ...extra });
+    const hasKeyboard = !!(extra.reply_markup?.keyboard || extra.reply_markup?.inline_keyboard);
+    userLastBotMessage.set(ctx.from.id, { msgId: msg.message_id, hasKeyboard });
+  };
+}
+
 bot.on('sticker', async (ctx) => {
   if (ctx.chat?.type !== 'private') return;
   const sticker = ctx.message?.sticker;
@@ -1453,17 +1470,18 @@ async function authorizeFio(ctx, fio) {
 
   try {
     safeLog.log('авторизация ФИО');
+    const finalize = await sendLoadingMessage(ctx, '🔍 Ищу сотрудника в таблице...');
     const employee = await findCourierInAllSheets(fio);
 
     if (!employee) {
       safeLog.log('сотрудник не найден');
-      await ctx.replyWithHTML('❌ Сотрудник не найден в таблице.\nПроверьте имя и фамилию и попробуйте ещё раз.');
+      await finalize('❌ Сотрудник не найден в таблице.\nПроверьте имя и фамилию и попробуйте ещё раз.');
       return;
     }
 
     setUserField(telegramId, 'fio', employee.fio);
     safeLog.log('сотрудник найден');
-    await ctx.replyWithHTML(`✅ Сотрудник найден: <b>${esc(employee.fio)}</b>`);
+    await finalize(`✅ Сотрудник найден: <b>${esc(employee.fio)}</b>`);
 
     const auto = String(employee.auto || '').trim().toLowerCase();
     const workplace = employee.workplace;
@@ -1529,6 +1547,7 @@ async function punchTimeFlow(ctx, explicitStage = null) {
   }
 
   try {
+    const finalize = await sendLoadingMessage(ctx, '⏳ Записываю время...');
     const isPedestrian = profile.courierType === 'pedestrian';
     let result;
     if (explicitStage) {
@@ -1539,20 +1558,20 @@ async function punchTimeFlow(ctx, explicitStage = null) {
 
     if (result.notFound) {
       const msg = formatNoSheetMessage(result, profile.workplace);
-      await ctx.replyWithHTML(msg);
+      await finalize(msg);
       return;
     }
 
     if (result.needsReplaceChoice) {
       safeLog.log('нужна замена');
       setState(telegramId, { awaitingReplaceChoice: true, fio: profile.fio });
-      await ctx.replyWithHTML(
+      await finalize(
         `⚠️ Время уже записано\n` +
         `──────────────\n\n` +
         `🟢 Старт: <code>${esc(result.from)}</code>\n` +
         `🔴 Конец: <code>${esc(result.to)}</code>\n\n` +
         `Что заменить?`,
-        replaceKeyboard()
+        { reply_markup: replaceKeyboard().reply_markup }
       );
       return;
     }
@@ -1584,12 +1603,12 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       workplace: profile.workplace
     });
 
-    await ctx.replyWithHTML(
+    await finalize(
       `${icon} <b>${label} смены</b>\n` +
       `──────────────\n\n` +
       `⏰ <code>${esc(result.timeValue)}</code>\n\n` +
       `📝 Неверно? → «Изменить время»`,
-      timeChangeKeyboard()
+      { reply_markup: timeChangeKeyboard().reply_markup }
     );
 
     if (result.stage === 'start') {
@@ -1630,34 +1649,37 @@ async function mileageFlow(ctx, explicitStage = null) {
   }
 
   try {
+    const finalize = await sendLoadingMessage(ctx, '⏳ Проверяю данные пробега...');
     const result = await prepareMileage(profile.fio, profile.workplace, explicitStage);
 
     if (result.notFound) {
-      return { status: 'not_found', result, workplace: profile.workplace };
+      const msg = formatNoSheetMessage(result, profile.workplace);
+      await finalize(msg);
+      return { status: 'not_found' };
     }
 
     if (result.needsReplaceChoice) {
       safeLog.log('нужна замена пробега');
       setState(telegramId, { awaitingMileageReplaceChoice: true, fio: profile.fio });
-      await ctx.replyWithHTML(
+      await finalize(
         `⚠️ Пробег уже записан\n` +
         `──────────────\n\n` +
         `🟢 Старт: <code>${esc(result.startMileage)}</code>\n` +
         `🔴 Конец: <code>${esc(result.endMileage)}</code>\n\n` +
         `Что заменить?`,
-        mileageReplaceKeyboard()
+        { reply_markup: mileageReplaceKeyboard().reply_markup }
       );
       return { status: 'needs_replace_choice' };
     }
 
     setState(telegramId, makeMileageState(telegramId, applyProfile(result, profile), { source: 'mileage' }));
     safeLog.log('ожидание пробега', result.stage);
-    await ctx.replyWithHTML(
+    await finalize(
       `📸 Пробег — <b>${esc(formatStage(result.stage))}</b>\n` +
       `──────────────\n\n` +
       `📷 Отправьте фото одометра\n\n` +
       `📎 Скрепка → 📷 Камера или 🖼 Галерея`,
-      skipMileageKeyboard()
+      { reply_markup: skipMileageKeyboard().reply_markup }
     );
     return { status: 'awaiting_photo' };
   } catch (error) {
@@ -2458,6 +2480,7 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
   const isTerminalFirstPhoto = isTerminal && photosSent === 1;
 
   if (isTerminalFirstPhoto) {
+    const loadingMsg = await ctx.replyWithHTML('📸 Обрабатываю фото сверки...');
     const cashInfo = await recognizeReconciliationCashSafe(ctx, fileId, 'Терминал');
     const cashAmount = cashInfo.amount;
     const shouldAttachCash = cashInfo.valid && cashAmount > 0;
@@ -2519,12 +2542,14 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
       reconciliationPhoto1OcrReason: shouldAttachCash ? 'ok' : (cashInfo.reason || 'no_cash')
     });
 
-    await ctx.replyWithHTML(
+    await ctx.telegram.editMessageText(
+      ctx.chat.id, loadingMsg.message_id, null,
       `✅ Фото 1 из 2 получено\n` +
       `──────────────\n\n` +
       `📷 Теперь отправьте фото <b>2 из 2</b>: 🧾 Чек`,
-      routeSheetKeyboard()
+      { parse_mode: 'HTML', reply_markup: routeSheetKeyboard().reply_markup }
     );
+    userLastBotMessage.set(ctx.from.id, { msgId: loadingMsg.message_id, hasKeyboard: true });
     return;
   }
 
@@ -2674,7 +2699,9 @@ async function handleMileagePhoto(ctx, state, fileId) {
   setState(telegramId, photoState);
 
   const ocrAvailable = isGeminiOcrEnabled();
+
   if (!ocrAvailable) {
+    const loadingMsg = await ctx.replyWithHTML('📸 Фото принято. Обрабатываю...');
     setState(telegramId, {
       ...photoState,
       mileageProcessing: false,
@@ -2689,10 +2716,15 @@ async function handleMileagePhoto(ctx, state, fileId) {
     } catch (error) {
       safeLog.error('telegram send photo error', error);
     }
-    await ctx.replyWithHTML('⚠️ Сервер распознавания недоступен\n\nВведите пробег вручную или отправьте фото повторно.', mileageConfirmKeyboard());
+    await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null,
+      '⚠️ Сервер распознавания недоступен\n\nВведите пробег вручную или отправьте фото повторно.',
+      { parse_mode: 'HTML', reply_markup: mileageConfirmKeyboard().reply_markup }
+    );
+    userLastBotMessage.set(ctx.from.id, { msgId: loadingMsg.message_id, hasKeyboard: true });
     return;
   }
 
+  const loadingMsg = await ctx.replyWithHTML('📸 Фото принято. Считываю пробег...');
   const ocrHealthy = await checkGeminiOcrHealth();
   if (!ocrHealthy) {
     safeLog.warn('Gemini OCR health check failed, falling back to manual input');
@@ -2710,11 +2742,13 @@ async function handleMileagePhoto(ctx, state, fileId) {
     } catch (error) {
       safeLog.error('telegram send photo error', error);
     }
-    await ctx.replyWithHTML('⚠️ Сервер распознавания недоступен\n\nВведите пробег вручную или отправьте фото повторно.', mileageConfirmKeyboard());
+    await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null,
+      '⚠️ Сервер распознавания недоступен\n\nВведите пробег вручную или отправьте фото повторно.',
+      { parse_mode: 'HTML', reply_markup: mileageConfirmKeyboard().reply_markup }
+    );
+    userLastBotMessage.set(ctx.from.id, { msgId: loadingMsg.message_id, hasKeyboard: true });
     return;
   }
-
-  await ctx.replyWithHTML('📸 Фото принято. Считываю пробег...');
 
   const chatId = ctx.chat.id;
   const telegram = ctx.telegram;

@@ -123,7 +123,8 @@ module.exports = function setupTextRouter(bot, services) {
       const res = await openShopNotify(ctx);
       if (res.status === 'access_denied') await ctx.replyWithHTML('❌ Эта функция доступна только логистам.', getMenuForRole(ctx.from.id));
       else if (res.status === 'no_workplace') await ctx.replyWithHTML('⚠️ Сначала выберите магазин в настройках.', getMenuForRole(ctx.from.id));
-      else if (res.status === 'ok') await ctx.replyWithHTML(`✅ Магазин открыт\n──────────────\n\n🏬 ${esc(res.workplace)} — ОТКРЫТ`, getMenuForRole(ctx.from.id));
+      else if (res.handled) return;
+      else await ctx.replyWithHTML(`✅ Магазин открыт\n──────────────\n\n🏬 ${esc(res.workplace)} — ОТКРЫТ`, getMenuForRole(ctx.from.id));
     }},
 
     // 4) Меню настроек
