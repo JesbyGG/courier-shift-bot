@@ -3,6 +3,13 @@ const crypto = require("crypto");
 const { exec } = require("child_process");
 const path = require("path");
 
+// Load .env so WEBHOOK_SECRET is available
+try {
+  require("dotenv").config({ path: path.join(__dirname, ".env") });
+} catch (_) {
+  // dotenv not available — .env may be loaded externally
+}
+
 const PORT = process.env.WEBHOOK_PORT || 9000;
 const SECRET = process.env.WEBHOOK_SECRET || "";
 const DEPLOY_SCRIPT = path.join(__dirname, "deploy.sh");
