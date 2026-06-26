@@ -1,18 +1,28 @@
-const Database = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
+const Database = require("better-sqlite3");
+const path = require("path");
+const fs = require("fs");
+const safeLog = require("./utils/safeLog");
 
-const dbPath = path.join(__dirname, 'database.sqlite');
+const dbPath = path.join(__dirname, "database.sqlite");
 const dbDir = __dirname;
-const backupsDir = path.join(dbDir, 'backups');
+const backupsDir = path.join(dbDir, "backups");
 
 function findLatestBackup() {
   if (!fs.existsSync(backupsDir)) return null;
-  const files = fs.readdirSync(backupsDir)
-    .filter(f => f.startsWith('database.sqlite-') && !f.endsWith('.shm') && !f.endsWith('.wal'))
-    .map(f => ({ name: f, mtime: fs.statSync(path.join(backupsDir, f)).mtimeMs }))
+  const files = fs
+    .readdirSync(backupsDir)
+    .filter(
+      (f) =>
+        f.startsWith("database.sqlite-") &&
+        !f.endsWith(".shm") &&
+        !f.endsWith(".wal"),
+    )
+    .map((f) => ({
+      name: f,
+      mtime: fs.statSync(path.join(backupsDir, f)).mtimeMs,
+    }))
     .sort((a, b) => b.mtime - a.mtime)
-    .map(f => f.name);
+    .map((f) => f.name);
   if (files.length === 0) return null;
   return path.join(backupsDir, files[0]);
 }
@@ -20,18 +30,26 @@ function findLatestBackup() {
 function tryRestoreFromBackup() {
   const backup = findLatestBackup();
   if (!backup) {
-    console.error('No valid backup found, creating fresh database');
+    safeLog.error("No valid backup found, creating fresh database");
     return false;
   }
-  console.log(`Attempting to restore from backup: ${path.basename(backup)}`);
+  safeLog.log(`Attempting to restore from backup: ${path.basename(backup)}`);
   try {
     const tmpDb = new Database(backup);
-    const result = tmpDb.pragma('integrity_check', { simple: true });
+    const result = tmpDb.pragma("integrity_check", { simple: true });
     tmpDb.close();
-    if (result !== 'ok') {
-      console.error(`Backup ${path.basename(backup)} is also corrupt, trying older backup`);
-      const allFiles = fs.readdirSync(backupsDir)
-        .filter(f => f.startsWith('database.sqlite-') && !f.endsWith('.shm') && !f.endsWith('.wal'))
+    if (result !== "ok") {
+      safeLog.error(
+        `Backup ${path.basename(backup)} is also corrupt, trying older backup`,
+      );
+      const allFiles = fs
+        .readdirSync(backupsDir)
+        .filter(
+          (f) =>
+            f.startsWith("database.sqlite-") &&
+            !f.endsWith(".shm") &&
+            !f.endsWith(".wal"),
+        )
         .sort()
         .reverse();
       for (const file of allFiles) {
@@ -39,10 +57,10 @@ function tryRestoreFromBackup() {
         const filePath = path.join(backupsDir, file);
         try {
           const testDb = new Database(filePath);
-          const r = testDb.pragma('integrity_check', { simple: true });
+          const r = testDb.pragma("integrity_check", { simple: true });
           testDb.close();
-          if (r === 'ok') {
-            console.log(`Found valid backup: ${file}`);
+          if (r === "ok") {
+            safeLog.log(`Found valid backup: ${file}`);
             fs.copyFileSync(filePath, dbPath);
             return true;
           }
@@ -51,76 +69,80 @@ function tryRestoreFromBackup() {
       return false;
     }
     fs.copyFileSync(backup, dbPath);
-    console.log('Database restored from backup');
+    safeLog.log("Database restored from backup");
     return true;
   } catch (e) {
-    console.error('Backup restore failed:', e.message);
+    safeLog.error("Backup restore failed:", e.message);
     return false;
   }
 }
 
 function checkpointAndClose(db) {
   try {
-    db.pragma('wal_checkpoint(TRUNCATE)');
+    db.pragma("wal_checkpoint(TRUNCATE)");
   } catch (e) {
-    console.error('wal_checkpoint failed:', e.message);
+    safeLog.error("wal_checkpoint failed:", e.message);
   }
   try {
     db.close();
   } catch (e) {
-    console.error('db.close() failed:', e.message);
+    safeLog.error("db.close() failed:", e.message);
   }
-  const shmPath = dbPath + '-shm';
-  const walPath = dbPath + '-wal';
+  const shmPath = dbPath + "-shm";
+  const walPath = dbPath + "-wal";
   try {
     if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
     if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
   } catch (e) {
-    console.error('cleanup shm/wal failed:', e.message);
+    safeLog.error("cleanup shm/wal failed:", e.message);
   }
 }
 
 let db;
 try {
   db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
-  db.pragma('busy_timeout = 5000');
-  db.pragma('wal_autocheckpoint = 200');
-  const integrity = db.pragma('integrity_check', { simple: true });
-  if (integrity !== 'ok') {
-    console.error(`Database integrity check failed: ${integrity}. Attempting recovery...`);
+  db.pragma("journal_mode = WAL");
+  db.pragma("busy_timeout = 5000");
+  db.pragma("wal_autocheckpoint = 200");
+  const integrity = db.pragma("integrity_check", { simple: true });
+  if (integrity !== "ok") {
+    safeLog.error(
+      `Database integrity check failed: ${integrity}. Attempting recovery...`,
+    );
     checkpointAndClose(db);
     if (tryRestoreFromBackup()) {
       db = new Database(dbPath);
-      db.pragma('journal_mode = WAL');
-      db.pragma('wal_autocheckpoint = 1000');
-      db.pragma('synchronous = NORMAL');
+      db.pragma("journal_mode = WAL");
+      db.pragma("wal_autocheckpoint = 1000");
+      db.pragma("synchronous = NORMAL");
     } else {
-      console.error('All backups corrupt, creating fresh database');
+      safeLog.error("All backups corrupt, creating fresh database");
       db = new Database(dbPath);
-      db.pragma('journal_mode = WAL');
-      db.pragma('wal_autocheckpoint = 1000');
-      db.pragma('synchronous = NORMAL');
+      db.pragma("journal_mode = WAL");
+      db.pragma("wal_autocheckpoint = 1000");
+      db.pragma("synchronous = NORMAL");
     }
   }
 } catch (e) {
-  if (e.message.includes('corrupt') || e.message.includes('malformed')) {
-    console.error(`Database corrupt on open: ${e.message}. Attempting recovery...`);
-    const shmPath = dbPath + '-shm';
-    const walPath = dbPath + '-wal';
+  if (e.message.includes("corrupt") || e.message.includes("malformed")) {
+    safeLog.error(
+      `Database corrupt on open: ${e.message}. Attempting recovery...`,
+    );
+    const shmPath = dbPath + "-shm";
+    const walPath = dbPath + "-wal";
     if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
     if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
     if (tryRestoreFromBackup()) {
       db = new Database(dbPath);
-      db.pragma('journal_mode = WAL');
-      db.pragma('wal_autocheckpoint = 1000');
-      db.pragma('synchronous = NORMAL');
+      db.pragma("journal_mode = WAL");
+      db.pragma("wal_autocheckpoint = 1000");
+      db.pragma("synchronous = NORMAL");
     } else {
-      console.error('All backups corrupt, creating fresh database');
+      safeLog.error("All backups corrupt, creating fresh database");
       db = new Database(dbPath);
-      db.pragma('journal_mode = WAL');
-      db.pragma('wal_autocheckpoint = 1000');
-      db.pragma('synchronous = NORMAL');
+      db.pragma("journal_mode = WAL");
+      db.pragma("wal_autocheckpoint = 1000");
+      db.pragma("synchronous = NORMAL");
     }
   } else {
     throw e;
@@ -128,8 +150,8 @@ try {
 }
 
 // Initialize tables
-db.pragma('wal_autocheckpoint = 1000');
-db.pragma('synchronous = NORMAL');
+db.pragma("wal_autocheckpoint = 1000");
+db.pragma("synchronous = NORMAL");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
@@ -228,106 +250,144 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_cash_audit_timestamp ON cash_audit(timestamp);
 `);
 
-// Schema migrations
+const { runMigrations } = require("./migrations");
+
 try {
-  const threadCols = db.prepare("PRAGMA table_info(message_threads)").all();
-  const hasMessageThreadId = threadCols.some(c => c.name === 'message_thread_id');
-  if (!hasMessageThreadId) {
-    db.prepare('ALTER TABLE message_threads ADD COLUMN message_thread_id INTEGER').run();
-    console.log('migrated message_threads: added message_thread_id column');
-  }
+  runMigrations(db);
 } catch (e) {
-  console.error('message_threads migration error:', e.message);
+  safeLog.error("migrations failed:", e.message);
 }
 
 function checkpoint() {
   try {
-    db.pragma('wal_checkpoint(TRUNCATE)');
+    db.pragma("wal_checkpoint(TRUNCATE)");
   } catch (e) {
-    console.error('WAL checkpoint failed:', e.message);
+    safeLog.error("WAL checkpoint failed:", e.message);
   }
 }
 
 // ─── Message threads (reply forwarding) ───
 
-function saveThread(groupChatId, groupMessageId, courierTelegramId, type, messageThreadId = null) {
+function saveThread(
+  groupChatId,
+  groupMessageId,
+  courierTelegramId,
+  type,
+  messageThreadId = null,
+) {
   try {
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO message_threads (group_chat_id, group_message_id, message_thread_id, courier_telegram_id, type)
       VALUES (?, ?, ?, ?, ?)
-    `).run(String(groupChatId), Number(groupMessageId), messageThreadId ? Number(messageThreadId) : null, String(courierTelegramId), type || null);
+    `,
+    ).run(
+      String(groupChatId),
+      Number(groupMessageId),
+      messageThreadId ? Number(messageThreadId) : null,
+      String(courierTelegramId),
+      type || null,
+    );
   } catch (e) {
-    console.error('saveThread error:', e.message);
+    safeLog.error("saveThread error:", e.message);
   }
 }
 
 function findThreadByGroupMessage(groupChatId, groupMessageId) {
   try {
-    return db.prepare(`
+    return (
+      db
+        .prepare(
+          `
       SELECT * FROM message_threads
       WHERE group_chat_id = ? AND group_message_id = ?
       ORDER BY id DESC LIMIT 1
-    `).get(String(groupChatId), Number(groupMessageId)) || null;
+    `,
+        )
+        .get(String(groupChatId), Number(groupMessageId)) || null
+    );
   } catch (e) {
-    console.error('findThreadByGroupMessage error:', e.message);
+    safeLog.error("findThreadByGroupMessage error:", e.message);
     return null;
   }
 }
 
 function findThreadById(threadId) {
   try {
-    return db.prepare(`
+    return (
+      db
+        .prepare(
+          `
       SELECT * FROM message_threads WHERE id = ?
-    `).get(Number(threadId)) || null;
+    `,
+        )
+        .get(Number(threadId)) || null
+    );
   } catch (e) {
-    console.error('findThreadById error:', e.message);
+    safeLog.error("findThreadById error:", e.message);
     return null;
   }
 }
 
 function saveForwardedMessage(chatId, messageId, threadId, direction) {
   try {
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO forwarded_messages (chat_id, message_id, thread_id, direction)
       VALUES (?, ?, ?, ?)
-    `).run(String(chatId), Number(messageId), Number(threadId), direction);
+    `,
+    ).run(String(chatId), Number(messageId), Number(threadId), direction);
   } catch (e) {
-    console.error('saveForwardedMessage error:', e.message);
+    safeLog.error("saveForwardedMessage error:", e.message);
   }
 }
 
 function findForwardedMessage(chatId, messageId) {
   try {
-    return db.prepare(`
+    return (
+      db
+        .prepare(
+          `
       SELECT * FROM forwarded_messages
       WHERE chat_id = ? AND message_id = ?
       ORDER BY id DESC LIMIT 1
-    `).get(String(chatId), Number(messageId)) || null;
+    `,
+        )
+        .get(String(chatId), Number(messageId)) || null
+    );
   } catch (e) {
-    console.error('findForwardedMessage error:', e.message);
+    safeLog.error("findForwardedMessage error:", e.message);
     return null;
   }
 }
 
 function cleanupOldThreads(days) {
-  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const cutoff = new Date(
+    Date.now() - days * 24 * 60 * 60 * 1000,
+  ).toISOString();
   try {
-    const r1 = db.prepare(`DELETE FROM forwarded_messages WHERE created_at < ?`).run(cutoff);
-    const r2 = db.prepare(`DELETE FROM message_threads WHERE created_at < ?`).run(cutoff);
+    const r1 = db
+      .prepare(`DELETE FROM forwarded_messages WHERE created_at < ?`)
+      .run(cutoff);
+    const r2 = db
+      .prepare(`DELETE FROM message_threads WHERE created_at < ?`)
+      .run(cutoff);
     if (r1.changes + r2.changes > 0) {
-      console.log(`cleaned up ${r1.changes + r2.changes} thread record(s) older than ${days} days`);
+      safeLog.log(
+        `cleaned up ${r1.changes + r2.changes} thread record(s) older than ${days} days`,
+      );
     }
   } catch (e) {
-    console.error('cleanupOldThreads error:', e.message);
+    safeLog.error("cleanupOldThreads error:", e.message);
   }
 }
 
 // Proxy object that behaves like the original db instance
 const dbProxy = new Proxy(db, {
   get(target, prop) {
-    if (prop === 'checkpoint') return checkpoint;
+    if (prop === "checkpoint") return checkpoint;
     return target[prop];
-  }
+  },
 });
 
 module.exports = dbProxy;

@@ -1,4 +1,5 @@
-const axios = require('axios');
+const axios = require("axios");
+const safeLog = require("../utils/safeLog");
 
 const OCR_CONCURRENCY = 15;
 const MAX_OCR_QUEUE_SIZE = 50;
@@ -8,7 +9,7 @@ const ocrQueue = [];
 function enqueueOcrRequest(fn) {
   return new Promise((resolve, reject) => {
     if (ocrQueue.length >= MAX_OCR_QUEUE_SIZE) {
-      return reject(new Error('OCR queue limit exceeded'));
+      return reject(new Error("OCR queue limit exceeded"));
     }
     ocrQueue.push({ fn, resolve, reject });
     processNextOcrRequest();
@@ -19,22 +20,24 @@ function processNextOcrRequest() {
   if (activeOcrRequests >= OCR_CONCURRENCY || ocrQueue.length === 0) return;
   activeOcrRequests++;
   const { fn, resolve, reject } = ocrQueue.shift();
-  Promise.resolve().then(() => fn()).then(
-    (result) => {
-      resolve(result);
-      activeOcrRequests--;
-      processNextOcrRequest();
-    },
-    (error) => {
-      reject(error);
-      activeOcrRequests--;
-      processNextOcrRequest();
-    }
-  );
+  Promise.resolve()
+    .then(() => fn())
+    .then(
+      (result) => {
+        resolve(result);
+        activeOcrRequests--;
+        processNextOcrRequest();
+      },
+      (error) => {
+        reject(error);
+        activeOcrRequests--;
+        processNextOcrRequest();
+      },
+    );
 }
 
 function isGeminiOcrEnabled() {
-  return process.env.GEMINI_OCR_ENABLED !== 'false';
+  return process.env.GEMINI_OCR_ENABLED !== "false";
 }
 
 function getMinMileageThreshold() {
@@ -44,11 +47,13 @@ function getMinMileageThreshold() {
 }
 
 function normalizeText(value) {
-  return String(value || '').replace(/\s+/g, ' ').trim();
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function compactText(value) {
-  return normalizeText(value).toLowerCase().replace(/\s+/g, '');
+  return normalizeText(value).toLowerCase().replace(/\s+/g, "");
 }
 
 function isOdometerNoiseText(text) {
@@ -60,26 +65,32 @@ function isOdometerNoiseText(text) {
   if (/-?\d{1,2}\s*[°º]/.test(raw)) return true;
 
   const noiseTokens = [
-    'km/h',
-    'mph',
-    'rpm',
-    'x1000',
-    '/100',
-    'l/100',
-    '1/100',
-    'temp'
+    "km/h",
+    "mph",
+    "rpm",
+    "x1000",
+    "/100",
+    "l/100",
+    "1/100",
+    "temp",
   ];
 
   if (noiseTokens.some((token) => compact.includes(token))) return true;
 
-  if (compact.includes('trip') && compact.includes('avg')) return true;
-  if (compact.includes('avg')) {
+  if (compact.includes("trip") && compact.includes("avg")) return true;
+  if (compact.includes("avg")) {
     if (/\d{3,6}/.test(compact)) return false;
     return true;
   }
 
   const speedScalePattern = /\b(2[0-9]{2}|1[4-9]{2}|1[0-3]{2}|60|80|100|120)\b/;
-  if (speedScalePattern.test(raw) && !compact.includes('km') && !compact.includes('/km') && !compact.includes('ikm')) return true;
+  if (
+    speedScalePattern.test(raw) &&
+    !compact.includes("km") &&
+    !compact.includes("/km") &&
+    !compact.includes("ikm")
+  )
+    return true;
 
   return false;
 }
@@ -91,19 +102,19 @@ function extractMileage(text, options = {}) {
     return null;
   }
 
-  const normalized = String(text || '').replace(/[Oo]/g, '0');
+  const normalized = String(text || "").replace(/[Oo]/g, "0");
   const candidates = new Set();
 
   // Try to combine digits separated by spaces first (e.g. "8935 7" -> "89357")
   const spacedRegex = /(?:\d[\s.,:;\-]*){2,6}/g;
   for (const match of normalized.matchAll(spacedRegex)) {
-    const value = match[0].replace(/\D/g, '');
+    const value = match[0].replace(/\D/g, "");
     if (value.length >= minDigits && value.length <= maxDigits) {
       candidates.add(value);
     }
   }
 
-  const strictRegex = new RegExp(`\\d{${minDigits},${maxDigits}}`, 'g');
+  const strictRegex = new RegExp(`\\d{${minDigits},${maxDigits}}`, "g");
   for (const match of normalized.matchAll(strictRegex)) {
     candidates.add(match[0]);
   }
@@ -118,44 +129,51 @@ function extractMileage(text, options = {}) {
   return Number(values[0]);
 }
 
-function isMileageInBounds(mileage, options = {}) {
+function isMileageInBounds(mileage) {
   if (!Number.isFinite(mileage)) return false;
-
-  const minMileage = Number.isFinite(options.minMileage)
-    ? options.minMileage
-    : getMinMileageThreshold();
-  const maxMileage = Number.isFinite(options.maxMileage)
-    ? options.maxMileage
-    : null;
-
-  if (Number.isFinite(minMileage) && mileage < minMileage) return false;
-  if (Number.isFinite(maxMileage) && mileage > maxMileage) return false;
-  return true;
+  return mileage >= 0 && mileage <= 999999;
 }
-
-
 
 // OCR-only mode
 
 async function recognizeMileageWithGemini(imageBuffer, options = {}) {
-  const geminiOcrUrl = process.env.GEMINI_OCR_URL || '';
+  const geminiOcrUrl = process.env.GEMINI_OCR_URL || "";
 
   if (!geminiOcrUrl) {
-    console.error('Gemini OCR: GEMINI_OCR_URL not configured');
-    return { engine: 'gemini', mileage: null, groups: [], best: null, raw: null, reason: 'no_url' };
+    safeLog.error("Gemini OCR: GEMINI_OCR_URL not configured");
+    return {
+      engine: "gemini",
+      mileage: null,
+      groups: [],
+      best: null,
+      raw: null,
+      reason: "no_url",
+    };
   }
 
   try {
-    const response = await enqueueOcrRequest(() => axios.post(geminiOcrUrl, imageBuffer, {
-      timeout: 120000,
-      headers: { 'Content-Type': 'application/octet-stream' }
-    }));
+    const response = await enqueueOcrRequest(() =>
+      axios.post(geminiOcrUrl, imageBuffer, {
+        timeout: 120000,
+        headers: { "Content-Type": "application/octet-stream" },
+      }),
+    );
     const parsed = response.data;
-    console.log('Gemini OCR HTTP result', JSON.stringify(parsed).substring(0, 500));
+    safeLog.log(
+      "Gemini OCR HTTP result",
+      JSON.stringify(parsed).substring(0, 500),
+    );
     return mapGeminiOcrResult(parsed, options);
   } catch (error) {
-    console.error('Gemini OCR HTTP error:', error.message);
-    return { engine: 'gemini', mileage: null, groups: [], best: null, raw: null, reason: 'error' };
+    safeLog.error("Gemini OCR HTTP error:", error.message);
+    return {
+      engine: "gemini",
+      mileage: null,
+      groups: [],
+      best: null,
+      raw: null,
+      reason: "error",
+    };
   }
 }
 
@@ -168,29 +186,29 @@ function mapGeminiOcrResult(parsed, options) {
           avgConfidence: Number(group.avg_confidence || 0),
           maxConfidence: Number(group.max_confidence || 0),
           has_km: !!group.has_km,
-          is_noise: !!group.is_noise
+          is_noise: !!group.is_noise,
         }))
         .filter((group) => Number.isFinite(group.mileage) && group.mileage > 0)
     : [];
 
   const best = groups[0] || null;
-  const mileage = best && isMileageInBounds(best.mileage, options) ? best.mileage : null;
+  const mileage = best && isMileageInBounds(best.mileage) ? best.mileage : null;
 
   const candidates = groups.slice(0, 5).map((g) => ({
     mileage: g.mileage,
-    source: 'ocr',
+    source: "ocr",
     confidence: g.avgConfidence,
-    has_km: g.has_km
+    has_km: g.has_km,
   }));
 
   return {
-    engine: 'gemini',
+    engine: "gemini",
     mileage,
     groups,
     best,
     candidates,
     raw: parsed,
-    reason: mileage ? 'accepted' : (best ? 'out_of_bounds' : 'no_candidate')
+    reason: mileage ? "accepted" : best ? "out_of_bounds" : "no_candidate",
   };
 }
 
@@ -198,10 +216,16 @@ async function downloadTelegramFile(ctx, fileId, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const link = await ctx.telegram.getFileLink(fileId);
-      const response = await axios.get(link.href, { responseType: 'arraybuffer', timeout: 30000 });
+      const response = await axios.get(link.href, {
+        responseType: "arraybuffer",
+        timeout: 30000,
+      });
       return Buffer.from(response.data);
     } catch (error) {
-      console.error(`Download attempt ${attempt}/${retries} failed`, error.message);
+      safeLog.error(
+        `Download attempt ${attempt}/${retries} failed`,
+        error.message,
+      );
       if (attempt < retries) {
         await new Promise((r) => setTimeout(r, 1000 * attempt));
       } else {
@@ -215,11 +239,11 @@ function isValidImageBuffer(buffer) {
   if (!buffer || buffer.length < 100) return false;
   const b = buffer[0];
   const b1 = buffer[1];
-  if (b === 0xFF && b1 === 0xD8) return true;
+  if (b === 0xff && b1 === 0xd8) return true;
   if (b === 0x89 && b1 === 0x50) return true;
   if (b === 0x47 && b1 === 0x49) return true;
   if (b === 0x52 && b1 === 0x49) return true;
-  if (b === 0x42 && b1 === 0x4D) return true;
+  if (b === 0x42 && b1 === 0x4d) return true;
   return false;
 }
 
@@ -231,88 +255,115 @@ async function recognizeMileage(ctx, fileId, options = {}) {
   if (!sourceBuffer) {
     try {
       sourceBuffer = await downloadTelegramFile(ctx, fileId);
-      console.log('OCR timing: download', Date.now() - startTime, 'ms');
+      safeLog.log("OCR timing: download", Date.now() - startTime, "ms");
     } catch (error) {
-      console.error('OCR download error', error.message);
+      safeLog.error("OCR download error", error.message);
       return null;
     }
   }
 
   if (!isValidImageBuffer(sourceBuffer)) {
-    console.error('OCR: downloaded file is not a valid image', { size: sourceBuffer?.length, firstBytes: sourceBuffer?.slice(0, 4).toString('hex') });
+    safeLog.error("OCR: downloaded file is not a valid image", {
+      size: sourceBuffer?.length,
+      firstBytes: sourceBuffer?.slice(0, 4).toString("hex"),
+    });
     return null;
   }
 
   try {
     const ocrStartTime = Date.now();
-    const geminiResult = await recognizeMileageWithGemini(sourceBuffer, options);
-    console.log('OCR timing: Gemini OCR', Date.now() - ocrStartTime, 'ms');
+    const geminiResult = await recognizeMileageWithGemini(
+      sourceBuffer,
+      options,
+    );
+    safeLog.log("OCR timing: Gemini OCR", Date.now() - ocrStartTime, "ms");
 
     const ocrMileage = geminiResult.mileage;
     const groups = geminiResult.groups || [];
     const ocrCandidates = geminiResult.candidates || [];
 
     if (ocrMileage) {
-      console.log('OCR accepted', {
+      safeLog.log("OCR accepted", {
         mileage: ocrMileage,
         source: geminiResult.reason,
-        groups: groups.map((g) => `${g.mileage}(×${g.count} avg=${g.avgConfidence.toFixed(2)} max=${g.maxConfidence.toFixed(2)})`).join(', '),
+        groups: groups
+          .map(
+            (g) =>
+              `${g.mileage}(×${g.count} avg=${g.avgConfidence.toFixed(2)} max=${g.maxConfidence.toFixed(2)})`,
+          )
+          .join(", "),
         minMileage: options.minMileage,
-        maxMileage: options.maxMileage
+        maxMileage: options.maxMileage,
       });
-      console.log('OCR timing: total', Date.now() - startTime, 'ms');
+      safeLog.log("OCR timing: total", Date.now() - startTime, "ms");
       return { mileage: ocrMileage, candidates: ocrCandidates };
     }
 
-    console.log('OCR rejected', {
+    safeLog.log("OCR rejected", {
       reason: geminiResult.reason,
-      groups: groups.map((g) => `${g.mileage}(×${g.count} avg=${g.avgConfidence.toFixed(2)})`).join(', '),
-      best: geminiResult.best ? `${geminiResult.best.mileage}(×${geminiResult.best.count})` : null
+      groups: groups
+        .map(
+          (g) => `${g.mileage}(×${g.count} avg=${g.avgConfidence.toFixed(2)})`,
+        )
+        .join(", "),
+      best: geminiResult.best
+        ? `${geminiResult.best.mileage}(×${geminiResult.best.count})`
+        : null,
     });
-    console.log('OCR timing: total', Date.now() - startTime, 'ms');
+    safeLog.log("OCR timing: total", Date.now() - startTime, "ms");
     return { mileage: null, candidates: ocrCandidates };
   } catch (error) {
-    console.error('OCR error', error.message || error);
+    safeLog.error("OCR error", error.message || error);
     return null;
   }
 }
 
 async function recognizeTextWithGemini(imageBuffer) {
-  const geminiOcrUrl = process.env.GEMINI_OCR_URL || '';
+  const geminiOcrUrl = process.env.GEMINI_OCR_URL || "";
 
   if (!geminiOcrUrl) {
     return null;
   }
 
   try {
-    const url = geminiOcrUrl.replace(/\/+$/, '') + '/text';
-    const response = await enqueueOcrRequest(() => axios.post(url, imageBuffer, {
-      timeout: 120000,
-      headers: { 'Content-Type': 'application/octet-stream' }
-    }));
+    const url = geminiOcrUrl.replace(/\/+$/, "") + "/text";
+    const response = await enqueueOcrRequest(() =>
+      axios.post(url, imageBuffer, {
+        timeout: 120000,
+        headers: { "Content-Type": "application/octet-stream" },
+      }),
+    );
     const items = response.data?.text_items;
     if (!Array.isArray(items) || items.length === 0) {
       return null;
     }
 
-    const combined = items.map((item) => item.text || '').join('\n');
-    console.log('Gemini OCR text recognition', items.length, 'items, text:', combined.substring(0, 500));
+    const combined = items.map((item) => item.text || "").join("\n");
+    safeLog.log(
+      "Gemini OCR text recognition",
+      items.length,
+      "items, text:",
+      combined.substring(0, 500),
+    );
     return combined;
   } catch (error) {
-    console.error('Gemini OCR text recognition error:', error.message);
+    safeLog.error("Gemini OCR text recognition error:", error.message);
     return null;
   }
 }
 
 async function checkGeminiOcrHealth() {
-  const geminiOcrUrl = process.env.GEMINI_OCR_URL || '';
+  const geminiOcrUrl = process.env.GEMINI_OCR_URL || "";
   if (!geminiOcrUrl) return false;
 
   try {
-    const response = await axios.get(`${geminiOcrUrl.replace(/\/+$/, '')}/health`, { timeout: 5000 });
-    return response.status === 200 && response.data?.status === 'ok';
+    const response = await axios.get(
+      `${geminiOcrUrl.replace(/\/+$/, "")}/health`,
+      { timeout: 5000 },
+    );
+    return response.status === 200 && response.data?.status === "ok";
   } catch (error) {
-    console.error('Gemini OCR health check failed:', error.message);
+    safeLog.error("Gemini OCR health check failed:", error.message);
     return false;
   }
 }
@@ -323,5 +374,5 @@ module.exports = {
   recognizeTextWithGemini,
   isGeminiOcrEnabled,
   getMinMileageThreshold,
-  checkGeminiOcrHealth
+  checkGeminiOcrHealth,
 };

@@ -1,4 +1,4 @@
-const { JWT } = require('google-auth-library');
+const { JWT } = require("google-auth-library");
 const {
   normalizeFio,
   normalizeFioWords,
@@ -8,29 +8,30 @@ const {
   roundTimeToHalfHour,
   getCurrentDateInfo,
   isEmptyCell,
-  isScheduleMarker
-} = require('../utils');
-const db = require('../db');
+  isScheduleMarker,
+} = require("../utils");
+const db = require("../db");
+const safeLog = require("../utils/safeLog");
 // WORKPLACES в этом файле не нужны напрямую — SHEET_CONFIGS использует
 // строковые ключи и DEFAULT_CONFIG. Если позже понадобится — импортируем.
 
-const SHEETS_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
+const SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets";
 
 let sheetsAuth;
 let notifyAdminCallback = null;
 
 function initGoogleSheets() {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+  const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
 
   if (!email || !privateKey) {
-    throw new Error('Google service account credentials are not set');
+    throw new Error("Google service account credentials are not set");
   }
 
   sheetsAuth = new JWT({
     email,
     key: privateKey,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets']
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
 
   return sheetsAuth;
@@ -49,6 +50,20 @@ let cacheTimestamp = 0;
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const MAX_ROW_CACHE_SIZE = 200;
 
+function invalidateRowCache(spreadsheetId) {
+  const prefix = `${spreadsheetId}:`;
+  let removed = 0;
+  for (const key of Object.keys(rowCache)) {
+    if (key.startsWith(prefix)) {
+      delete rowCache[key];
+      removed++;
+    }
+  }
+  if (removed > 0) {
+    cacheTimestamp = 0;
+  }
+}
+
 // --- Batch update queue ---
 let pendingUpdates = [];
 let updateTimer = null;
@@ -57,27 +72,13 @@ function setNotifyAdminCallback(cb) {
   notifyAdminCallback = cb;
 }
 
-function migratePendingSheetUpdatesSchema() {
-  try {
-    const cols = db.prepare('PRAGMA table_info(pending_sheet_updates)').all();
-    const colNames = new Set(cols.map(c => c.name));
-    if (!colNames.has('attempts')) {
-      db.prepare('ALTER TABLE pending_sheet_updates ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0').run();
-      console.log('migrated pending_sheet_updates: added attempts column');
-    }
-    if (!colNames.has('lastAttemptAt')) {
-      db.prepare('ALTER TABLE pending_sheet_updates ADD COLUMN lastAttemptAt TEXT').run();
-      console.log('migrated pending_sheet_updates: added lastAttemptAt column');
-    }
-  } catch (e) {
-    console.error('failed to migrate pending_sheet_updates schema', e.message);
-  }
-}
-
 function loadPendingUpdatesFromDb() {
   try {
-    migratePendingSheetUpdatesSchema();
-    const rows = db.prepare('SELECT id, spreadsheetId, range, value, createdAt, attempts, lastAttemptAt FROM pending_sheet_updates ORDER BY id DESC').all();
+    const rows = db
+      .prepare(
+        "SELECT id, spreadsheetId, range, value, createdAt, attempts, lastAttemptAt FROM pending_sheet_updates ORDER BY id DESC",
+      )
+      .all();
     const seen = new Set();
     for (const row of rows) {
       const key = `${row.spreadsheetId}:${row.range}`;
@@ -89,26 +90,31 @@ function loadPendingUpdatesFromDb() {
         range: row.range,
         values: [[row.value]],
         createdAt: row.createdAt,
-        attempts: row.attempts || 0
+        attempts: row.attempts || 0,
       });
     }
     if (pendingUpdates.length > 0) {
-      console.log(`restored ${pendingUpdates.length} pending sheet update(s) from db`);
+      safeLog.log(
+        `restored ${pendingUpdates.length} pending sheet update(s) from db`,
+      );
     }
   } catch (e) {
-    console.error('failed to load pending sheet updates from db', e.message);
+    safeLog.error("failed to load pending sheet updates from db", e.message);
   }
 }
 
 function savePendingUpdateToDb(spreadsheetId, range, value) {
   try {
-    db.prepare('DELETE FROM pending_sheet_updates WHERE spreadsheetId = ? AND range = ?')
-      .run(spreadsheetId, range);
-    const stmt = db.prepare('INSERT INTO pending_sheet_updates (spreadsheetId, range, value) VALUES (?, ?, ?)');
+    db.prepare(
+      "DELETE FROM pending_sheet_updates WHERE spreadsheetId = ? AND range = ?",
+    ).run(spreadsheetId, range);
+    const stmt = db.prepare(
+      "INSERT INTO pending_sheet_updates (spreadsheetId, range, value) VALUES (?, ?, ?)",
+    );
     const result = stmt.run(spreadsheetId, range, String(value));
     return result.lastInsertRowid;
   } catch (e) {
-    console.error('failed to save pending sheet update to db', e.message);
+    safeLog.error("failed to save pending sheet update to db", e.message);
     return null;
   }
 }
@@ -116,17 +122,21 @@ function savePendingUpdateToDb(spreadsheetId, range, value) {
 function deletePendingUpdatesFromDb(ids) {
   if (!ids || ids.length === 0) return;
   try {
-    const placeholders = ids.map(() => '?').join(',');
-    db.prepare(`DELETE FROM pending_sheet_updates WHERE id IN (${placeholders})`).run(...ids);
+    const placeholders = ids.map(() => "?").join(",");
+    db.prepare(
+      `DELETE FROM pending_sheet_updates WHERE id IN (${placeholders})`,
+    ).run(...ids);
   } catch (e) {
-    console.error('failed to delete pending sheet updates from db', e.message);
+    safeLog.error("failed to delete pending sheet updates from db", e.message);
   }
 }
 
 function deletePendingUpdatesByRange(ranges) {
   if (!ranges || ranges.length === 0) return;
   try {
-    const stmt = db.prepare('DELETE FROM pending_sheet_updates WHERE spreadsheetId = ? AND range = ?');
+    const stmt = db.prepare(
+      "DELETE FROM pending_sheet_updates WHERE spreadsheetId = ? AND range = ?",
+    );
     const tx = db.transaction((items) => {
       for (const item of items) {
         stmt.run(item.spreadsheetId, item.range);
@@ -134,17 +144,18 @@ function deletePendingUpdatesByRange(ranges) {
     });
     tx(ranges);
   } catch (e) {
-    console.error('failed to delete pending sheet updates by range', e.message);
+    safeLog.error("failed to delete pending sheet updates by range", e.message);
   }
 }
 
 function updatePendingUpdateAttempt(id, attempts, lastAttemptAt) {
   if (!id) return;
   try {
-    db.prepare('UPDATE pending_sheet_updates SET attempts = ?, lastAttemptAt = ? WHERE id = ?')
-      .run(attempts, lastAttemptAt, id);
+    db.prepare(
+      "UPDATE pending_sheet_updates SET attempts = ?, lastAttemptAt = ? WHERE id = ?",
+    ).run(attempts, lastAttemptAt, id);
   } catch (e) {
-    console.error('failed to update pending sheet update attempt', e.message);
+    safeLog.error("failed to update pending sheet update attempt", e.message);
   }
 }
 
@@ -165,53 +176,55 @@ async function sheetsRequest({ method, path, params, data }, retries = 3) {
       }
 
       const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
-      console.error(`Google Sheets retry ${attempt}/${retries} (status=${status}), waiting ${delay}ms`);
+      safeLog.error(
+        `Google Sheets retry ${attempt}/${retries} (status=${status}), waiting ${delay}ms`,
+      );
       await new Promise((r) => setTimeout(r, delay));
     }
   }
 }
 
 const SHEET_CONFIGS = {
-  'ИМ Восток': {
-    courierSheet: 'Курьеры',
-    mileageSheet: 'Пробег',
+  "ИМ Восток": {
+    courierSheet: "Курьеры",
+    mileageSheet: "Пробег",
     mileageDayOffset: 0,
-    courierFioColumn: 'D',
-    mileageFioColumn: 'C',
-    mileageAutoColumn: 'B',
-    courierFioRange: 'C3:D',
-    mileageFioRange: 'B3:C',
-    efficiencySheet: 'Эффективность',
-    efficiencyFioColumn: 'B',
-    efficiencyFioRange: 'B3:B',
+    courierFioColumn: "D",
+    mileageFioColumn: "C",
+    mileageAutoColumn: "B",
+    courierFioRange: "C3:D",
+    mileageFioRange: "B3:C",
+    efficiencySheet: "Эффективность",
+    efficiencyFioColumn: "B",
+    efficiencyFioRange: "B3:B",
     efficiencyFirstDayCol: 6,
-    efficiencyDayBlockSize: 3
+    efficiencyDayBlockSize: 3,
   },
-  'ИМ Центр': {
-    courierSheet: 'Курьеры',
-    mileageSheet: 'Пробег Курьеры',
+  "ИМ Центр": {
+    courierSheet: "Курьеры",
+    mileageSheet: "Пробег Курьеры",
     mileageDayOffset: 1,
-    courierFioColumn: 'D',
-    mileageFioColumn: 'D',
-    mileageAutoColumn: 'C',
-    courierFioRange: 'C3:D',
-    mileageFioRange: 'B3:D',
-    efficiencySheet: 'Эффективность',
-    efficiencyFioColumn: 'B',
-    efficiencyFioRange: 'B3:B',
+    courierFioColumn: "D",
+    mileageFioColumn: "D",
+    mileageAutoColumn: "C",
+    courierFioRange: "C3:D",
+    mileageFioRange: "B3:D",
+    efficiencySheet: "Эффективность",
+    efficiencyFioColumn: "B",
+    efficiencyFioRange: "B3:B",
     efficiencyFirstDayCol: 6,
-    efficiencyDayBlockSize: 3
-  }
+    efficiencyDayBlockSize: 3,
+  },
 };
 
-const DEFAULT_CONFIG = SHEET_CONFIGS['ИМ Восток'];
+const DEFAULT_CONFIG = SHEET_CONFIGS["ИМ Восток"];
 
 function getSheetConfig(workplace) {
   return SHEET_CONFIGS[workplace] || DEFAULT_CONFIG;
 }
 
 function resolveSheetContext(workplace, options = {}) {
-  const { resolveSheetInfo } = require('./storage');
+  const { resolveSheetInfo } = require("./storage");
   return resolveSheetInfo(workplace, options);
 }
 
@@ -227,7 +240,12 @@ function getConfiguredSheetCandidates() {
     if (seen.has(uniqueKey)) continue;
     seen.add(uniqueKey);
 
-    candidates.push({ workplace, sheetId: context.sheetId, monthKey: context.monthKey, source: context.source });
+    candidates.push({
+      workplace,
+      sheetId: context.sheetId,
+      monthKey: context.monthKey,
+      source: context.source,
+    });
   }
 
   return candidates;
@@ -236,15 +254,17 @@ function getConfiguredSheetCandidates() {
 async function verifySheetAccess(sheetId) {
   try {
     const response = await sheetsRequest({
-      method: 'GET',
-      path: sheetId
+      method: "GET",
+      path: sheetId,
     });
 
-    const title = response.data.properties?.title || 'Без названия';
-    const sheetsList = response.data.sheets?.map((s) => s.properties?.title) || [];
+    const title = response.data.properties?.title || "Без названия";
+    const sheetsList =
+      response.data.sheets?.map((s) => s.properties?.title) || [];
 
-    const hasCouriers = sheetsList.includes('Курьеры');
-    const hasMileage = sheetsList.includes('Пробег') || sheetsList.includes('Пробег Курьеры');
+    const hasCouriers = sheetsList.includes("Курьеры");
+    const hasMileage =
+      sheetsList.includes("Пробег") || sheetsList.includes("Пробег Курьеры");
 
     return {
       ok: hasCouriers && hasMileage,
@@ -252,19 +272,19 @@ async function verifySheetAccess(sheetId) {
       sheets: sheetsList,
       hasCouriers,
       hasMileage,
-      error: null
+      error: null,
     };
   } catch (error) {
     const status = error.response?.status;
-    let message = 'Не удалось подключиться к таблице.';
+    let message = "Не удалось подключиться к таблице.";
 
     if (status === 404) {
-      message = 'Таблица не найдена. Проверьте ссылку.';
+      message = "Таблица не найдена. Проверьте ссылку.";
     } else if (status === 403) {
-      const serviceEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
+      const serviceEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || "";
       message = serviceEmail
         ? `Нет доступа. Дайте доступ сервисному аккаунту бота:\n${serviceEmail}`
-        : 'Нет доступа к таблице. Обратитесь к администратору.';
+        : "Нет доступа к таблице. Обратитесь к администратору.";
     }
 
     return {
@@ -273,7 +293,7 @@ async function verifySheetAccess(sheetId) {
       sheets: [],
       hasCouriers: false,
       hasMileage: false,
-      error: message
+      error: message,
     };
   }
 }
@@ -283,14 +303,14 @@ function quoteSheetName(sheetName) {
 }
 
 function getColumnNumber(columnLetter) {
-  return String(columnLetter || '')
+  return String(columnLetter || "")
     .toUpperCase()
-    .split('')
+    .split("")
     .reduce((acc, char) => acc * 26 + (char.charCodeAt(0) - 64), 0);
 }
 
 function getRangeStartColumn(range) {
-  const match = String(range || '').match(/^([A-Z]+)/i);
+  const match = String(range || "").match(/^([A-Z]+)/i);
   return match ? getColumnNumber(match[1]) : null;
 }
 
@@ -298,40 +318,49 @@ function getRowValueByColumn(row, range, columnLetter) {
   const startColumn = getRangeStartColumn(range);
   const targetColumn = getColumnNumber(columnLetter);
 
-  if (!startColumn || !targetColumn) return '';
+  if (!startColumn || !targetColumn) return "";
   const index = targetColumn - startColumn;
-  if (index < 0) return '';
+  if (index < 0) return "";
 
-  return row[index] || '';
+  return row[index] || "";
 }
 
 async function getValues(range, spreadsheetId) {
   if (!spreadsheetId) {
-    throw new Error('GOOGLE_SHEET_ID не задан. Используйте /sheet для привязки таблицы.');
+    throw new Error(
+      "GOOGLE_SHEET_ID не задан. Используйте /sheet для привязки таблицы.",
+    );
   }
 
   const response = await sheetsRequest({
-    method: 'GET',
-    path: `${spreadsheetId}/values/${encodeURIComponent(range)}`
+    method: "GET",
+    path: `${spreadsheetId}/values/${encodeURIComponent(range)}`,
   });
 
   return response.data.values || [];
 }
 
 async function readCell(sheetName, cell, spreadsheetId) {
-  const values = await getValues(`${quoteSheetName(sheetName)}!${cell}`, spreadsheetId);
-  return values[0]?.[0] ?? '';
+  const values = await getValues(
+    `${quoteSheetName(sheetName)}!${cell}`,
+    spreadsheetId,
+  );
+  return values[0]?.[0] ?? "";
 }
 
 async function updateCell(sheetName, cell, value, spreadsheetId) {
   if (!spreadsheetId) {
-    throw new Error('GOOGLE_SHEET_ID не задан. Используйте /sheet для привязки таблицы.');
+    throw new Error(
+      "GOOGLE_SHEET_ID не задан. Используйте /sheet для привязки таблицы.",
+    );
   }
 
   const range = `${quoteSheetName(sheetName)}!${cell}`;
   const dbId = savePendingUpdateToDb(spreadsheetId, range, value);
 
-  const existing = pendingUpdates.findIndex(u => u.spreadsheetId === spreadsheetId && u.range === range);
+  const existing = pendingUpdates.findIndex(
+    (u) => u.spreadsheetId === spreadsheetId && u.range === range,
+  );
   const now = new Date().toISOString();
   if (existing >= 0) {
     pendingUpdates[existing].values = [[value]];
@@ -344,7 +373,7 @@ async function updateCell(sheetName, cell, value, spreadsheetId) {
       range,
       values: [[value]],
       createdAt: now,
-      attempts: 0
+      attempts: 0,
     });
   }
 
@@ -358,7 +387,10 @@ let pendingFlush = false;
 
 async function flushSheetUpdates() {
   if (pendingUpdates.length === 0) return;
-  if (isFlushing) { pendingFlush = true; return; }
+  if (isFlushing) {
+    pendingFlush = true;
+    return;
+  }
   isFlushing = true;
 
   try {
@@ -366,116 +398,137 @@ async function flushSheetUpdates() {
     pendingUpdates = [];
     updateTimer = null;
 
-  // Group by spreadsheetId because batchUpdate is per-sheet
-  const bySheet = {};
-  const dbIds = [];
-  for (const item of dataToUpdate) {
-    if (!bySheet[item.spreadsheetId]) bySheet[item.spreadsheetId] = [];
-    bySheet[item.spreadsheetId].push({ range: item.range, values: item.values });
-    if (item._dbId) dbIds.push(item._dbId);
-  }
-
-  let hadError = false;
-  let errorMessage = '';
-  const failedItems = [];
-
-  for (const [spreadsheetId, data] of Object.entries(bySheet)) {
-    try {
-      await sheetsRequest({
-        method: 'POST',
-        path: `${spreadsheetId}/values:batchUpdate`,
-        data: {
-          valueInputOption: 'USER_ENTERED',
-          data
-        }
+    // Group by spreadsheetId because batchUpdate is per-sheet
+    const bySheet = {};
+    const dbIds = [];
+    for (const item of dataToUpdate) {
+      if (!bySheet[item.spreadsheetId]) bySheet[item.spreadsheetId] = [];
+      bySheet[item.spreadsheetId].push({
+        range: item.range,
+        values: item.values,
       });
-    } catch (error) {
-      hadError = true;
-      errorMessage = error.message || String(error);
-      console.error('Ошибка Batch Update Google Sheets:', errorMessage);
-      for (const item of dataToUpdate) {
-        if (item.spreadsheetId === spreadsheetId) {
-          failedItems.push(item);
+      if (item._dbId) dbIds.push(item._dbId);
+    }
+
+    let hadError = false;
+    let errorMessage = "";
+    const failedItems = [];
+
+    for (const [spreadsheetId, data] of Object.entries(bySheet)) {
+      try {
+        await sheetsRequest({
+          method: "POST",
+          path: `${spreadsheetId}/values:batchUpdate`,
+          data: {
+            valueInputOption: "USER_ENTERED",
+            data,
+          },
+        });
+      } catch (error) {
+        hadError = true;
+        errorMessage = error.message || String(error);
+        safeLog.error("Ошибка Batch Update Google Sheets:", errorMessage);
+        for (const item of dataToUpdate) {
+          if (item.spreadsheetId === spreadsheetId) {
+            failedItems.push(item);
+          }
         }
       }
     }
-  }
 
-  if (!hadError) {
-    const rangesToDelete = dataToUpdate.map(item => ({ spreadsheetId: item.spreadsheetId, range: item.range }));
-    deletePendingUpdatesByRange(rangesToDelete);
-    return;
-  }
-
-  // Process failed items: increment attempts, abandon records older than 24h
-  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-  const now = new Date().toISOString();
-  const nowMs = Date.now();
-  const abandoned = [];
-  const retryable = [];
-
-  for (const item of failedItems) {
-    const newAttempts = (item.attempts || 0) + 1;
-    updatePendingUpdateAttempt(item._dbId, newAttempts, now);
-
-    const createdMs = item.createdAt ? new Date(item.createdAt).getTime() : nowMs;
-    const ageMs = nowMs - createdMs;
-    const isStale = ageMs > ONE_DAY_MS;
-
-    const updatedItem = { ...item, attempts: newAttempts };
-    if (isStale) {
-      abandoned.push(updatedItem);
-    } else {
-      retryable.push(updatedItem);
+    if (!hadError) {
+      const rangesToDelete = dataToUpdate.map((item) => ({
+        spreadsheetId: item.spreadsheetId,
+        range: item.range,
+      }));
+      deletePendingUpdatesByRange(rangesToDelete);
+      const affectedSpreadsheets = new Set(
+        dataToUpdate.map((item) => item.spreadsheetId),
+      );
+      for (const id of affectedSpreadsheets) {
+        invalidateRowCache(id);
+      }
+      return;
     }
-  }
 
-  // Delete abandoned records from DB and notify admin
-  if (abandoned.length > 0) {
-    deletePendingUpdatesFromDb(abandoned.map(a => a._dbId));
-    const details = abandoned
-      .map(a => {
-        const hours = Math.round((nowMs - new Date(a.createdAt).getTime()) / 3600000);
-        const val = Array.isArray(a.values?.[0]) ? a.values[0][0] : '';
-        return `• ${a.range} = "${val}" (возраст: ${hours}ч, попыток: ${a.attempts})`;
-      })
-      .join('\n');
-    console.warn(`abandoned ${abandoned.length} pending sheet update(s) older than 24h:\n${details}`);
+    // Process failed items: increment attempts, abandon records older than 24h
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const now = new Date().toISOString();
+    const nowMs = Date.now();
+    const abandoned = [];
+    const retryable = [];
+
+    for (const item of failedItems) {
+      const newAttempts = (item.attempts || 0) + 1;
+      updatePendingUpdateAttempt(item._dbId, newAttempts, now);
+
+      const createdMs = item.createdAt
+        ? new Date(item.createdAt).getTime()
+        : nowMs;
+      const ageMs = nowMs - createdMs;
+      const isStale = ageMs > ONE_DAY_MS;
+
+      const updatedItem = { ...item, attempts: newAttempts };
+      if (isStale) {
+        abandoned.push(updatedItem);
+      } else {
+        retryable.push(updatedItem);
+      }
+    }
+
+    // Delete abandoned records from DB and notify admin
+    if (abandoned.length > 0) {
+      deletePendingUpdatesFromDb(abandoned.map((a) => a._dbId));
+      const details = abandoned
+        .map((a) => {
+          const hours = Math.round(
+            (nowMs - new Date(a.createdAt).getTime()) / 3600000,
+          );
+          const val = Array.isArray(a.values?.[0]) ? a.values[0][0] : "";
+          return `• ${a.range} = "${val}" (возраст: ${hours}ч, попыток: ${a.attempts})`;
+        })
+        .join("\n");
+      safeLog.warn(
+        `abandoned ${abandoned.length} pending sheet update(s) older than 24h:\n${details}`,
+      );
+      if (notifyAdminCallback) {
+        try {
+          notifyAdminCallback(
+            `⚠️ <b>Google Sheets: ${abandoned.length} записей отклонены</b>\n\n` +
+              `Записи старше 24ч не удалось записать (защищённая ячейка или нет прав):\n\n` +
+              `${details}\n\n` +
+              `<i>Записи удалены из очереди. Внесите данные вручную или разблокируйте ячейки.</i>`,
+          );
+        } catch (e) {
+          safeLog.error(
+            "failed to notify admins about abandoned updates",
+            e.message,
+          );
+        }
+      }
+    }
+
+    // Re-add retryable items and schedule another attempt
+    if (retryable.length > 0) {
+      pendingUpdates.push(...retryable);
+      if (!updateTimer) {
+        updateTimer = setTimeout(flushSheetUpdates, 30000);
+      }
+    }
+
+    // Notify admins about the failure
     if (notifyAdminCallback) {
       try {
-        notifyAdminCallback(
-          `⚠️ <b>Google Sheets: ${abandoned.length} записей отклонены</b>\n\n` +
-          `Записи старше 24ч не удалось записать (защищённая ячейка или нет прав):\n\n` +
-          `${details}\n\n` +
-          `<i>Записи удалены из очереди. Внесите данные вручную или разблокируйте ячейки.</i>`
-        );
+        const msg =
+          `⚠️ <b>Критическая ошибка Google Sheets</b>\n\n` +
+          `Batch update не удалось: <code>${errorMessage}</code>\n\n` +
+          `• ${abandoned.length} записей отклонено (старше 24ч)\n` +
+          `• ${retryable.length} записей будет повторено через 30с`;
+        notifyAdminCallback(msg);
       } catch (e) {
-        console.error('failed to notify admins about abandoned updates', e.message);
+        safeLog.error("failed to notify admins about sheets error", e.message);
       }
     }
-  }
-
-  // Re-add retryable items and schedule another attempt
-  if (retryable.length > 0) {
-    pendingUpdates.push(...retryable);
-    if (!updateTimer) {
-      updateTimer = setTimeout(flushSheetUpdates, 30000);
-    }
-  }
-
-  // Notify admins about the failure
-  if (notifyAdminCallback) {
-    try {
-      const msg = `⚠️ <b>Критическая ошибка Google Sheets</b>\n\n` +
-        `Batch update не удалось: <code>${errorMessage}</code>\n\n` +
-        `• ${abandoned.length} записей отклонено (старше 24ч)\n` +
-        `• ${retryable.length} записей будет повторено через 30с`;
-      notifyAdminCallback(msg);
-    } catch (e) {
-      console.error('failed to notify admins about sheets error', e.message);
-    }
-  }
-
   } finally {
     isFlushing = false;
     if (pendingFlush) {
@@ -498,15 +551,30 @@ async function findCourierByFio(fio, workplace, sheetContext = null) {
     return rowCache[cacheKey];
   }
 
-  const rows = await getValues(`${quoteSheetName(config.courierSheet)}!${config.courierFioRange}`, spreadsheetId);
+  const rows = await getValues(
+    `${quoteSheetName(config.courierSheet)}!${config.courierFioRange}`,
+    spreadsheetId,
+  );
 
   // Rebuild cache for this sheet
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
-    const rowFio = getRowValueByColumn(row, config.courierFioRange, config.courierFioColumn) || row[row.length - 1] || '';
+    const rowFio =
+      getRowValueByColumn(
+        row,
+        config.courierFioRange,
+        config.courierFioColumn,
+      ) ||
+      row[row.length - 1] ||
+      "";
     const normalized = normalizeFioWords(rowFio);
     if (normalized) {
-      rowCache[`${spreadsheetId}:courier:${normalized}`] = { row: index + 3, fio: rowFio, auto: row[0] || '', spreadsheetId };
+      rowCache[`${spreadsheetId}:courier:${normalized}`] = {
+        row: index + 3,
+        fio: rowFio,
+        auto: row[0] || "",
+        spreadsheetId,
+      };
     }
   }
   cacheTimestamp = Date.now();
@@ -534,16 +602,38 @@ async function findMileageByFio(fio, workplace, sheetContext = null) {
     return rowCache[cacheKey];
   }
 
-  const rows = await getValues(`${quoteSheetName(config.mileageSheet)}!${config.mileageFioRange}`, spreadsheetId);
+  const rows = await getValues(
+    `${quoteSheetName(config.mileageSheet)}!${config.mileageFioRange}`,
+    spreadsheetId,
+  );
 
   // Rebuild cache for this sheet
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
-    const rowFio = getRowValueByColumn(row, config.mileageFioRange, config.mileageFioColumn) || row[row.length - 1] || '';
-    const auto = getRowValueByColumn(row, config.mileageFioRange, config.mileageAutoColumn) || row[0] || '';
+    const rowFio =
+      getRowValueByColumn(
+        row,
+        config.mileageFioRange,
+        config.mileageFioColumn,
+      ) ||
+      row[row.length - 1] ||
+      "";
+    const auto =
+      getRowValueByColumn(
+        row,
+        config.mileageFioRange,
+        config.mileageAutoColumn,
+      ) ||
+      row[0] ||
+      "";
     const normalized = normalizeFioWords(rowFio);
     if (normalized) {
-      rowCache[`${spreadsheetId}:mileage:${normalized}`] = { row: index + 3, fio: rowFio, auto, spreadsheetId };
+      rowCache[`${spreadsheetId}:mileage:${normalized}`] = {
+        row: index + 3,
+        fio: rowFio,
+        auto,
+        spreadsheetId,
+      };
     }
   }
   cacheTimestamp = Date.now();
@@ -568,22 +658,39 @@ async function findCourierInAllSheets(fio) {
 
     try {
       const response = await sheetsRequest({
-        method: 'GET',
-        path: spreadsheetId
+        method: "GET",
+        path: spreadsheetId,
       });
-      const titles = response.data.sheets?.map((s) => s.properties?.title) || [];
+      const titles =
+        response.data.sheets?.map((s) => s.properties?.title) || [];
 
       if (!titles.includes(config.courierSheet)) continue;
 
-      const rows = await getValues(`${quoteSheetName(config.courierSheet)}!${config.courierFioRange}`, spreadsheetId);
+      const rows = await getValues(
+        `${quoteSheetName(config.courierSheet)}!${config.courierFioRange}`,
+        spreadsheetId,
+      );
       const target = normalizeFioWords(fio);
 
       for (let index = 0; index < rows.length; index += 1) {
         const row = rows[index];
-        const rowFio = getRowValueByColumn(row, config.courierFioRange, config.courierFioColumn) || row[row.length - 1] || '';
+        const rowFio =
+          getRowValueByColumn(
+            row,
+            config.courierFioRange,
+            config.courierFioColumn,
+          ) ||
+          row[row.length - 1] ||
+          "";
 
         if (normalizeFioWords(rowFio) === target) {
-          return { row: index + 3, fio: rowFio, auto: row[0] || '', spreadsheetId, workplace };
+          return {
+            row: index + 3,
+            fio: rowFio,
+            auto: row[0] || "",
+            spreadsheetId,
+            workplace,
+          };
         }
       }
     } catch (_) {
@@ -597,13 +704,13 @@ async function findCourierInAllSheets(fio) {
 function makePunchState({ courier, mileage, dateText, day, stage, timeValue }) {
   return {
     fio: courier.fio,
-    auto: courier.auto || (mileage ? mileage.auto : ''),
+    auto: courier.auto || (mileage ? mileage.auto : ""),
     date: dateText,
     day,
     stage,
     courierRow: courier.row,
     mileageRow: mileage ? mileage.row : null,
-    timeValue
+    timeValue,
   };
 }
 
@@ -615,7 +722,7 @@ function makeMileageState({ courier, mileage, dateText, day, stage }) {
     day,
     stage,
     courierRow: courier.row,
-    mileageRow: mileage.row
+    mileageRow: mileage.row,
   };
 }
 
@@ -626,7 +733,7 @@ function getMileageColumns(workplace, day) {
   return {
     startColumn: columns.startColumn + offset,
     endColumn: columns.endColumn + offset,
-    totalColumn: columns.totalColumn + offset
+    totalColumn: columns.totalColumn + offset,
   };
 }
 
@@ -644,7 +751,7 @@ async function resolveCourierContext(fio, workplace, options = {}) {
       notFound: true,
       noSheet: true,
       noSheetForMonth: sheetContext.noSheetForMonth,
-      monthKey: sheetContext.monthKey
+      monthKey: sheetContext.monthKey,
     };
   }
 
@@ -652,34 +759,67 @@ async function resolveCourierContext(fio, workplace, options = {}) {
   const courier = await findCourierByFio(fio, workplace, sheetContext);
 
   if (!courier) {
-    return { sheetContext, spreadsheetId, config, courier: null, mileage: null, notFound: true };
+    return {
+      sheetContext,
+      spreadsheetId,
+      config,
+      courier: null,
+      mileage: null,
+      notFound: true,
+    };
   }
 
   if (!requireMileage) {
-    return { sheetContext, spreadsheetId, config, courier, mileage: null, notFound: false };
+    return {
+      sheetContext,
+      spreadsheetId,
+      config,
+      courier,
+      mileage: null,
+      notFound: false,
+    };
   }
 
   const mileage = await findMileageByFio(fio, workplace, sheetContext);
 
   if (!mileage) {
-    return { sheetContext, spreadsheetId, config, courier, mileage: null, notFound: true };
+    return {
+      sheetContext,
+      spreadsheetId,
+      config,
+      courier,
+      mileage: null,
+      notFound: true,
+    };
   }
 
-  return { sheetContext, spreadsheetId, config, courier, mileage, notFound: false };
+  return {
+    sheetContext,
+    spreadsheetId,
+    config,
+    courier,
+    mileage,
+    notFound: false,
+  };
 }
 
 async function prepareMileage(fio, workplace, stage = null) {
   const ctx = await resolveCourierContext(fio, workplace);
   if (ctx.notFound) {
     if (ctx.noSheet) {
-      return { notFound: true, noSheet: true, noSheetForMonth: ctx.noSheetForMonth, monthKey: ctx.monthKey };
+      return {
+        notFound: true,
+        noSheet: true,
+        noSheetForMonth: ctx.noSheetForMonth,
+        monthKey: ctx.monthKey,
+      };
     }
     return { notFound: true };
   }
 
   const { spreadsheetId, config, courier, mileage } = ctx;
 
-  const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
+  const timezone = process.env.APP_TIMEZONE || "Europe/Moscow";
   const { dateText, day } = getCurrentDateInfo(timezone);
 
   if (stage) {
@@ -691,15 +831,21 @@ async function prepareMileage(fio, workplace, stage = null) {
   const endCell = `${getColumnLetter(columns.endColumn)}${mileage.row}`;
   const [startMileage, endMileage] = await Promise.all([
     readCell(config.mileageSheet, startCell, spreadsheetId),
-    readCell(config.mileageSheet, endCell, spreadsheetId)
+    readCell(config.mileageSheet, endCell, spreadsheetId),
   ]);
 
   if (isEmptyCell(startMileage) || isScheduleMarker(startMileage)) {
-    return makeMileageState({ courier, mileage, dateText, day, stage: 'start' });
+    return makeMileageState({
+      courier,
+      mileage,
+      dateText,
+      day,
+      stage: "start",
+    });
   }
 
   if (isEmptyCell(endMileage) || isScheduleMarker(endMileage)) {
-    return makeMileageState({ courier, mileage, dateText, day, stage: 'end' });
+    return makeMileageState({ courier, mileage, dateText, day, stage: "end" });
   }
 
   return {
@@ -711,70 +857,108 @@ async function prepareMileage(fio, workplace, stage = null) {
     courierRow: courier.row,
     mileageRow: mileage.row,
     startMileage,
-    endMileage
+    endMileage,
   };
 }
 
-async function punchTime(fio, workplace, isPedestrian = false, overrideDate = null) {
-  const ctx = await resolveCourierContext(fio, workplace, { requireMileage: !isPedestrian });
+async function punchTime(
+  fio,
+  workplace,
+  isPedestrian = false,
+  overrideDate = null,
+) {
+  const ctx = await resolveCourierContext(fio, workplace, {
+    requireMileage: !isPedestrian,
+  });
   if (ctx.notFound) {
     if (ctx.noSheet) {
-      return { notFound: true, noSheet: true, noSheetForMonth: ctx.noSheetForMonth, monthKey: ctx.monthKey };
+      return {
+        notFound: true,
+        noSheet: true,
+        noSheetForMonth: ctx.noSheetForMonth,
+        monthKey: ctx.monthKey,
+      };
     }
     return { notFound: true };
   }
 
   const { spreadsheetId, config, courier, mileage } = ctx;
 
-  const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
-  const dateInfo = overrideDate ? getCurrentDateInfo(timezone, overrideDate) : getCurrentDateInfo(timezone);
+  const timezone = process.env.APP_TIMEZONE || "Europe/Moscow";
+  const dateInfo = overrideDate
+    ? getCurrentDateInfo(timezone, overrideDate)
+    : getCurrentDateInfo(timezone);
   const { dateText, day } = dateInfo;
-  const timeValue = roundTimeToHalfHour({ hour: dateInfo.hour, minute: dateInfo.minute });
+  const timeValue = roundTimeToHalfHour({
+    hour: dateInfo.hour,
+    minute: dateInfo.minute,
+  });
   const columns = getCourierColumnsByDay(day);
   const startCell = `${getColumnLetter(columns.startColumn)}${courier.row}`;
   const endCell = `${getColumnLetter(columns.endColumn)}${courier.row}`;
 
   const [from, to] = await Promise.all([
     readCell(config.courierSheet, startCell, spreadsheetId),
-    readCell(config.courierSheet, endCell, spreadsheetId)
+    readCell(config.courierSheet, endCell, spreadsheetId),
   ]);
 
   if (isEmptyCell(from) || isScheduleMarker(from)) {
     await updateCell(config.courierSheet, startCell, timeValue, spreadsheetId);
-    return makePunchState({ courier, mileage, dateText, day, stage: 'start', timeValue });
+    return makePunchState({
+      courier,
+      mileage,
+      dateText,
+      day,
+      stage: "start",
+      timeValue,
+    });
   }
 
   if (isEmptyCell(to) || isScheduleMarker(to)) {
     await updateCell(config.courierSheet, endCell, timeValue, spreadsheetId);
-    return makePunchState({ courier, mileage, dateText, day, stage: 'end', timeValue });
+    return makePunchState({
+      courier,
+      mileage,
+      dateText,
+      day,
+      stage: "end",
+      timeValue,
+    });
   }
 
   return {
     needsReplaceChoice: true,
     fio: courier.fio,
-    auto: courier.auto || (mileage ? mileage.auto : ''),
+    auto: courier.auto || (mileage ? mileage.auto : ""),
     date: dateText,
     day,
     courierRow: courier.row,
     mileageRow: mileage ? mileage.row : null,
     timeValue,
     from,
-    to
+    to,
   };
 }
 
 async function replaceTime(fio, workplace, stage, isPedestrian = false) {
-  const ctx = await resolveCourierContext(fio, workplace, { requireMileage: !isPedestrian });
+  const ctx = await resolveCourierContext(fio, workplace, {
+    requireMileage: !isPedestrian,
+  });
   if (ctx.notFound) {
     if (ctx.noSheet) {
-      return { notFound: true, noSheet: true, noSheetForMonth: ctx.noSheetForMonth, monthKey: ctx.monthKey };
+      return {
+        notFound: true,
+        noSheet: true,
+        noSheetForMonth: ctx.noSheetForMonth,
+        monthKey: ctx.monthKey,
+      };
     }
     return { notFound: true };
   }
 
   const { courier, mileage } = ctx;
 
-  const timezone = process.env.APP_TIMEZONE || 'Europe/Moscow';
+  const timezone = process.env.APP_TIMEZONE || "Europe/Moscow";
   const { dateText, day, hour, minute } = getCurrentDateInfo(timezone);
   const timeValue = roundTimeToHalfHour({ hour, minute });
 
@@ -786,7 +970,9 @@ async function replaceTime(fio, workplace, stage, isPedestrian = false) {
 function requireSheetId(workplace) {
   const spreadsheetId = resolveSheetContext(workplace).sheetId;
   if (!spreadsheetId) {
-    throw new Error('GOOGLE_SHEET_ID не задан. Используйте /sheet для привязки таблицы.');
+    throw new Error(
+      "GOOGLE_SHEET_ID не задан. Используйте /sheet для привязки таблицы.",
+    );
   }
   return { spreadsheetId, config: getSheetConfig(workplace) };
 }
@@ -794,7 +980,8 @@ function requireSheetId(workplace) {
 async function updateCourierTime(row, day, stage, value, workplace) {
   const { spreadsheetId, config } = requireSheetId(workplace);
   const columns = getCourierColumnsByDay(day);
-  const columnNumber = stage === 'start' ? columns.startColumn : columns.endColumn;
+  const columnNumber =
+    stage === "start" ? columns.startColumn : columns.endColumn;
   const cell = `${getColumnLetter(columnNumber)}${row}`;
   return updateCell(config.courierSheet, cell, value, spreadsheetId);
 }
@@ -802,7 +989,8 @@ async function updateCourierTime(row, day, stage, value, workplace) {
 async function updateMileage(row, day, stage, mileage, workplace) {
   const { spreadsheetId, config } = requireSheetId(workplace);
   const columns = getMileageColumns(workplace, day);
-  const columnNumber = stage === 'start' ? columns.startColumn : columns.endColumn;
+  const columnNumber =
+    stage === "start" ? columns.startColumn : columns.endColumn;
   const cell = `${getColumnLetter(columnNumber)}${row}`;
   return updateCell(config.mileageSheet, cell, String(mileage), spreadsheetId);
 }
@@ -810,22 +998,32 @@ async function updateMileage(row, day, stage, mileage, workplace) {
 async function updateEfficiencyOrders(fio, workplace, day, ordersCount) {
   const config = getSheetConfig(workplace);
   if (!config.efficiencySheet) {
-    return { ok: false, error: 'efficiency_sheet_not_configured' };
+    return { ok: false, error: "efficiency_sheet_not_configured" };
   }
 
   const sheetContext = resolveSheetContext(workplace);
   const spreadsheetId = sheetContext.sheetId;
   if (!spreadsheetId) {
-    return { ok: false, error: 'no_sheet_id' };
+    return { ok: false, error: "no_sheet_id" };
   }
 
-  const rows = await getValues(`${quoteSheetName(config.efficiencySheet)}!${config.efficiencyFioRange}`, spreadsheetId);
+  const rows = await getValues(
+    `${quoteSheetName(config.efficiencySheet)}!${config.efficiencyFioRange}`,
+    spreadsheetId,
+  );
   const target = normalizeFio(fio);
 
   let foundRow = null;
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
-    const rowFio = getRowValueByColumn(row, config.efficiencyFioRange, config.efficiencyFioColumn) || row[row.length - 1] || '';
+    const rowFio =
+      getRowValueByColumn(
+        row,
+        config.efficiencyFioRange,
+        config.efficiencyFioColumn,
+      ) ||
+      row[row.length - 1] ||
+      "";
     if (normalizeFio(rowFio) === target) {
       foundRow = index + 3;
       break;
@@ -833,10 +1031,13 @@ async function updateEfficiencyOrders(fio, workplace, day, ordersCount) {
   }
 
   if (!foundRow) {
-    return { ok: false, error: 'fio_not_found' };
+    return { ok: false, error: "fio_not_found" };
   }
 
-  const ordersColumn = config.efficiencyFirstDayCol + (day - 1) * config.efficiencyDayBlockSize + 1;
+  const ordersColumn =
+    config.efficiencyFirstDayCol +
+    (day - 1) * config.efficiencyDayBlockSize +
+    1;
   const cell = `${getColumnLetter(ordersColumn)}${foundRow}`;
 
   await updateCell(config.efficiencySheet, cell, ordersCount, spreadsheetId);
@@ -859,5 +1060,5 @@ module.exports = {
   getSheetConfig,
   updateEfficiencyOrders,
   loadPendingUpdatesFromDb,
-  setNotifyAdminCallback
+  setNotifyAdminCallback,
 };

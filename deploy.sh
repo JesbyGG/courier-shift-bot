@@ -39,8 +39,16 @@ fi
 
 echo "Deploying $LOCAL -> $REMOTE"
 
-# Reset to origin/main (cleaner than pull if history changed)
-git reset --hard origin/main
+# Stash any local changes before checkout (safer than reset --hard)
+STASHED=0
+if ! git diff --quiet HEAD || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+  echo "Stashing local changes..."
+  git stash push -u -m "auto-deploy-$TIMESTAMP" || true
+  STASHED=1
+fi
+
+# Checkout latest main (cleaner than pull if history changed)
+git checkout -f origin/main
 
 # Install dependencies
 echo "Installing dependencies..."
@@ -63,21 +71,28 @@ echo "Waiting for services to start..."
 sleep 8
 
 HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9527/health || echo "000")
-if [ "$HEALTH_STATUS" != "200" ]; then
-  echo "ERROR: OCR server health check failed (status $HEALTH_STATUS). Rolling back..."
-  git reset --hard "$LOCAL"
+rollback() {
+  echo "ERROR: $1 Rolling back..."
+  git checkout -f "$LOCAL"
+  echo "Re-installing dependencies for rollback..."
+  npm ci
   pm2 restart "$SERVICE_OCR" --update-env
   pm2 restart "$SERVICE_BOT" --update-env
+  if [ "$STASHED" = "1" ]; then
+    echo "Restoring stashed local changes..."
+    git stash pop || true
+  fi
+}
+
+if [ "$HEALTH_STATUS" != "200" ]; then
+  rollback "OCR server health check failed (status $HEALTH_STATUS)."
   exit 1
 fi
 
 # Check bot process is online
 BOT_STATUS=$(pm2 jlist | python3 -c "import sys,json; d=json.load(sys.stdin); print(next((p['pm2_env']['status'] for p in d if p['name']=='$SERVICE_BOT'), 'NOT_FOUND'))")
 if [ "$BOT_STATUS" != "online" ]; then
-  echo "ERROR: $SERVICE_BOT is not online (status: $BOT_STATUS). Rolling back..."
-  git reset --hard "$LOCAL"
-  pm2 restart "$SERVICE_OCR" --update-env
-  pm2 restart "$SERVICE_BOT" --update-env
+  rollback "$SERVICE_BOT is not online (status: $BOT_STATUS)."
   exit 1
 fi
 
