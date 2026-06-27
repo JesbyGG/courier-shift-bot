@@ -9,6 +9,10 @@ module.exports = function setupTextRouter(bot, services) {
     handleManualTime,
     handleUpdateEditText,
     handleManualMileageInput,
+    handleAdminSearch,
+    handleAdminCashAmount,
+    handleAdminBroadcast,
+    handleAdminEditCar,
     punchTimeFlow,
     mileageFlow,
     routeSheetFlow,
@@ -113,6 +117,23 @@ module.exports = function setupTextRouter(bot, services) {
         if (result === "done")
           await replaceMessage(ctx, "✅ Готово", getMenuForRole(ctx.from.id));
       },
+    },
+    // Админ-панель: ввод текста по состоянию
+    {
+      state: "awaitingAdminSearch",
+      handler: (ctx, state, text) => handleAdminSearch(ctx, state, text),
+    },
+    {
+      state: "awaitingAdminCashAmount",
+      handler: (ctx, state, text) => handleAdminCashAmount(ctx, state, text),
+    },
+    {
+      state: "awaitingAdminBroadcast",
+      handler: (ctx, state, text) => handleAdminBroadcast(ctx, state, text),
+    },
+    {
+      state: "awaitingAdminEditCar",
+      handler: (ctx, state, text) => handleAdminEditCar(ctx, state, text),
     },
 
     // 3) Кнопки главного меню

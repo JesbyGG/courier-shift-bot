@@ -157,6 +157,25 @@ function withTimeout(promise, timeoutMs, label) {
   });
 }
 
+// Чистый пересчёт долга по наличным для админ-панели.
+// op: 'add' | 'sub' | 'set'. Возвращает { total, action, reduced }.
+// total — итоговый долг (≥0, округлён до копеек); reduced — сколько списано
+// (для 'sub'; используется, чтобы предложить запись в историю сборов).
+function computeCashAdjustment(op, prior, amount) {
+  const round = (x) => Math.round(Number(x || 0) * 100) / 100;
+  const p = round(prior);
+  const a = round(amount);
+  if (op === 'add') {
+    return { total: round(p + a), action: 'admin_add', reduced: 0 };
+  }
+  if (op === 'sub') {
+    const total = round(Math.max(0, p - a));
+    return { total, action: 'admin_subtract', reduced: round(p - total) };
+  }
+  // 'set'
+  return { total: round(a), action: 'admin_set', reduced: 0 };
+}
+
 function styledButton(text, callbackData, style) {
   const btn = { text, callback_data: callbackData };
   if (style) btn.style = style;
@@ -181,6 +200,7 @@ module.exports = {
   isEmptyCell,
   isScheduleMarker,
   withTimeout,
+  computeCashAdjustment,
   styledButton,
   styledReplyButton
 };
