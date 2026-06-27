@@ -158,7 +158,9 @@ module.exports = function setupCourier(bot, services) {
           }
         }
 
-        clearPendingCashAndReminders(ctx.from.id);
+        // Выход из сверки НЕ означает сдачу денег: долг в pending_cash не трогаем.
+        // Наличные списываются только через явный flow «💵 Наличные»
+        // (cash_submit_yes) или подтверждение логиста — с записью в cash_audit.
         clearState(ctx.from.id);
         await ctx.replyWithHTML(
           sent > 0

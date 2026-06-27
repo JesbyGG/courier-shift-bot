@@ -2767,20 +2767,26 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
           rawAmount,
         );
       } else {
-        const totalAmount = roundMoney(rawAmount);
+        // Накапливаем долг: если у курьера уже есть наличные к сдаче,
+        // сумма новой сверки прибавляется к существующей, а не заменяет её.
+        const existingCash = getPendingCash(telegramId);
+        const priorAmount = Number(existingCash?.amount || 0);
+        const totalAmount = roundMoney(
+          (Number.isFinite(priorAmount) ? priorAmount : 0) + rawAmount,
+        );
         const totalFormatted = formatMoneyRu(totalAmount);
-        const currentNumberOnly =
-          formatMoneyRuNumber(rawAmount) ||
-          String(cashFormatted).replace(/\s*₽$/, "");
+        const totalNumberOnly =
+          formatMoneyRuNumber(totalAmount) ||
+          String(totalFormatted).replace(/\s*₽$/, "");
 
         captionLines.push(
-          `💵 К сдаче в следующую смену: <code>${esc(currentNumberOnly)}</code> ₽`,
+          `💵 К сдаче (всего): <code>${esc(totalNumberOnly)}</code> ₽`,
         );
 
         setPendingCash(telegramId, {
           amount: totalAmount,
           formatted: totalFormatted,
-          orders: 1,
+          orders: (Number(existingCash?.orders) || 0) + 1,
           workplace: state.workplace || null,
           sourceLabel: "Терминал",
           updatedAt: new Date().toISOString(),
@@ -2917,20 +2923,26 @@ async function handleReconciliationPhoto(ctx, state, fileId) {
         rawAmount,
       );
     } else {
-      const totalAmount = roundMoney(rawAmount);
+      // Накапливаем долг: если у курьера уже есть наличные к сдаче,
+      // сумма новой сверки прибавляется к существующей, а не заменяет её.
+      const existingCash = getPendingCash(telegramId);
+      const priorAmount = Number(existingCash?.amount || 0);
+      const totalAmount = roundMoney(
+        (Number.isFinite(priorAmount) ? priorAmount : 0) + rawAmount,
+      );
       const totalFormatted = formatMoneyRu(totalAmount);
-      const currentNumberOnly =
-        formatMoneyRuNumber(rawAmount) ||
-        String(cashFormatted).replace(/\s*₽$/, "");
+      const totalNumberOnly =
+        formatMoneyRuNumber(totalAmount) ||
+        String(totalFormatted).replace(/\s*₽$/, "");
 
       captionLines.push(
-        `💵 К сдаче в следующую смену: <code>${esc(currentNumberOnly)}</code> ₽`,
+        `💵 К сдаче (всего): <code>${esc(totalNumberOnly)}</code> ₽`,
       );
 
       setPendingCash(telegramId, {
         amount: totalAmount,
         formatted: totalFormatted,
-        orders: 1,
+        orders: (Number(existingCash?.orders) || 0) + 1,
         workplace: state.workplace || null,
         sourceLabel: label,
         updatedAt: new Date().toISOString(),
