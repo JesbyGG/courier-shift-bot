@@ -9,7 +9,8 @@ const {
   roundMinutesToHalfHour,
   roundTimeToHalfHour,
   isEmptyCell,
-  isScheduleMarker
+  isScheduleMarker,
+  computeCashAdjustment
 } = require('../utils');
 
 test('getColumnLetter returns A for 1', () => {
@@ -53,6 +54,39 @@ test('roundTimeToHalfHour accepts timezone parts object', () => {
   assertEqual(roundTimeToHalfHour({ hour: 9, minute: 10 }), '9');
   assertEqual(roundTimeToHalfHour({ hour: 9, minute: 20 }), '9,5');
   assertEqual(roundTimeToHalfHour({ hour: 0, minute: 10 }), '0,0');
+});
+
+test('computeCashAdjustment add increases debt', () => {
+  const r = computeCashAdjustment('add', 1000, 500);
+  assertEqual(r.total, 1500);
+  assertEqual(r.action, 'admin_add');
+  assertEqual(r.reduced, 0);
+});
+
+test('computeCashAdjustment sub reduces debt partially', () => {
+  const r = computeCashAdjustment('sub', 1000, 300);
+  assertEqual(r.total, 700);
+  assertEqual(r.action, 'admin_subtract');
+  assertEqual(r.reduced, 300);
+});
+
+test('computeCashAdjustment sub clamps at zero', () => {
+  const r = computeCashAdjustment('sub', 200, 500);
+  assertEqual(r.total, 0);
+  assertEqual(r.reduced, 200);
+});
+
+test('computeCashAdjustment set replaces debt', () => {
+  const r = computeCashAdjustment('set', 1000, 250.5);
+  assertEqual(r.total, 250.5);
+  assertEqual(r.action, 'admin_set');
+  assertEqual(r.reduced, 0);
+});
+
+test('computeCashAdjustment keeps two-decimal precision', () => {
+  const r = computeCashAdjustment('sub', 1500.5, 800.25);
+  assertEqual(r.total, 700.25);
+  assertEqual(r.reduced, 800.25);
 });
 
 test('getCurrentDateInfo returns timezone-aware parts', () => {

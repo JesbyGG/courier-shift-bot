@@ -129,6 +129,7 @@ const {
 const { isAdminUser, getAdminIds } = require("./services/auth");
 const setupCommands = require("./handlers/commands");
 const setupAdmin = require("./handlers/admin");
+const setupAdminPanel = require("./handlers/adminPanel");
 const setupTextRouter = require("./handlers/textRouter");
 const setupCourier = require("./handlers/courier");
 const setupLogist = require("./handlers/logist");
@@ -3766,6 +3767,15 @@ const services = {
   BUTTONS,
   getCurrentDateInfo,
   styledButton,
+  // admin panel deps
+  setPendingCash,
+  getAllUserIds,
+  getShiftStatus,
+  roundMoney,
+  normalizeFio,
+  formatMoneyRuNumber,
+  MAX_REASONABLE_CASH_AMOUNT,
+  DEVICES,
   // sheets & ocr
   readCell,
   updateCell,
@@ -3814,6 +3824,7 @@ const services = {
 
 setupCommands(bot, services);
 setupAdmin(bot, services);
+setupAdminPanel(bot, services);
 setupReplyForwarding(bot, services);
 setupTextRouter(bot, services);
 setupCourier(bot, services);
