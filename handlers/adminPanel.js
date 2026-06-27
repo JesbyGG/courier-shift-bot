@@ -35,6 +35,7 @@ module.exports = function setupAdminPanel(bot, services) {
     setState,
     getState,
     clearState,
+    getMenuForRole,
     getCurrentDateInfo,
     checkGeminiOcrHealth,
     getVersion,
@@ -187,16 +188,27 @@ module.exports = function setupAdminPanel(bot, services) {
     });
   }
 
-  async function notifyCourierCash(ctx, id, total) {
+  // Отправляет сотруднику сообщение ВМЕСТЕ с актуальной reply-клавиатурой,
+  // чтобы его меню (кнопка «💵 Наличные {сумма}», кнопки роли и т.п.)
+  // обновлялось сразу. Меню строится из текущего состояния, поэтому вызывать
+  // нужно ПОСЛЕ обновления долга/роли/профиля.
+  async function notifyAndRefresh(ctx, id, text) {
     try {
-      const msg =
-        total > 0
-          ? `💵 Ваш долг по наличным обновлён администратором: <b>${formatMoneyRu(total)}</b> к сдаче.`
-          : "✅ Ваш долг по наличным обнулён администратором.";
-      await ctx.telegram.sendMessage(Number(id), msg, { parse_mode: "HTML" });
+      await ctx.telegram.sendMessage(Number(id), text, {
+        parse_mode: "HTML",
+        reply_markup: getMenuForRole(id).reply_markup,
+      });
     } catch (e) {
       /* пользователь мог заблокировать бота */
     }
+  }
+
+  async function notifyCourierCash(ctx, id, total) {
+    const msg =
+      total > 0
+        ? `💵 Ваш долг по наличным обновлён администратором: <b>${formatMoneyRu(total)}</b> к сдаче.`
+        : "✅ Ваш долг по наличным обнулён администратором.";
+    await notifyAndRefresh(ctx, id, msg);
   }
 
   async function showCashScreen(ctx, id, edit) {
@@ -638,15 +650,12 @@ module.exports = function setupAdminPanel(bot, services) {
       if (getUserField(id, "carNumber")) setUserField(id, "carNumber", null);
       if (getUserField(id, "device")) setUserField(id, "device", null);
     }
-    try {
-      await ctx.telegram.sendMessage(
-        Number(id),
-        `🔑 Ваша роль изменена: <b>${role === "logist" ? "Логист" : "Курьер"}</b>\n\nДля обновления меню нажмите /start.`,
-        { parse_mode: "HTML" },
-      );
-    } catch (e) {
-      /* ignore */
-    }
+    // Новое меню роли приходит сразу вместе с уведомлением (reply-клавиатура).
+    await notifyAndRefresh(
+      ctx,
+      id,
+      `🔑 Ваша роль изменена: <b>${role === "logist" ? "Логист" : "Курьер"}</b>`,
+    );
     try {
       await ctx.editMessageText(
         `✅ Роль сотрудника <b>${esc(fio)}</b>: ${role === "logist" ? "Логист" : "Курьер"}`,
@@ -675,7 +684,15 @@ module.exports = function setupAdminPanel(bot, services) {
     await ctx.answerCbQuery("Магазин обновлён");
     const id = ctx.match[1];
     const wp = WORKPLACES[Number(ctx.match[2])];
-    if (wp) setUserField(id, "workplace", wp);
+    if (wp) {
+      setUserField(id, "workplace", wp);
+      // Магазин влияет на меню логиста (кнопки Наличные/История) — обновляем.
+      await notifyAndRefresh(
+        ctx,
+        id,
+        `🏬 Ваш магазин изменён администратором: <b>${esc(wp)}</b>`,
+      );
+    }
     await showEditScreen(ctx, id, true);
   });
 
@@ -705,6 +722,8 @@ module.exports = function setupAdminPanel(bot, services) {
     const id = ctx.match[1];
     const cur = getUserField(id, "courierType") || "auto";
     setUserField(id, "courierType", cur === "pedestrian" ? "auto" : "pedestrian");
+    // Тип курьера влияет на reply-меню (наличие кнопки пробега) — обновляем.
+    await notifyAndRefresh(ctx, id, "ℹ️ Ваш профиль обновлён администратором.");
     await showEditScreen(ctx, id, true);
   });
 
