@@ -3655,6 +3655,27 @@ async function setupBotCommands() {
   ]);
 }
 
+const { startApiServer } = require("./api/server");
+
+// Кнопка-меню чата, открывающая Mini App. Включается только если задан
+// MINI_APP_URL (https-адрес фронта). Бот без неё продолжает работать как раньше.
+async function setupMiniAppMenuButton() {
+  const url = process.env.MINI_APP_URL;
+  if (!url) return;
+  try {
+    await bot.telegram.setChatMenuButton({
+      menu_button: {
+        type: "web_app",
+        text: "Открыть приложение",
+        web_app: { url },
+      },
+    });
+    safeLog.log("[api] Mini App menu button установлена");
+  } catch (e) {
+    safeLog.error("setChatMenuButton error", e.message);
+  }
+}
+
 const services = {
   getUserField,
   setUserField,
@@ -3854,6 +3875,17 @@ async function startBot(retry = 0) {
     setupBotCommands().catch((e) =>
       safeLog.error("setupBotCommands fatal", e.message),
     );
+
+    // Mini App API + кнопка-меню — только при первом запуске (не плодим серверы).
+    if (retry === 0) {
+      startApiServer(bot, {
+        notifyLogistsAboutSelfClearance,
+        logCashAction,
+      }).catch((e) => safeLog.error("startApiServer fatal", e.message || e));
+      setupMiniAppMenuButton().catch((e) =>
+        safeLog.error("setupMiniAppMenuButton fatal", e.message || e),
+      );
+    }
     funReactions
       .importConfiguredFunStickerSets({ telegram: bot.telegram })
       .catch((error) => {

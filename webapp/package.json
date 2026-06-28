@@ -1,0 +1,24 @@
+{
+  "name": "courier-shift-webapp",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Telegram Mini App для courier-shift-bot (Фаза 1 — курьер).",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "canvas-confetti": "^1.9.3",
+    "framer-motion": "^11.5.6",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2",
+    "sonner": "^1.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.2",
+    "vite": "^5.4.8"
+  }
+}

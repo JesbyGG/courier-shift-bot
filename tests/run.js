@@ -34,6 +34,8 @@ async function run() {
   require('./safeLog.test');
   require('./version.test');
   require('./reconciliationOcr.test');
+  require('./miniAppAuth.test');
+  require('./courierActions.test');
 
   let passed = 0;
   let failed = 0;

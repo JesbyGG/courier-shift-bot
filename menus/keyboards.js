@@ -57,6 +57,12 @@ function courierMainMenu(telegramId) {
 
   const rows = [];
 
+  // Кнопка запуска Mini App — только если задан MINI_APP_URL.
+  // Бот без неё продолжает работать как раньше.
+  if (process.env.MINI_APP_URL) {
+    rows.push([Markup.button.webApp('🚀 Приложение', process.env.MINI_APP_URL)]);
+  }
+
   if (courierType !== 'pedestrian') {
     rows.push([timeBtn]);
     rows.push([mileageBtn]);
