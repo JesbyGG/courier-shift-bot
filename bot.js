@@ -1650,6 +1650,15 @@ async function punchTimeFlow(ctx, explicitStage = null) {
       { reply_markup: timeChangeKeyboard().reply_markup },
     );
 
+    // Обновляем reply-клавиатуру: кнопка времени должна сразу сменить подпись
+    // (Старт → Конец → Заменить). Тот же приём, что в saveMileageFromState.
+    if (ctx.chat?.id) {
+      const menu = getMenuForRole(telegramId);
+      if (menu?.reply_markup) {
+        await funReactions.sendFunReaction(ctx, "success", menu.reply_markup);
+      }
+    }
+
     if (result.stage === "start") {
       const pendingCash = getPendingCash(telegramId);
       const pendingAmount = Number(pendingCash?.amount || 0);
@@ -3380,6 +3389,26 @@ async function handleManualTime(ctx, state, text) {
       timeValue,
       state.workplace,
     );
+    // Обновляем статус смены, чтобы reply-кнопка времени перерисовалась верно
+    // (textRouter после "done" вызывает replaceMessage с getMenuForRole).
+    const currentTimeStatus = getShiftStatus(telegramId, "time");
+    if (state.stage === "start") {
+      setShiftStatus(
+        telegramId,
+        "time",
+        currentTimeStatus === "end" || currentTimeStatus === "both"
+          ? "both"
+          : "start",
+      );
+    } else {
+      setShiftStatus(
+        telegramId,
+        "time",
+        currentTimeStatus === "start" || currentTimeStatus === "both"
+          ? "both"
+          : "end",
+      );
+    }
     clearState(telegramId);
     safeLog.log("время изменено", state.stage);
     const icon = state.stage === "start" ? "🟢" : "🔴";
