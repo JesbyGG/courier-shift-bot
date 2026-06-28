@@ -158,6 +158,23 @@ export default function Home() {
     navigate(path);
   }
 
+  // Действия-плитки в логичном порядке (частые/важные — выше).
+  // Половинные плитки выкладываются ровной сеткой 2×N без «дыр»:
+  // если их нечётное число, последняя (Профиль) растягивается на всю ширину.
+  const halfTiles = [];
+  if (!isPedestrian) {
+    halfTiles.push({ icon: "🚗", title: "Пробег", meta: "Фото одометра", path: "/mileage" });
+  }
+  halfTiles.push({ icon: "📄", title: "Маршрутник", meta: "Загрузить фото", path: "/route-sheet" });
+  halfTiles.push({
+    icon: "📊",
+    title: "Сверка",
+    meta: profile.device === "Терминал" ? "2 фото" : "1 фото",
+    path: "/reconciliation",
+  });
+  halfTiles.push({ icon: "⚙️", title: "Профиль", meta: "Машина · магазин · устройство", path: "/profile" });
+  const oddTail = halfTiles.length % 2 === 1;
+
   let i = 0;
   return (
     <div>
@@ -185,6 +202,7 @@ export default function Home() {
       </div>
 
       <div className="tiles">
+        {/* 1. Самое частое действие — отметка времени, во всю ширину. */}
         <Tile
           index={i++}
           className={`span-2 ${tt.cls}`}
@@ -194,31 +212,7 @@ export default function Home() {
           onClick={tt.cls === "primary" ? doPunch : () => setReplaceOpen(true)}
         />
 
-        {!isPedestrian ? (
-          <Tile
-            index={i++}
-            icon="🚗"
-            title="Пробег"
-            meta="Фото одометра"
-            onClick={() => go("/mileage")}
-          />
-        ) : null}
-
-        <Tile
-          index={i++}
-          icon="📄"
-          title="Маршрутник"
-          meta="Загрузить фото"
-          onClick={() => go("/route-sheet")}
-        />
-        <Tile
-          index={i++}
-          icon="📊"
-          title="Сверка"
-          meta={profile.device === "Терминал" ? "2 фото" : "1 фото"}
-          onClick={() => go("/reconciliation")}
-        />
-
+        {/* 2. Срочное — наличные к сдаче, сразу под временем и заметно. */}
         {pendingCash ? (
           <Tile
             index={i++}
@@ -230,14 +224,18 @@ export default function Home() {
           />
         ) : null}
 
-        <Tile
-          index={i++}
-          className="span-2"
-          icon="⚙️"
-          title="Профиль"
-          meta="Машина · магазин · устройство"
-          onClick={() => go("/profile")}
-        />
+        {/* 3. Действия по смене — ровная сетка без пустых ячеек. */}
+        {halfTiles.map((t, idx) => (
+          <Tile
+            key={t.path}
+            index={i++}
+            className={oddTail && idx === halfTiles.length - 1 ? "span-2" : ""}
+            icon={t.icon}
+            title={t.title}
+            meta={t.meta}
+            onClick={() => go(t.path)}
+          />
+        ))}
       </div>
 
       <AnimatePresence>
